@@ -1,0 +1,97 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required, immutable) - Firebase Auth UID
+    //   - email: string (required) - User's email
+    //   - role: string (required) - 'owner', 'admin', 'maker', 'viewer'
+    //   - displayName: string (optional) - User's display name
+    //   - photoURL: string (optional) - URL to profile picture
+    //   - bio: string (optional, max 1000 chars) - User's biography
+    //   - updatedAt: string (optional) - ISO 8601 date string
+    //
+    // Collection: settings
+    // Document ID: global
+    // Fields:
+    //   - goDaddyKey: string (optional)
+    //   - goDaddySecret: string (optional)
+    //   - supabaseUrl: string (optional)
+    //   - supabaseKey: string (optional)
+    //   - updatedAt: string (optional)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function isAdmin() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'owner']) ||
+          (request.auth.token.email == "corranforce@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+    function isOwnerRole() {
+      return isAuthenticated() &&
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner') ||
+          (request.auth.token.email == "corranforce@gmail.com" && request.auth.token.email_verified == true)
+        );
+    }
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    function isValidUser(isCreate) {
+      let data = request.resource.data;
+      let hasRequired = data.keys().hasAll(['uid', 'email', 'role']);
+      let validRole = data.role in ['owner', 'admin', 'maker', 'viewer'];
+      
+      // Role assignment logic:
+      // - Admins can assign any role (except maybe owner, but we'll allow owner to assign owner)
+      // - If not admin, you can only create yourself as 'viewer'
+      // - If not admin, you cannot change your existing role on update
+      let roleCheck = isAdmin() ? true : (isCreate ? data.role == 'viewer' : data.role == resource.data.role);
+
+      return hasRequired && validRole && roleCheck &&
+             (isAdmin() || data.uid == request.auth.uid) &&
+             isValidEmail(data.email) &&
+             (!('displayName' in data) || data.displayName is string) &&
+             (!('photoURL' in data) || data.photoURL is string) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 1000)) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    function isValidSettings() {
+      let data = request.resource.data;
+      return (!('goDaddyKey' in data) || data.goDaddyKey is string) &&
+             (!('goDaddySecret' in data) || data.goDaddySecret is string) &&
+             (!('supabaseUrl' in data) || data.supabaseUrl is string) &&
+             (!('supabaseKey' in data) || data.supabaseKey is string) &&
+             (!('updatedAt' in data) || data.updatedAt is string);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if (isOwner(userId) || isAdmin()) && isValidUser(true);
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(false) && (isAdmin() || request.resource.data.uid == resource.data.uid);
+      allow delete: if isAdmin() && userId != request.auth.uid; // Admins can delete others, but not themselves
+    }
+
+    match /settings/{document=**} {
+      allow read: if isAdmin();
+      allow write: if isAdmin() && isValidSettings();
+    }
+  }
+}

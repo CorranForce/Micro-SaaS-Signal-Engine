@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user profile information like bio, profile picture, and role.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "photoURL": { "type": "string" },
+        "bio": { "type": "string" },
+        "role": { "type": "string", "enum": ["owner", "admin", "maker", "viewer"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "GlobalSettings": {
+      "title": "Global Settings",
+      "description": "Stores application-wide settings like GoDaddy API keys.",
+      "type": "object",
+      "properties": {
+        "goDaddyKey": { "type": "string" },
+        "goDaddySecret": { "type": "string" },
+        "supabaseUrl": { "type": "string" },
+        "supabaseKey": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles collection"
+    },
+    "/settings/global": {
+      "schema": "GlobalSettings",
+      "description": "Global application settings"
+    }
+  }
+}
