@@ -7,6 +7,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { signInWithPopup, GoogleAuthProvider, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import Image from 'next/image';
 
 export default function ProfilePage() {
   const { user, role, loading } = useAuth();
@@ -215,7 +216,16 @@ export default function ProfilePage() {
             <div className="flex justify-between items-start mb-6 border-b border-ms-border pb-6">
               <div className="flex items-center gap-4">
                 {photoURL ? (
-                  <img src={photoURL} alt="Profile" className="w-16 h-16 rounded-full border-2 border-ms-green object-cover" />
+                  <div className="relative w-16 h-16 rounded-full border-2 border-ms-green overflow-hidden">
+                    <Image 
+                      src={photoURL} 
+                      alt="Profile" 
+                      fill 
+                      className="object-cover" 
+                      unoptimized={!photoURL.includes('googleusercontent.com')}
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
                 ) : (
                   <div className="w-16 h-16 rounded-full border-2 border-ms-green bg-ms-bg flex items-center justify-center text-ms-green text-xl font-bold">
                     {displayName ? displayName.charAt(0).toUpperCase() : "?"}

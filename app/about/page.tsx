@@ -17,7 +17,7 @@ export default function AboutPage() {
           
           <div className="space-y-6 text-[13px] leading-relaxed text-ms-text-light">
             <p>
-              The <strong>Micro-SaaS Signal Engine</strong> is an AI-powered research tool designed to help founders discover highly profitable, "boring" B2B micro-SaaS opportunities in legacy industries.
+              The <strong>Micro-SaaS Signal Engine</strong> is an AI-powered research tool designed to help founders discover highly profitable, &quot;boring&quot; B2B micro-SaaS opportunities in legacy industries.
             </p>
             <p>
               Instead of building another generic AI wrapper or consumer app, this tool focuses on finding unsexy, high-retention problems in industries like property management, dental offices, logistics, and manufacturing. These are the spaces where a simple, well-executed software solution can generate significant recurring revenue with low churn.
@@ -37,7 +37,7 @@ export default function AboutPage() {
               Built by a team of indie hackers and AI enthusiasts who believe the best software businesses solve real, painful problems for specific groups of professionals.
             </p>
             <p>
-              We leverage the power of Google's Gemini models to process vast amounts of market data and distill it into actionable business intelligence for solo founders and small teams.
+              We leverage the power of Google&apos;s Gemini models to process vast amounts of market data and distill it into actionable business intelligence for solo founders and small teams.
             </p>
           </div>
         </div>

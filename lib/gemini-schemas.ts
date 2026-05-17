@@ -48,6 +48,13 @@ export const ideaGenerationSchema = {
           gtmChannel: { type: "STRING", description: "MUST be a highly specific, actionable, and relevant go-to-market strategy. DO NOT use generic terms like 'Cold email' or 'SEO'. Provide a precise playbook (e.g., 'Scrape Apollo.io for Safety Managers at manufacturing plants with 50-200 employees, and send a 3-step cold email sequence offering a free OSHA compliance audit template')." },
           genesis: { type: "STRING" },
           marketAnalysis: { type: "STRING" },
+          industryInsights: {
+            type: "OBJECT",
+            properties: {
+              typicalChallenges: { type: "ARRAY", items: { type: "STRING" }, description: "Specific, non-obvious challenges typical to this legacy industry." },
+              softwareAdoptionHurdles: { type: "ARRAY", items: { type: "STRING" }, description: "Specific reasons why this industry typically struggles with or resists new software (e.g., 'reliance on paper-based carbon forms', 'non-technical field staff')." }
+            }
+          },
           competitorAnalysis: {
             type: "OBJECT",
             properties: {
@@ -160,6 +167,8 @@ export const launchKitSchema = {
           }
         },
         socialPost: { type: "STRING" },
+        blogPostIdeas: { type: "ARRAY", items: { type: "STRING" }, description: "3-5 catchy blog post titles that address the core pain point and attract the target audience." },
+        socialContentStrategy: { type: "STRING", description: "A brief strategy for social media content (e.g., 'Post daily tips for property managers on LinkedIn', 'Share customer horror stories in specialized FB groups')." },
         objectionHandlers: {
           type: "ARRAY",
           items: {

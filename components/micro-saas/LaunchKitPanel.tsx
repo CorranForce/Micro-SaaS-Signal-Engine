@@ -34,11 +34,11 @@ export const LaunchKitPanel = ({ kit, idea, roi, onEmailClick }: any) => {
       mimeType = "application/json";
       extension = "json";
     } else if (format === "markdown") {
-      content = `# Launch Kit: ${idea.name}\n\n## Idea\n**Tagline:** ${idea.tagline}\n**Problem:** ${idea.problem}\n**Solution:** ${idea.solution}\n\n## ROI Estimate\n- Build Cost: ${roi.buildCostUSD}\n- Monthly Expenses: ${roi.monthlyExpensesUSD}\n- MRR (Month 1): ${roi.realisticMRRMonth1USD}\n- Break-even: ${roi.breakEvenMonths} months\n- ROI Month 1: ${roi.roiMonth1Pct}\n\n## Lovable.dev Prompt\n\`\`\`\n${kit.lovablePrompt}\n\`\`\`\n\n## Marketing Assets\n**Landing Headline:** ${kit.marketingAssets?.landingHeadline}\n**Landing Subheadline:** ${kit.marketingAssets?.landingSubheadline}\n**CTA:** ${kit.marketingAssets?.ctaButton}\n\n**Elevator Pitch:**\n> ${kit.marketingAssets?.elevatorPitch}\n\n**Cold Email:**\nSubject: ${kit.marketingAssets?.coldEmail?.subject}\n\n${kit.marketingAssets?.coldEmail?.body}\n\n**Social Post:**\n${kit.marketingAssets?.socialPost}\n`;
+      content = `# Launch Kit: ${idea.name}\n\n## Idea\n**Tagline:** ${idea.tagline}\n**Problem:** ${idea.problem}\n**Solution:** ${idea.solution}\n\n## ROI Estimate\n- Build Cost: ${roi.buildCostUSD}\n- Monthly Expenses: ${roi.monthlyExpensesUSD}\n- MRR (Month 1): ${roi.realisticMRRMonth1USD}\n- Break-even: ${roi.breakEvenMonths} months\n- ROI Month 1: ${roi.roiMonth1Pct}\n\n## Lovable.dev Prompt\n\`\`\`\n${kit.lovablePrompt}\n\`\`\`\n\n## Marketing Assets\n**Landing Headline:** ${kit.marketingAssets?.landingHeadline}\n**Landing Subheadline:** ${kit.marketingAssets?.landingSubheadline}\n**CTA:** ${kit.marketingAssets?.ctaButton}\n\n**Elevator Pitch:**\n> ${kit.marketingAssets?.elevatorPitch}\n\n**Cold Email:**\nSubject: ${kit.marketingAssets?.coldEmail?.subject}\n\n${kit.marketingAssets?.coldEmail?.body}\n\n**Social Post:**\n${kit.marketingAssets?.socialPost}\n\n**Social Content Strategy:**\n${kit.marketingAssets?.socialContentStrategy}\n\n**Blog Post Ideas:**\n${kit.marketingAssets?.blogPostIdeas?.map((idea: string)=> `* ${idea}`).join("\n")}\n`;
       mimeType = "text/markdown";
       extension = "md";
     } else if (format === "html") {
-      content = `<!DOCTYPE html><html><head><title>Launch Kit: ${idea.name}</title><style>body{font-family:sans-serif;line-height:1.6;padding:20px;max-width:800px;margin:0 auto;}</style></head><body><h1>Launch Kit: ${idea.name}</h1><h2>Idea</h2><p><strong>Tagline:</strong> ${idea.tagline}</p><p><strong>Problem:</strong> ${idea.problem}</p><p><strong>Solution:</strong> ${idea.solution}</p><h2>ROI Estimate</h2><ul><li>Build Cost: ${roi.buildCostUSD}</li><li>Monthly Expenses: ${roi.monthlyExpensesUSD}</li><li>MRR (Month 1): ${roi.realisticMRRMonth1USD}</li><li>Break-even: ${roi.breakEvenMonths} months</li><li>ROI Month 1: ${roi.roiMonth1Pct}</li></ul><h2>Lovable.dev Prompt</h2><pre><code>${kit.lovablePrompt}</code></pre><h2>Marketing Assets</h2><p><strong>Landing Headline:</strong> ${kit.marketingAssets?.landingHeadline}</p><p><strong>Landing Subheadline:</strong> ${kit.marketingAssets?.landingSubheadline}</p><p><strong>CTA:</strong> ${kit.marketingAssets?.ctaButton}</p><h3>Elevator Pitch</h3><blockquote>${kit.marketingAssets?.elevatorPitch}</blockquote><h3>Cold Email</h3><p><strong>Subject:</strong> ${kit.marketingAssets?.coldEmail?.subject}</p><pre>${kit.marketingAssets?.coldEmail?.body}</pre><h3>Social Post</h3><pre>${kit.marketingAssets?.socialPost}</pre></body></html>`;
+      content = `<!DOCTYPE html><html><head><title>Launch Kit: ${idea.name}</title><style>body{font-family:sans-serif;line-height:1.6;padding:20px;max-width:800px;margin:0 auto;}</style></head><body><h1>Launch Kit: ${idea.name}</h1><h2>Idea</h2><p><strong>Tagline:</strong> ${idea.tagline}</p><p><strong>Problem:</strong> ${idea.problem}</p><p><strong>Solution:</strong> ${idea.solution}</p><h2>ROI Estimate</h2><ul><li>Build Cost: ${roi.buildCostUSD}</li><li>Monthly Expenses: ${roi.monthlyExpensesUSD}</li><li>MRR (Month 1): ${roi.realisticMRRMonth1USD}</li><li>Break-even: ${roi.breakEvenMonths} months</li><li>ROI Month 1: ${roi.roiMonth1Pct}</li></ul><h2>Lovable.dev Prompt</h2><pre><code>${kit.lovablePrompt}</code></pre><h2>Marketing Assets</h2><p><strong>Landing Headline:</strong> ${kit.marketingAssets?.landingHeadline}</p><p><strong>Landing Subheadline:</strong> ${kit.marketingAssets?.landingSubheadline}</p><p><strong>CTA:</strong> ${kit.marketingAssets?.ctaButton}</p><h3>Elevator Pitch</h3><blockquote>${kit.marketingAssets?.elevatorPitch}</blockquote><h3>Cold Email</h3><p><strong>Subject:</strong> ${kit.marketingAssets?.coldEmail?.subject}</p><pre>${kit.marketingAssets?.coldEmail?.body}</pre><h3>Social Post</h3><pre>${kit.marketingAssets?.socialPost}</pre><h3>Social Content Strategy</h3><pre>${kit.marketingAssets?.socialContentStrategy}</pre><h3>Blog Post Ideas</h3><ul>${kit.marketingAssets?.blogPostIdeas?.map((idea: string)=> `<li>${idea}</li>`).join("")}</ul></body></html>`;
       mimeType = "text/html";
       extension = "html";
     }
@@ -132,33 +132,48 @@ export const LaunchKitPanel = ({ kit, idea, roi, onEmailClick }: any) => {
               </div>
             )}
             {Array.isArray(kit.buildRoadmap) && kit.buildRoadmap.length > 0 && (
-              <div>
-                <SL>4-Week MVP Roadmap</SL>
-                {kit.buildRoadmap.map((week: any, i: number) => {
-                  if (typeof week === 'string') {
+              <div className="mt-6">
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="h-[2px] flex-1 bg-ms-border"></div>
+                  <SL>4-WEEK MVP EXECUTION MAP</SL>
+                  <div className="h-[2px] flex-1 bg-ms-border"></div>
+                </div>
+                
+                <div className="relative pl-8 border-l border-ms-border/50 ml-4 space-y-8 pb-4">
+                  {kit.buildRoadmap.map((week: any, i: number) => {
+                    const isLast = i === kit.buildRoadmap.length - 1;
+                    const weekTitle = typeof week === 'string' ? `Phase ${i + 1}` : (week.week || `Week ${i + 1}`);
+                    const title = typeof week === 'string' ? week : week.title;
+                    const tasks = Array.isArray(week.tasks) ? week.tasks : (typeof week.tasks === 'string' ? [week.tasks] : []);
+
                     return (
-                      <div key={i} className="bg-ms-panel border border-ms-border p-3 mb-2 flex gap-3.5">
-                        <div className="flex-1 font-ms text-[11px] text-ms-text-light leading-[1.5]">› {week}</div>
+                      <div key={i} className="relative">
+                        {/* Timeline Node */}
+                        <div className="absolute -left-[45px] top-0 w-[24px] h-[24px] bg-ms-bg border-2 border-ms-green flex items-center justify-center rounded-full z-[2] shadow-[0_0_10px_rgba(80,230,160,0.3)]">
+                          <div className="w-1.5 h-1.5 bg-ms-green rounded-full"></div>
+                        </div>
+                        
+                        {/* Week Header */}
+                        <div className="mb-2">
+                          <div className="font-ms text-[10px] text-ms-green font-bold tracking-[2px] uppercase">{weekTitle}</div>
+                          <div className="font-ms text-[15px] text-white font-bold mt-1 leading-[1.3]">{title}</div>
+                        </div>
+
+                        {/* Task List */}
+                        <div className="bg-ms-panel border border-ms-border p-4 relative group hover:border-ms-green/30 transition-colors">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                            {tasks.map((t: string, j: number) => (
+                              <div key={j} className="flex gap-3 items-start">
+                                <span className="text-ms-green text-[12px] mt-0.5 opacity-60">▹</span>
+                                <span className="font-ms text-[11px] text-ms-text-light leading-[1.5]">{t}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </div>
                     );
-                  }
-                  return (
-                    <div key={i} className="bg-ms-panel border border-ms-border p-3 mb-2 flex gap-3.5">
-                      <div className="shrink-0 w-[60px] text-center">
-                        <div className="font-ms text-[9px] text-ms-green font-bold tracking-[1px]">{week.week || `Week ${i+1}`}</div>
-                        <div className="font-ms text-[11px] text-white font-bold mt-0.5 leading-[1.3]">{week.title}</div>
-                      </div>
-                      <div className="flex-1 border-l border-ms-border pl-3.5">
-                        {Array.isArray(week.tasks) 
-                          ? week.tasks.map((t: string, j: number) => <div key={j} className="font-ms text-[11px] text-ms-text-light mb-[3px] leading-[1.5]">› {t}</div>)
-                          : typeof week.tasks === 'string' 
-                            ? <div className="font-ms text-[11px] text-ms-text-light mb-[3px] leading-[1.5]">› {week.tasks}</div>
-                            : null
-                        }
-                      </div>
-                    </div>
-                  );
-                })}
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -236,6 +251,41 @@ export const LaunchKitPanel = ({ kit, idea, roi, onEmailClick }: any) => {
             {kit.marketingAssets.elevatorPitch && <div className="bg-ms-panel border border-ms-border p-3.5 mb-3"><div className="flex justify-between items-center mb-2"><SL color="#ffc857">🎤 30-Second Elevator Pitch</SL><CopyBtn text={kit.marketingAssets.elevatorPitch} /></div><div className="font-ms text-[13px] text-ms-text leading-[1.7] italic border-l-3 border-l-ms-yellow pl-3">&quot;{kit.marketingAssets.elevatorPitch}&quot;</div></div>}
             {kit.marketingAssets.coldEmail && <div className="bg-ms-panel border border-ms-border p-3.5 mb-3"><div className="flex justify-between items-center mb-2"><SL color="#5ce6a0">✉ Cold Outreach Email</SL><CopyBtn text={`Subject: ${kit.marketingAssets.coldEmail.subject}\n\n${kit.marketingAssets.coldEmail.body}`} /></div><div className="font-ms text-[11px] text-ms-text-muted mb-1">SUBJECT:</div><div className="font-ms text-[12px] text-white font-bold mb-2.5">{kit.marketingAssets.coldEmail.subject}</div><div className="font-ms text-[11px] text-ms-text-light leading-[1.8] whitespace-pre-line bg-[#060d06] p-2.5">{kit.marketingAssets.coldEmail.body}</div></div>}
             {kit.marketingAssets.socialPost && <div className="bg-ms-panel border border-ms-border p-3.5 mb-3"><div className="flex justify-between items-center mb-2"><SL color="#a78bfa">📱 Social Post</SL><CopyBtn text={kit.marketingAssets.socialPost} /></div><div className="font-ms text-[13px] text-ms-text leading-[1.7] bg-[#060d06] p-2.5 whitespace-pre-line">{kit.marketingAssets.socialPost}</div></div>}
+            
+            {kit.marketingAssets.socialContentStrategy && (
+              <div className="bg-ms-panel border border-ms-border p-5 mb-5 relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-30 transition-opacity">
+                  <span className="text-[40px]">🎯</span>
+                </div>
+                <div className="flex justify-between items-center mb-4 pb-2 border-b border-ms-border/50">
+                  <div className="flex flex-col">
+                    <SL color="#a78bfa">🎯 Social Content Strategy</SL>
+                    <span className="font-ms text-[10px] text-ms-text-muted">Playbook for organic reach and community building</span>
+                  </div>
+                  <CopyBtn text={kit.marketingAssets.socialContentStrategy} />
+                </div>
+                <div className="font-ms text-[13px] text-ms-text leading-[1.8] bg-[#060d06] p-4 whitespace-pre-line border-l-4 border-l-ms-green shadow-inner">
+                  {kit.marketingAssets.socialContentStrategy}
+                </div>
+              </div>
+            )}
+
+            {Array.isArray(kit.marketingAssets.blogPostIdeas) && kit.marketingAssets.blogPostIdeas.length > 0 && (
+              <div className="bg-ms-panel border border-ms-border p-3.5 mb-3">
+                <div className="flex justify-between items-center mb-2">
+                  <SL color="#5ce6a0">✍️ Blog Post Ideas</SL>
+                  <CopyBtn text={kit.marketingAssets.blogPostIdeas.join("\n")} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  {kit.marketingAssets.blogPostIdeas.map((idea: string, j: number) => (
+                    <div key={j} className="font-ms text-[12px] text-ms-text leading-[1.5] bg-[#060d06] p-2.5 border-l-2 border-l-ms-yellow">
+                      {idea}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {Array.isArray(kit.marketingAssets.objectionHandlers) && kit.marketingAssets.objectionHandlers.length > 0 && <div><SL color="#ff9999">🛡 Objection Handlers</SL>{kit.marketingAssets.objectionHandlers.map((o: any, i: number) => {
               if (typeof o === 'string') {
                 return <div key={i} className="bg-ms-panel border border-ms-border p-3 mb-2"><div className="font-ms text-[12px] text-ms-text leading-[1.6]">{o}</div></div>;

@@ -1,9 +1,30 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import ReactMarkdown from "react-markdown";
 import { ResponsiveContainer, AreaChart, Area, YAxis, Tooltip as RechartsTooltip } from 'recharts';
+import { 
+  Menu, 
+  ChevronLeft, 
+  ChevronRight, 
+  Info, 
+  Settings, 
+  User, 
+  HelpCircle, 
+  Sun, 
+  Moon, 
+  Plus, 
+  Search, 
+  FolderSearch,
+  Database, 
+  ArrowLeft,
+  Zap,
+  LayoutDashboard,
+  ShieldCheck,
+  LineChart
+} from "lucide-react";
+import { useMetadata } from "@/hooks/use-metadata";
 import { NICHE_CATEGORIES, DEMAND_CFG, COMP_CFG, CHURN_CFG, COMPLEX_CFG, toDomain, toDomainHyphen } from "@/lib/constants";
 import { ideaGenerationSchema, launchKitSchema, moreIdeasSchema } from "@/lib/gemini-schemas";
 import { Tooltip } from "./Tooltip";
@@ -21,6 +42,8 @@ import { useAuth } from "@/components/AuthProvider";
 import { GoogleGenAI } from "@google/genai";
 
 import { GranularLoader } from "@/components/GranularLoader";
+import { ProgressSteps } from "@/components/ProgressSteps";
+import { OnboardingTour } from "@/components/OnboardingTour";
 
 const getGeminiKey = () => {
   if (typeof window !== 'undefined') {
@@ -30,9 +53,61 @@ const getGeminiKey = () => {
   return process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 };
 
+function SidebarItem({ icon, label, isOpen, active, onClick, color }: { icon: React.ReactNode, label: string, isOpen: boolean, active?: boolean, onClick: () => void, color?: string }) {
+  return (
+    <button
+      id={`sidebar-item-${label.toLowerCase().replace(/\s+/g, '-')}`}
+      onClick={onClick}
+      className={`
+        w-full flex items-center gap-3 px-3 py-2.5 rounded-md transition-all duration-200 group relative
+        ${active 
+          ? 'bg-ms-green/10 text-ms-green shadow-[inset_0_0_10px_rgba(80,230,160,0.05)]' 
+          : 'text-ms-text-muted hover:bg-ms-panel-light hover:text-ms-text'
+        }
+      `}
+      title={!isOpen ? label : undefined}
+    >
+      <div 
+        className={`shrink-0 transition-transform duration-200 group-hover:scale-110 flex items-center justify-center ${active ? 'text-ms-green' : 'text-ms-text-muted group-hover:text-ms-green'}`}
+        style={color && active ? { color } : {}}
+      >
+        {icon}
+      </div>
+      
+      <AnimatePresence mode="wait">
+        {isOpen && (
+          <motion.span
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -10 }}
+            className="font-medium text-[13px] whitespace-nowrap overflow-hidden flex-1 text-left"
+          >
+            {label}
+          </motion.span>
+        )}
+      </AnimatePresence>
+
+      {!isOpen && (
+        <div className="absolute left-full ml-2 px-2 py-1 bg-ms-panel border border-ms-border text-ms-text text-[11px] rounded opacity-0 group-hover:opacity-100 pointer-events-none z-[100] whitespace-nowrap transition-opacity shadow-lg">
+          {label}
+        </div>
+      )}
+      
+      {active && (
+        <motion.div 
+          layoutId="sidebar-active-indicator"
+          className="absolute left-0 w-1 h-6 bg-ms-green rounded-full"
+        />
+      )}
+    </button>
+  );
+}
+
 export default function MicroSaaSFinder() {
+  const { setMetadata, resetMetadata } = useMetadata();
   const { user, role } = useAuth();
   const [mounted, setMounted] = useState(false);
+
   console.log("MicroSaaSFinder rendering, mounted:", mounted);
   const [activeCategory, setActiveCategory] = useState(Object.keys(NICHE_CATEGORIES)[0]);
   const [selectedNiche, setSelectedNiche] = useState("");
@@ -70,6 +145,31 @@ export default function MicroSaaSFinder() {
   const [localResendKey, setLocalResendKey] = useState("");
   const [selectedForCompare, setSelectedForCompare] = useState<number[]>([]);
   const [showCompareModal, setShowCompareModal] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Update dynamic metadata for SEO
+  useEffect(() => {
+    if (expandedIdea !== null && result?.saasIdeas?.[expandedIdea]) {
+      const idea = result.saasIdeas[expandedIdea];
+      setMetadata({
+        title: idea.name,
+        description: idea.description || idea.tagline,
+        keywords: [idea.name, "micro-saas", "b2b saas", idea.niche || "business idea"]
+      });
+    } else {
+      resetMetadata();
+    }
+  }, [expandedIdea, result, setMetadata, resetMetadata]);
+
+  const startTour = () => {
+    localStorage.removeItem("ms_tour_seen");
+    setShowOnboarding(true);
+    // Force a re-render by toggling a key if needed, 
+    // but the component handles the initial check in useEffect.
+    // To re-trigger it immediately if the modal was closed:
+    window.location.reload(); // Simple way to reset state and re-trigger tour
+  };
 
   const toggleCompare = (index: number) => {
     setSelectedForCompare(prev => {
@@ -151,7 +251,26 @@ export default function MicroSaaSFinder() {
     }
   };
 
-  const LOADING_MSGS = ["Scanning market signals…", "Mapping pain point clusters…", "Calculating boring scores…", "Estimating churn risk…", "Assembling blueprints…"];
+  const LOADING_STEPS = [
+    "Initializing neural market scanners...",
+    "Scanning industry pain points...",
+    "Analyzing B2B market gaps...",
+    "Identifying friction in legacy workflows...",
+    "Mapping technical feasibility on Lovable.dev...",
+    "Generating high-retention SaaS blueprints...",
+    "Calculating ROI and MRR estimates...",
+    "Refining go-to-market strategies...",
+    "Finalizing market signal report..."
+  ];
+
+  const RESEARCH_STEPS = [
+    "Connecting to global sentiment feeds...",
+    "Sifting through reddit complaint clusters...",
+    "Analyzing forum threads for validation...",
+    "Cross-referencing social media signals...",
+    "Finding real-world market validation indicators...",
+    "Generating deep insights report..."
+  ];
 
   const formatGeminiError = (err: any) => {
     let msg = err.message || "Unknown error";
@@ -215,8 +334,13 @@ export default function MicroSaaSFinder() {
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: `Given the user's interests or background: "${userInterests}", suggest 5 highly specific, underserved B2B Micro-SaaS niches. Return ONLY a JSON array of strings. Example: ["Dental Practice Management", "Local Bakery Inventory"]`,
+        model: "gemini-2.0-flash",
+        contents: `User Background/Interests: "${userInterests}"
+
+Based on this background, suggest 8 highly specific, underserved B2B Micro-SaaS niches where this user could have an advantage or unique insight.
+Focus on "Boring" industries (e.g., Construction, Logistics, Legal, Medical, Manufacturing).
+Return ONLY a JSON array of strings. 
+Example: ["HVAC Inventory Management", "Custom Cabinetry CRM", "Marine Logbook Digitization"]`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -337,7 +461,18 @@ export default function MicroSaaSFinder() {
     setLaunchKits(prev => ({ ...prev, [idx]: { loading: true, data: null, error: null } }));
     const sp = `You are MakerAI — expert at turning micro-SaaS ideas into complete launch kits for solo non-technical founders using Lovable.dev.
 Return ONLY valid JSON matching the schema.
-Rules: lovablePrompt MUST include Stripe and Resend setup. presellValidation must be specific to this idea. All copy industry-specific.`;
+Rules:
+1. lovablePrompt MUST be a comprehensive, production-ready instruction for Lovable.dev (app.lovable.dev). It must include:
+   - Tech stack: React, Tailwind, Lucide icons, Supabase, Stripe, Resend.
+   - Core functional requirements (3-5 key features).
+   - Database schema requirements (tables and fields).
+   - Branding guidelines (color palette, typography vibe).
+2. buildRoadmap MUST be a highly detailed 4-week execution map:
+   - Week 1: "Foundations & Auth" (Supabase setup, authentication, core DB tables, landing page shell).
+   - Week 2: "The Core Engine" (Building the primary value-add feature, parser, AI agent, or dashboard).
+   - Week 3: "Commerce & Comms" (Stripe Payment Links/Checkout integration, Resend email automation for notifications).
+   - Week 4: "Polishing & GTM" (UI/UX final touches, error handling, domain connecting, and first 10 cold emails sent).
+3. marketingAssets: All copy must be industry-specific, authoritative, and convert-focused.`;
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
@@ -361,13 +496,14 @@ Rules: lovablePrompt MUST include Stripe and Resend setup. presellValidation mus
     if (!niche) { setError("Select or type a niche first."); return; }
     setLoading(true); setError(""); setResult(null); setDomainStatus({}); setLaunchKits({}); setDeepResearch({}); setEmailSentFor({});
     setView("loading");
-    let mi = 0; setLoadingMsg(LOADING_MSGS[0]); setLoadingProgress(15);
+    let mi = 0; setLoadingMsg(LOADING_STEPS[0]); setLoadingProgress(15);
     const interval = setInterval(() => { 
-      mi = (mi + 1) % LOADING_MSGS.length; 
-      setLoadingMsg(LOADING_MSGS[mi]); 
+      mi = (mi + 1) % LOADING_STEPS.length; 
+      setLoadingMsg(LOADING_STEPS[mi]); 
       setLoadingProgress(prev => Math.min(95, prev + 15));
     }, 1800);
     const sp = `You are an elite micro-SaaS researcher specialising in boring, high-retention B2B opportunities in legacy industries.
+${userInterests ? `The user has the following background/interests: "${userInterests}". Tailor your suggestions to leverage this context if applicable, or find high-value niches that align with their strengths.` : ''}
 Return ONLY valid JSON matching the schema.
 Exactly 1 saasIdea, 1 targetAudience, 1 topPainPoint. Build costs: Lovable.dev Pro $50/mo. Simple=1-3 days=$50-150. Moderate=3-7 days=$150-300. Complex=$300-600. Monthly ops=$50-120 (Lovable+Supabase+APIs).
 
@@ -375,11 +511,14 @@ CRITICAL INSTRUCTIONS FOR IDEA GENERATION:
 1. Provide a concise description (max 80 words) that elaborates on the exact problem it solves, the workflow it replaces, and its core value proposition.
 2. Include its genesis (how the idea originated) and marketAnalysis (why it's a good market). If competitionLevel is 'high' or 'medium', provide a competitionReason explaining why it's competitive.
 
-SPECIAL INSTRUCTIONS FOR TOP IDEAS:
-- For each of the SaaS ideas, refine the 'gtmChannel' to be an extremely specific, actionable playbook. Avoid generic terms. Include specific details about the outreach message content, the exact value proposition mentioned, and the specific trial or pilot offer. For example, instead of 'cold email', use 'Scrape Zillow and Apartments.com for property managers managing 10-50 units and send a personalized LinkedIn message offering a 14-day free trial of the screening tool, specifically mentioning how it automates background checks and saves them 5 hours per week'.
-- For the SaaS ideas with medium or high competition, provide a more detailed 'competitorAnalysis'. Specifically, name 2-3 direct competitors for each, and detail their strengths and weaknesses in relation to the proposed USP. Ensure the USP is clearly articulated to exploit these weaknesses.
-- For the SaaS ideas, provide highly specific 'marketValidation.indicators' and 'marketValidation.earlyAdopterSignals' based on recent forum discussions and social media sentiment related to the specific niche challenges (e.g., 'law firm document management challenges', 'property management maintenance headaches'). Include specific simulated quotes or quantitative data if possible, and a refined 'goNoGoScore' and 'goNoGoReason'.
-- For 'keyFeatures', extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
+SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
+- GTM PLAYBOOK: Must be an extremely specific, actionable playbook. Avoid generic terms. Include specific details about the outreach message content, the exact value proposition mentioned, and the specific trial or pilot offer.
+- COMPETITOR ANALYSIS: Name 2-3 direct/indirect competitors. Include established 'giants' (e.g. Calendly, Acuity) and modern 'niche AI' players (e.g. Motion, Reclaim). Detail their strengths AND specific user-documented weaknesses (e.g. "Complexity Exhaustion" for non-tech users, "Personalization Chasm" in link-sharing).
+- UNIQUE SELLING PROPOSITION (USP): Suggest a USP specifically designed to exploit those weaknesses (e.g. Conversational SMS scheduling that requires ZERO links, or white-labeled 'Receptionist' interface).
+- MARKET VALIDATION: Provide 3+ distinct 'marketValidation.indicators' based on documented user frustrations from Reddit/Forums (e.g. '30+ comments in r/legaladvice about scheduling link drop-offs'). 
+- GO/NO-GO: Provide a refined 'goNoGoScore' (1-10) and 'goNoGoReason' based on this enhanced validation.
+- INDUSTRY INSIGHTS: Detail 3-5 typical challenges and 2-3 common software adoption hurdles founders will face.
+- KEY FEATURES: Extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
@@ -396,7 +535,14 @@ SPECIAL INSTRUCTIONS FOR TOP IDEAS:
       
       const parsed = parseJSONResponse(response.text || "{}");
       setResult(parsed); setView("results"); setExpandedIdea(0);
-      if (parsed.saasIdeas?.length) checkAllDomains(parsed.saasIdeas);
+      if (parsed.saasIdeas?.length) {
+        checkAllDomains(parsed.saasIdeas);
+        // Automatically trigger validation and research for all ideas
+        parsed.saasIdeas.forEach((idea: any, idx: number) => {
+          runAIMarketValidation(idea, idx);
+          runDeepResearch(idea, idx);
+        });
+      }
     } catch (err: any) { 
       setError(`Generation failed: ${formatGeminiError(err)}`); 
       setView("niche"); 
@@ -407,34 +553,64 @@ SPECIAL INSTRUCTIONS FOR TOP IDEAS:
   const generateMoreIdeas = async () => {
     if (!niche || !result) return;
     setLoadingMore(true);
-    let mi = 0; setLoadingMsg("Generating 1 more idea..."); setLoadingProgress(15);
+    let mi = 0; setLoadingMsg("Generating 3 more ideas..."); setLoadingProgress(15);
     const interval = setInterval(() => { 
-      mi = (mi + 1) % LOADING_MSGS.length; 
-      setLoadingMsg(LOADING_MSGS[mi]); 
+      mi = (mi + 1) % LOADING_STEPS.length; 
+      setLoadingMsg(LOADING_STEPS[mi]); 
       setLoadingProgress(prev => Math.min(95, prev + 15));
     }, 1800);
     
     const existingIdeaNames = result.saasIdeas?.map((i: any) => i.name).join(", ");
     
+    // Collect research findings
+    const validationFindings = Object.entries(aiMarketValidation)
+      .filter(([_, v]) => v.data)
+      .map(([idx, v]) => `Validation for ${result.saasIdeas[idx]?.name || 'Idea'}: ${v.data}`)
+      .join("\n\n");
+      
+    const deepResearchFindings = Object.entries(deepResearch)
+      .filter(([_, v]) => v.data)
+      .map(([idx, v]) => `Deep Research for ${result.saasIdeas[idx]?.name || 'Idea'}: ${v.data}`)
+      .join("\n\n");
+
+    const researchContext = `
+Market Validation Findings:
+${validationFindings || "None yet."}
+
+Deep Research Findings:
+${deepResearchFindings || "None yet."}
+    `.trim();
+    
     const sp = `You are an elite micro-SaaS researcher specialising in boring, high-retention B2B opportunities in legacy industries.
 Return ONLY valid JSON matching the schema.
-Exactly 1 saasIdea. Build costs: Lovable.dev Pro $50/mo. Simple=1-3 days=$50-150. Moderate=3-7 days=$150-300. Complex=$300-600. Monthly ops=$50-120 (Lovable+Supabase+APIs).
+Exactly 3 saasIdeas. Build costs: Lovable.dev Pro $50/mo. Simple=1-3 days=$50-150. Moderate=3-7 days=$150-300. Complex=$300-600. Monthly ops=$50-120 (Lovable+Supabase+APIs).
 
-CRITICAL INSTRUCTIONS FOR IDEA GENERATION:
-1. Provide a concise description (max 80 words) that elaborates on the exact problem it solves, the workflow it replaces, and its core value proposition.
-2. Include its genesis (how the idea originated) and marketAnalysis (why it's a good market). If competitionLevel is 'high' or 'medium', provide a competitionReason explaining why it's competitive.
+CRITICAL INSTRUCTIONS:
+1. Incorporate findings from the provided research context into the new ideas. Focus on solving the specific, documented pain points found in complaints and forum discussions.
+2. Provide a concise description (max 80 words) for each.
+3. Include genesis and marketAnalysis. 
 
-SPECIAL INSTRUCTIONS FOR TOP IDEAS:
-- For each of the SaaS ideas, refine the 'gtmChannel' to be an extremely specific, actionable playbook. Avoid generic terms. Include specific details about the outreach message content, the exact value proposition mentioned, and the specific trial or pilot offer. For example, instead of 'cold email', use 'Scrape Zillow and Apartments.com for property managers managing 10-50 units and send a personalized LinkedIn message offering a 14-day free trial of the screening tool, specifically mentioning how it automates background checks and saves them 5 hours per week'.
-- For the SaaS ideas with medium or high competition, provide a more detailed 'competitorAnalysis'. Specifically, name 2-3 direct competitors for each, and detail their strengths and weaknesses in relation to the proposed USP. Ensure the USP is clearly articulated to exploit these weaknesses.
-- For the SaaS ideas, provide highly specific 'marketValidation.indicators' and 'marketValidation.earlyAdopterSignals' based on recent forum discussions and social media sentiment related to the specific niche challenges (e.g., 'law firm document management challenges', 'property management maintenance headaches'). Include specific simulated quotes or quantitative data if possible, and a refined 'goNoGoScore' and 'goNoGoReason'.
-- For 'keyFeatures', extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
+SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
+- GTM PLAYBOOK: Must be an extremely specific, actionable playbook. Avoid generic terms.
+- COMPETITOR ANALYSIS: Name 2-3 direct/indirect competitors (e.g. Calendly, Acuity, Motion, Reclaim). Detail their strengths AND specific user-documented weaknesses (e.g. "Complexity Exhaustion" or "Personalization Chasm").
+- UNIQUE SELLING PROPOSITION (USP): Suggest a USP specifically designed to exploit those weaknesses.
+- MARKET VALIDATION: Provide 3+ distinct 'marketValidation.indicators' (e.g. '30+ comments in r/legaladvice about scheduling link drop-offs'). 
+- GO/NO-GO: Provide a refined 'goNoGoScore' (1-10) and 'goNoGoReason' based on this enhanced validation.
+- INDUSTRY INSIGHTS: Detail 3-5 typical challenges and 2-3 common software adoption hurdles.
+- KEY FEATURES: Extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
 
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: `Niche: ${niche}\n\nExisting ideas to avoid: ${existingIdeaNames}\n\nGenerate 1 MORE completely different SaaS idea for this niche.`,
+        contents: `Niche: ${niche}
+
+Research Context:
+${researchContext}
+
+Existing ideas to avoid: ${existingIdeaNames}
+
+Generate 3 MORE completely different SaaS ideas for this niche that solve the pain points found in research.`,
         config: {
           systemInstruction: sp,
           temperature: 0.8,
@@ -446,11 +622,17 @@ SPECIAL INSTRUCTIONS FOR TOP IDEAS:
       
       const parsed = parseJSONResponse(response.text || "{}");
       if (parsed.saasIdeas?.length) {
+        const startIndex = result?.saasIdeas?.length || 0;
         setResult((prev: any) => ({
           ...prev,
           saasIdeas: [...(prev?.saasIdeas || []), ...parsed.saasIdeas]
         }));
         checkAllDomains(parsed.saasIdeas);
+        // Automatically trigger validation and research for NEW ideas
+        parsed.saasIdeas.forEach((idea: any, idx: number) => {
+          runAIMarketValidation(idea, startIndex + idx);
+          runDeepResearch(idea, startIndex + idx);
+        });
       }
     } catch (err: any) { 
       toast.error(`Failed to generate more ideas: ${formatGeminiError(err)}`); 
@@ -465,27 +647,32 @@ SPECIAL INSTRUCTIONS FOR TOP IDEAS:
     setIsAskingAi(true);
     setLoading(true); setError(""); setResult(null); setDomainStatus({}); setLaunchKits({}); setDeepResearch({}); setEmailSentFor({}); setAiMarketValidation({});
     setView("loading");
-    let mi = 0; setLoadingMsg(LOADING_MSGS[0]); setLoadingProgress(15);
+    let mi = 0; setLoadingMsg(LOADING_STEPS[0]); setLoadingProgress(15);
     const interval = setInterval(() => { 
-      mi = (mi + 1) % LOADING_MSGS.length; 
-      setLoadingMsg(LOADING_MSGS[mi]); 
+      mi = (mi + 1) % LOADING_STEPS.length; 
+      setLoadingMsg(LOADING_STEPS[mi]); 
       setLoadingProgress(prev => Math.min(95, prev + 15));
     }, 1800);
 
-    const sp = `You are an elite micro-SaaS researcher.
+    const sp = `You are an elite micro-SaaS researcher specialising in boring, high-retention B2B opportunities in legacy industries.
+${userInterests ? `The user has the following background/interests: "${userInterests}". Tailor the solution to leverage this context if applicable.` : ''}
 Return ONLY valid JSON matching the schema.
 Rules:
 - Generate exactly 1 highly specific, underserved B2B micro-SaaS idea based on this user input/problem description: "${askAiInput}".
-- The ideas MUST solve painful, expensive problems.
-- Focus on high-retention, low-churn opportunities.
-- For 'keyFeatures', extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable (e.g., 'Automated email parser for maintenance requests', not 'Email integration').
-- Ensure the output strictly matches the provided JSON schema.`;
+- The idea MUST solve a painful, expensive problem for a specific industry audience.
+- COMPETITOR ANALYSIS: Name 2-3 direct/indirect competitors, detail their strengths AND specific user-documented weaknesses.
+- UNIQUE SELLING PROPOSITION (USP): Suggest a USP specifically designed to exploit those weaknesses.
+- MARKET VALIDATION: Provide 3+ distinct 'marketValidation.indicators' based on high-signal data (e.g. reddit complaints, forum threads).
+- GO/NO-GO: Provide a refined 'goNoGoScore' (1-10) and 'goNoGoReason' based on this validation.
+- INDUSTRY INSIGHTS: Detail 3-5 typical challenges and 2-3 software adoption hurdles.
+- MVP FEATURES: Extract EXACTLY 3-5 critical MVP features that directly address the core pain point.
+- Ensure the output strictly matches the ideaGenerationSchema.`;
 
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
         model: "gemini-2.5-pro",
-        contents: "Generate 1 micro-SaaS idea based on the provided input.",
+        contents: `Generate a single, detailed micro-SaaS idea for this problem: ${askAiInput}. Focus on high-signal market validation and deep competitive analysis.`,
         config: {
           systemInstruction: sp,
           responseMimeType: "application/json",
@@ -496,7 +683,13 @@ Rules:
       const parsed = parseJSONResponse(response.text || "{}");
       setResult(parsed);
       setView("results");
-      checkAllDomains(parsed.saasIdeas);
+      if (parsed.saasIdeas?.length) {
+        checkAllDomains(parsed.saasIdeas);
+        parsed.saasIdeas.forEach((idea: any, idx: number) => {
+          runAIMarketValidation(idea, idx);
+          runDeepResearch(idea, idx);
+        });
+      }
     } catch (err: any) { 
       setError(formatGeminiError(err)); 
       setView("niche");
@@ -568,114 +761,246 @@ Format the output nicely in Markdown.`,
   };
 
   return (
-    <div className="min-h-screen bg-ms-bg text-ms-text font-ms">
+    <div className="flex min-h-screen bg-ms-bg text-ms-text font-ms overflow-hidden relative">
+      <OnboardingTour />
+
+      {/* Side Particle Effects */}
       <div className="fixed inset-0 pointer-events-none z-0 bg-[repeating-linear-gradient(0deg,transparent,transparent_3px,rgba(80,230,160,0.008)_3px,rgba(80,230,160,0.008)_4px)]" />
 
-      {emailModal && <EmailModal idea={emailModal.idea} kit={emailModal.kit} roi={emailModal.roi || {}} hasServerResend={serverConfig.hasResend || !!localResendKey} localResendKey={localResendKey} onClose={() => setEmailModal(null)} />}
-
-      {showCompareModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-ms-bg/95 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-ms-bg border border-ms-green w-full max-w-6xl max-h-[90vh] overflow-y-auto shadow-[0_0_40px_rgba(80,230,160,0.15)] flex flex-col relative mt-auto mb-auto">
-            <div className="sticky top-0 bg-ms-bg/95 backdrop-blur-md border-b border-ms-green/50 p-4 flex justify-between items-center z-[10]">
-              <div className="font-ms text-ms-green font-bold tracking-wider">◈ IDEA COMPARISON</div>
-              <button onClick={() => setShowCompareModal(false)} className="text-ms-green hover:text-ms-green-light border border-ms-green hover:bg-ms-green hover:text-ms-bg transition-colors cursor-pointer px-3 py-1 font-ms text-[11px] font-bold">✕ CLOSE</button>
+      {/* NEW COLLAPSIBLE SIDEBAR */}
+      <motion.aside 
+        initial={false}
+        animate={{ width: sidebarOpen ? 240 : 64 }}
+        className="flex flex-col border-r border-ms-border bg-ms-panel relative z-50 overflow-hidden shrink-0"
+      >
+        {/* Brand / Logo */}
+        <div className="h-16 flex items-center px-4 border-b border-ms-border shrink-0 overflow-hidden bg-ms-panel/50">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-ms-green flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(80,230,160,0.3)]">
+              <Zap className="w-6 h-6 text-ms-bg fill-ms-bg" strokeWidth={2.5} />
             </div>
-            
-            <div className="p-4 md:p-6">
-              <div className={`grid grid-cols-1 ${selectedForCompare.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-4 md:gap-6`}>
-                {selectedForCompare.map(idx => {
-                  const idea = result?.saasIdeas?.[idx];
-                  if (!idea) return null;
-                  const d = DEMAND_CFG[(idea.demandLevel || "").toLowerCase()] || DEMAND_CFG.medium;
-                  const c = COMP_CFG[(idea.competitionLevel || "").toLowerCase()] || COMP_CFG.medium;
-                  const roiRaw = typeof idea.roiEstimate === 'string' ? { assumptions: idea.roiEstimate } : (idea.roiEstimate || {});
-                  const roiPct = parseFloat(String(roiRaw.roiMonth1Pct ?? "0").replace(/[^0-9.\-]/g, "")) || 0;
-                  const roiColor = roiPct > 100 ? "#5ce6a0" : roiPct > 0 ? "#ffc857" : "#ff6b6b";
+            {sidebarOpen && (
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="font-bold text-ms-green whitespace-nowrap overflow-hidden tracking-tighter text-[15px]"
+              >
+                SIGNAL ENGINE
+              </motion.div>
+            )}
+          </div>
+        </div>
 
-                  return (
-                    <div key={idx} className="flex flex-col gap-4 border border-ms-border p-5 bg-ms-panel relative">
-                      {/* Name & Tagline */}
-                      <div>
-                        <div className="w-8 h-8 absolute top-0 -translate-y-1/2 left-4 bg-ms-green text-ms-bg flex items-center justify-center font-ms text-[11px] font-bold border border-ms-green">{String(idx + 1).padStart(2, "0")}</div>
-                        <div className="font-ms text-[16px] text-white font-bold mb-2 mt-2 leading-[1.3]">{idea.name}</div>
-                        <div className="font-ms text-[11px] text-ms-text-muted pb-4 border-b border-ms-border/50 leading-[1.5]">{idea.tagline}</div>
-                      </div>
-                      
-                      {/* Compare Stats */}
-                      <div className="grid grid-cols-2 gap-4 mt-1">
-                        <div>
-                          <div className="font-ms text-[10px] text-ms-text-muted mb-1.5 opacity-80">BORING SCORE</div>
-                          <BoringScore score={idea.boringScore} />
-                        </div>
-                        <div>
-                          <div className="font-ms text-[10px] text-ms-text-muted mb-1.5 opacity-80">ROI MO.1</div>
-                          <div className="font-ms text-[16px] font-bold leading-none mt-2" style={{ color: roiColor }}>{roiRaw.roiMonth1Pct || "N/A"}</div>
-                        </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4 mb-2">
-                        <div>
-                          <div className="font-ms text-[10px] text-ms-text-muted mb-1.5 opacity-80">DEMAND</div>
-                          <Tag label={d.label} color={d.color} bg={d.bg} />
-                        </div>
-                        <div>
-                          <div className="font-ms text-[10px] text-ms-text-muted mb-1.5 opacity-80">COMPETITION</div>
-                          <Tag label={c.label} color={c.color} />
-                        </div>
-                      </div>
+        {/* Sidebar Navigation */}
+        <div className="flex-1 py-6 overflow-y-auto overflow-x-hidden scrollbar-hide flex flex-col gap-1 px-3">
+          {/* Main Action */}
+          <SidebarItem 
+            icon={<Plus className="w-5 h-5" strokeWidth={2.5} />} 
+            label="New Niche" 
+            isOpen={sidebarOpen} 
+            active={view === "niche"}
+            onClick={resetAll}
+            color="#5ce6a0"
+          />
+          
+          <SidebarItem 
+            icon={<Database className="w-5 h-5" strokeWidth={2.5} />} 
+            label="Saved Kits" 
+            isOpen={sidebarOpen} 
+            active={view === "saved"}
+            onClick={() => { setView("saved"); loadSavedKits(); }}
+          />
 
-                      {/* MVP Features */}
-                      <div className="pt-4 border-t border-ms-border/50 flex-1">
-                        <div className="font-ms text-[10px] text-ms-green font-bold tracking-[1px] mb-3">KEY MVP FEATURES</div>
-                        <ul className="list-disc pl-4 m-0 font-ms text-[12px] text-ms-text-light flex flex-col gap-2">
-                          {Array.isArray(idea.keyFeatures) ? idea.keyFeatures.map((kf: any, j: number) => {
-                             const label = typeof kf === 'string' ? kf : kf?.name || kf?.feature || JSON.stringify(kf);
-                             return <li key={j} className="leading-[1.5] marker:text-ms-green/50">{label}</li>;
-                          }) : <span className="text-ms-text-muted italic">No key features identified.</span>}
-                        </ul>
+          <div className="h-4" />
+          <div className={`px-3 mb-2 font-bold text-[10px] text-ms-text-muted tracking-widest uppercase transition-opacity ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
+            Explore
+          </div>
+
+          <SidebarItem 
+            icon={<Info className="w-5 h-5" strokeWidth={2.5} />} 
+            label="About" 
+            isOpen={sidebarOpen} 
+            onClick={() => window.location.href = "/about"}
+          />
+
+          <div className="h-4" />
+          <div className={`px-3 mb-2 font-bold text-[10px] text-ms-text-muted tracking-widest uppercase transition-opacity ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
+            System
+          </div>
+
+          <SidebarItem 
+            icon={<User className="w-5 h-5" strokeWidth={2.5} />} 
+            label="Profile" 
+            isOpen={sidebarOpen} 
+            onClick={() => window.location.href = "/profile"}
+          />
+
+          {(role === 'admin' || role === 'owner') && (
+            <SidebarItem 
+              icon={<Settings className="w-5 h-5" strokeWidth={2.5} />} 
+              label="Settings" 
+              isOpen={sidebarOpen} 
+              onClick={() => window.location.href = "/settings"}
+            />
+          )}
+
+          <SidebarItem 
+            icon={<HelpCircle className="w-5 h-5" strokeWidth={2.5} />} 
+            label="Help" 
+            isOpen={sidebarOpen} 
+            onClick={startTour}
+          />
+
+          <SidebarItem 
+            icon={theme === "dark" ? <Sun className="w-5 h-5" strokeWidth={2.5} /> : <Moon className="w-5 h-5" strokeWidth={2.5} />} 
+            label={theme === "dark" ? "Light Mode" : "Dark Mode"} 
+            isOpen={sidebarOpen} 
+            onClick={toggleTheme}
+          />
+        </div>
+
+        {/* Status / Bottom Action */}
+        <div className="p-3 border-t border-ms-border">
+          <button 
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="w-full flex items-center justify-center h-10 hover:bg-ms-panel-light transition-colors text-ms-text-muted hover:text-ms-green rounded-md border border-transparent hover:border-ms-border"
+          >
+            {sidebarOpen ? <ChevronLeft className="w-5 h-5" strokeWidth={2.5} /> : <ChevronRight className="w-5 h-5" strokeWidth={2.5} />}
+          </button>
+        </div>
+      </motion.aside>
+
+      {/* MAIN CONTENT AREA */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto overflow-x-hidden relative">
+        {emailModal && <EmailModal idea={emailModal.idea} kit={emailModal.kit} roi={emailModal.roi || {}} hasServerResend={serverConfig.hasResend || !!localResendKey} localResendKey={localResendKey} onClose={() => setEmailModal(null)} />}
+
+        {showCompareModal && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-ms-bg/95 backdrop-blur-sm overflow-y-auto">
+            <div className="bg-ms-bg border border-ms-green w-full max-w-6xl max-h-[90vh] overflow-y-auto shadow-[0_0_40px_rgba(80,230,160,0.15)] flex flex-col relative mt-auto mb-auto">
+              <div className="sticky top-0 bg-ms-bg/95 backdrop-blur-md border-b border-ms-green/50 p-4 flex justify-between items-center z-[10]">
+                <div className="font-ms text-ms-green font-bold tracking-wider flex items-center gap-2">
+                  <LineChart className="w-4 h-4" />
+                  <span>◈ IDEA COMPARISON</span>
+                </div>
+                <button onClick={() => setShowCompareModal(false)} className="text-ms-green hover:text-ms-green-light border border-ms-green hover:bg-ms-green hover:text-ms-bg transition-colors cursor-pointer px-3 py-1 font-ms text-[11px] font-bold uppercase">✕ Close</button>
+              </div>
+              
+              <div className="p-4 md:p-6">
+                <div className={`grid grid-cols-1 ${selectedForCompare.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'} gap-4 md:gap-6`}>
+                  {selectedForCompare.map(idx => {
+                    const idea = result?.saasIdeas?.[idx];
+                    if (!idea) return null;
+                    const d = DEMAND_CFG[(idea.demandLevel || "").toLowerCase()] || DEMAND_CFG.medium;
+                    const c = COMP_CFG[(idea.competitionLevel || "").toLowerCase()] || COMP_CFG.medium;
+                    const roiRaw = typeof idea.roiEstimate === 'string' ? { assumptions: idea.roiEstimate } : (idea.roiEstimate || {});
+                    const roiPct = parseFloat(String(roiRaw.roiMonth1Pct ?? "0").replace(/[^0-9.\-]/g, "")) || 0;
+                    const roiColor = roiPct > 100 ? "#5ce6a0" : roiPct > 0 ? "#ffc857" : "#ff6b6b";
+
+                    return (
+                      <div key={idx} className="flex flex-col gap-4 border border-ms-border p-5 bg-ms-panel relative">
+                        {/* Name & Tagline */}
+                        <div>
+                          <div className="w-8 h-8 absolute top-0 -translate-y-1/2 left-4 bg-ms-green text-ms-bg flex items-center justify-center font-ms text-[11px] font-bold border border-ms-green">{String(idx + 1).padStart(2, "0")}</div>
+                          <div className="font-ms text-[16px] text-white font-bold mb-2 mt-2 leading-[1.3]">{idea.name}</div>
+                          <div className="font-ms text-[11px] text-ms-text-muted pb-4 border-b border-ms-border/50 leading-[1.5]">{idea.tagline}</div>
+                        </div>
+                        
+                        {/* Compare Stats */}
+                        <div className="grid grid-cols-2 gap-4 mt-1">
+                          <div>
+                            <div className="font-ms text-[10px] text-ms-text-muted mb-1.5 opacity-80 uppercase tracking-tighter">Boring Score</div>
+                            <BoringScore score={idea.boringScore} />
+                          </div>
+                          <div>
+                            <div className="font-ms text-[10px] text-ms-text-muted mb-1.5 opacity-80 uppercase tracking-tighter">ROI Mo.1</div>
+                            <div className="font-ms text-[16px] font-bold leading-none mt-2" style={{ color: roiColor }}>{roiRaw.roiMonth1Pct || "N/A"}</div>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4 mb-2">
+                          <div>
+                            <div className="font-ms text-[10px] text-ms-text-muted mb-1.5 opacity-80 uppercase tracking-tighter">Demand</div>
+                            <Tag label={d.label} color={d.color} bg={d.bg} />
+                          </div>
+                          <div>
+                            <div className="font-ms text-[10px] text-ms-text-muted mb-1.5 opacity-80 uppercase tracking-tighter">Competition</div>
+                            <Tag label={c.label} color={c.color} />
+                          </div>
+                        </div>
+
+                        {/* MVP Features */}
+                        <div className="pt-4 border-t border-ms-border/50 flex-1">
+                          <div className="font-ms text-[10px] text-ms-green font-bold tracking-[1px] mb-3">KEY MVP FEATURES</div>
+                          <ul className="list-disc pl-4 m-0 font-ms text-[12px] text-ms-text-light flex flex-col gap-2">
+                            {Array.isArray(idea.keyFeatures) ? idea.keyFeatures.map((kf: any, j: number) => {
+                               const label = typeof kf === 'string' ? kf : kf?.name || kf?.feature || JSON.stringify(kf);
+                               return <li key={j} className="leading-[1.5] marker:text-ms-green/50">{label}</li>;
+                            }) : <span className="text-ms-text-muted italic">No key features identified.</span>}
+                          </ul>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* HEADER */}
-      <div className="border-b border-ms-border px-4 md:px-7 py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 relative z-[2] bg-ms-panel">
-        <div>
-          <div className="font-ms text-[10px] text-ms-green tracking-[2px] mb-1 font-bold">◈ MICRO-SAAS SIGNAL ENGINE v5.1 · MAKER EDITION</div>
-          <div className="font-ms text-[18px] font-bold text-ms-white">NICHE → IDEA → LAUNCH KIT → SELL</div>
-        </div>
-        <div className="flex items-center gap-3.5 w-full md:w-auto justify-between md:justify-end">
-          <Link href="/about" className="font-ms bg-transparent border border-ms-border text-ms-text-muted hover:text-ms-green hover:border-ms-green px-3 py-2 text-[11px] cursor-pointer transition-colors">
-            ℹ️ ABOUT
-          </Link>
-          {(role === 'admin' || role === 'owner') && (
-            <Link href="/settings" className="font-ms bg-transparent border border-ms-border text-ms-text-muted hover:text-ms-green hover:border-ms-green px-3 py-2 text-[11px] cursor-pointer transition-colors">
-              ⚙️ SETTINGS
-            </Link>
-          )}
-          <Link href="/profile" className="font-ms bg-transparent border border-ms-border text-ms-text-muted hover:text-ms-green hover:border-ms-green px-3 py-2 text-[11px] cursor-pointer transition-colors">
-            👤 PROFILE
-          </Link>
-          <button suppressHydrationWarning onClick={toggleTheme} className="font-ms bg-transparent border border-ms-border text-ms-text-muted hover:text-ms-green hover:border-ms-green px-3 py-2 text-[11px] cursor-pointer transition-colors" title="Toggle Theme">
-            {theme === "dark" ? "☀️ LIGHT" : "🌙 DARK"}
-          </button>
-          {view === "results" && <button suppressHydrationWarning onClick={() => setView("niche")} className="font-ms bg-transparent border border-ms-border text-ms-text-muted hover:text-ms-green hover:border-ms-green px-3 py-2 text-[11px] cursor-pointer transition-colors">✏️ Refine Niche</button>}
-          {view === "results" && <button suppressHydrationWarning onClick={resetAll} className="font-ms bg-transparent border border-ms-border-light text-ms-green px-4 py-2 text-[11px] cursor-pointer">← New Niche</button>}
-          {view !== "saved" && <button suppressHydrationWarning onClick={() => { setView("saved"); loadSavedKits(); }} className="font-ms bg-transparent border border-ms-border-light text-ms-green px-4 py-2 text-[11px] cursor-pointer">🗄️ Saved Kits</button>}
-          {view === "saved" && <button suppressHydrationWarning onClick={resetAll} className="font-ms bg-transparent border border-ms-border-light text-ms-green px-4 py-2 text-[11px] cursor-pointer">← Back</button>}
-          <div className="text-right font-ms text-[10px]">
-            <div className={`font-bold ${loading ? "text-ms-yellow" : result ? "text-ms-green" : "text-ms-text-muted"}`}>{loading ? `⟳  ${loadingMsg}` : result ? "✓  COMPLETE" : "◌  READY"}</div>
-            <div className="text-ms-text-muted mt-[3px]">REDDIT + LLM + LOVABLE + GODADDY</div>
+        {/* HEADER */}
+        <header className="sticky top-0 z-40 border-b border-ms-border px-4 md:px-7 py-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-ms-panel/95 backdrop-blur-md">
+          <div className="flex-1 min-w-0">
+            <div className="font-ms text-[10px] text-ms-green tracking-[2px] mb-1 font-bold flex items-center gap-2">
+              <Zap className="w-3 h-3" />
+              <span>◈ MICRO-SAAS SIGNAL ENGINE v5.2</span>
+              {view !== "niche" && (
+                <span className="flex items-center gap-1 text-ms-text-muted ml-2 border-l border-ms-border pl-2">
+                  <FolderSearch className="w-3 h-3" />
+                  {niche.toUpperCase()}
+                </span>
+              )}
+            </div>
+            <div className="font-ms text-[16px] font-bold text-ms-white flex items-center gap-2 truncate">
+              {view === "niche" ? "NEW RESEARCH CAMPAIGN" : (result?.saasIdea || "ANALYZING MARKET GAPS")}
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="max-w-[980px] mx-auto p-4 md:p-7 relative z-[1]">
+          <div className="flex items-center gap-3.5 w-full md:w-auto justify-end">
+            <div className="flex flex-col items-end gap-1">
+              <div className={`font-ms text-[10px] font-bold flex items-center gap-1.5 transition-colors ${loading ? "text-ms-yellow" : result ? "text-ms-green" : "text-ms-text-muted"}`}>
+                {loading ? (
+                  <>
+                    <motion.span animate={{ rotate: 360 }} transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }} className="inline-block">⟳</motion.span>
+                    <span>{loadingMsg.toUpperCase()}</span>
+                  </>
+                ) : result ? (
+                  <>
+                    <ShieldCheck className="w-3 h-3" />
+                    <span>ANALYSIS COMPLETE</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-2 h-2 rounded-full bg-ms-green animate-pulse" />
+                    <span>ENGINE READY</span>
+                  </>
+                )}
+              </div>
+              <div className="font-ms text-[9px] text-ms-text-muted tracking-wider">AI-POWERED MARKET SIGNAL 05.16.26</div>
+            </div>
+
+            {view !== "niche" && (
+              <button 
+                onClick={() => setView("niche")}
+                className="flex items-center gap-2 bg-ms-green text-ms-bg px-3 py-1.5 font-bold font-ms text-[11px] hover:bg-ms-green-light transition-colors rounded-sm ml-2"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>REFINE</span>
+              </button>
+            )}
+          </div>
+        </header>
+
+        <div className="max-w-[780px] w-full mx-auto p-4 md:p-7 flex-1 relative z-[1]">
 
         {/* ══ NICHE VIEW ══ */}
         {view === "niche" && (
@@ -686,14 +1011,77 @@ Format the output nicely in Markdown.`,
               <p className="font-ms text-[11px] text-ms-text-muted leading-[1.5] m-0">Start with <span className="text-ms-yellow font-bold">🏭 Legacy B2B Industries</span> for the highest retention and lowest competition. Each idea includes a Lovable.dev starter prompt, Stripe + Resend setup, pricing, ROI, and .com availability check.</p>
             </div>
 
-            {/* Category tabs */}
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {Object.keys(NICHE_CATEGORIES).map(cat => (
-                <button suppressHydrationWarning key={cat} onClick={() => { setActiveCategory(cat); setSelectedNiche(""); }} 
-                  className={`font-ms text-[11px] cursor-pointer px-[13px] py-1.5 border ${activeCategory === cat ? (cat.includes("Legacy") ? "bg-ms-yellow-dark border-ms-yellow text-ms-yellow font-bold" : "bg-ms-panel-light border-ms-green text-ms-green font-bold") : "bg-transparent border-ms-border text-ms-text-muted font-normal"}`}>
-                  {cat}
-                </button>
-              ))}
+            {/* Personalization Context Section */}
+            <div className="mb-8 p-5 bg-ms-panel border-2 border-ms-green/20 relative overflow-hidden group">
+              <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity">
+                <User className="w-12 h-12 text-ms-green" />
+              </div>
+              <div className="font-ms text-[10px] text-ms-green font-bold tracking-[2px] mb-3 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-ms-green rounded-full animate-pulse" />
+                <span>STEP 1: YOUR SIGNAL (CONTEXT)</span>
+              </div>
+              <div className="flex flex-col gap-4">
+                <p className="font-ms text-[11px] text-ms-text-muted m-0 leading-relaxed">
+                  Enter your background, industry experience, or interests. Our AI will use this &quot;Signal&quot; to find underserved niches where you have a unique competitive advantage.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input 
+                    id="user-interests-input"
+                    value={userInterests} 
+                    onChange={e => setUserInterests(e.target.value)} 
+                    placeholder="e.g. 'I'm a former plumber', 'I love fitness', 'Expert in B2B logistics'..." 
+                    className="font-ms flex-1 bg-ms-bg border border-ms-border text-ms-text px-4 py-3 text-[13px] outline-none focus:border-ms-green focus:shadow-[0_0_15px_rgba(80,230,160,0.1)] transition-all"
+                    onKeyDown={e => e.key === 'Enter' && suggestNichesWithAI()}
+                  />
+                  <button 
+                    id="btn-suggest-niches"
+                    onClick={suggestNichesWithAI} 
+                    disabled={isSuggestingNiches || !userInterests.trim()}
+                    className="font-ms bg-ms-green text-ms-bg px-6 py-3 text-[13px] font-bold hover:bg-ms-green-light transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap min-w-[160px] shadow-lg active:scale-95"
+                  >
+                    {isSuggestingNiches ? (
+                      <div className="flex items-center justify-center gap-2">
+                        <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="inline-block font-mono">⟳</motion.span>
+                        <span>MAPPING...</span>
+                      </div>
+                    ) : (
+                      "FIND MY NICHES"
+                    )}
+                  </button>
+                </div>
+
+                {suggestedNiches.length > 0 && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex flex-wrap gap-2 mt-2 pt-4 border-t border-ms-border/50"
+                  >
+                    <div className="w-full font-ms text-[10px] text-ms-green/70 font-bold mb-1">CRAFTED FOR YOU:</div>
+                    {suggestedNiches.map(n => (
+                      <button 
+                        key={n} 
+                        onClick={() => { setCustomNiche(n); setSelectedNiche(""); }}
+                        className={`font-ms px-3 py-2 text-[11px] cursor-pointer border transition-all ${customNiche === n ? "bg-ms-green text-ms-bg border-ms-green shadow-[0_0_15px_rgba(80,230,160,0.2)]" : "bg-ms-bg border-ms-border text-ms-text-muted hover:border-ms-green hover:text-ms-green"}`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <div className="font-ms text-[10px] text-ms-green tracking-[2px] mb-3 font-bold">STEP 2: CONFIRM INDUSTRY</div>
+              {/* Category tabs */}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {Object.keys(NICHE_CATEGORIES).map(cat => (
+                  <button suppressHydrationWarning key={cat} onClick={() => { setActiveCategory(cat); setSelectedNiche(""); }} 
+                    className={`font-ms text-[11px] cursor-pointer px-[13px] py-1.5 border ${activeCategory === cat ? (cat.includes("Legacy") ? "bg-ms-yellow-dark border-ms-yellow text-ms-yellow font-bold" : "bg-ms-panel-light border-ms-green text-ms-green font-bold") : "bg-transparent border-ms-border text-ms-text-muted font-normal"}`}>
+                    {cat}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className={`p-4 mb-4.5 flex flex-wrap gap-2 border transition-all duration-180 ${activeCategory.includes("Legacy") ? "border-ms-yellow-dark" : "border-ms-border"} bg-ms-panel`}>
@@ -708,50 +1096,8 @@ Format the output nicely in Markdown.`,
 
             <div className="mb-4.5" suppressHydrationWarning>
               <SL>Or Type a Custom Niche</SL>
-              <input suppressHydrationWarning value={customNiche} onChange={e => { setCustomNiche(e.target.value); setSelectedNiche(""); }} placeholder="e.g. Taxidermists, Pool service companies, Farriers…" 
+              <input suppressHydrationWarning value={customNiche} id="custom-niche-input" onChange={e => { setCustomNiche(e.target.value); setSelectedNiche(""); }} placeholder="e.g. Taxidermists, Pool service companies, Farriers…" 
                 className={`font-ms w-full box-border bg-ms-panel border ${customNiche ? "border-ms-green" : "border-ms-border"} text-ms-text px-[15px] py-[13px] text-[13px] outline-none mb-3`} />
-              
-              <div className="bg-ms-panel border border-ms-border p-4">
-                <div className="font-ms text-[10px] text-ms-green font-bold tracking-[1px] mb-2 flex items-center gap-2">
-                  <span>✨ AI NICHE SUGGESTIONS</span>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-2 mb-3">
-                  <input 
-                    value={userInterests} 
-                    onChange={e => setUserInterests(e.target.value)} 
-                    placeholder="What are your interests or skills? (e.g., 'I like fitness and coding')" 
-                    className="font-ms flex-1 bg-ms-bg border border-ms-border text-ms-text px-3 py-2 text-[12px] outline-none focus:border-ms-green"
-                    onKeyDown={e => e.key === 'Enter' && suggestNichesWithAI()}
-                  />
-                  <button 
-                    onClick={suggestNichesWithAI} 
-                    disabled={isSuggestingNiches || !userInterests.trim()}
-                    className="font-ms bg-ms-green-dark border border-ms-green text-ms-green px-4 py-2 text-[12px] font-bold hover:bg-ms-green hover:text-ms-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                  >
-                    {isSuggestingNiches ? "SUGGESTING..." : "SUGGEST NICHES"}
-                  </button>
-                </div>
-                {isSuggestingNiches && (
-                  <div className="flex flex-wrap gap-2 animate-pulse mt-3">
-                    {[1, 2, 3, 4, 5].map(i => (
-                      <div key={i} className="h-8 w-32 bg-ms-border/50 rounded"></div>
-                    ))}
-                  </div>
-                )}
-                {!isSuggestingNiches && suggestedNiches.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    {suggestedNiches.map(n => (
-                      <button 
-                        key={n} 
-                        onClick={() => { setCustomNiche(n); setSelectedNiche(""); }}
-                        className={`font-ms px-3 py-1.5 text-[11px] cursor-pointer border ${customNiche === n ? "bg-ms-green-dark border-ms-green text-ms-green" : "bg-ms-bg border-ms-border text-ms-text-muted hover:border-ms-green hover:text-ms-green"}`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
 
             <div className="mb-4.5" suppressHydrationWarning>
@@ -779,7 +1125,14 @@ Format the output nicely in Markdown.`,
                       disabled={isAskingAi || !askAiInput.trim()}
                       className="font-ms bg-ms-green-dark border border-ms-green text-ms-green px-4 py-2 text-[12px] font-bold hover:bg-ms-green hover:text-ms-bg transition-colors disabled:opacity-50 disabled:cursor-not-allowed self-start"
                     >
-                      {isAskingAi ? "GENERATING IDEAS..." : "GENERATE IDEAS FROM PROBLEM"}
+                      {isAskingAi ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="inline-block">⟳</motion.span>
+                          <span>GENERATING IDEAS...</span>
+                        </div>
+                      ) : (
+                        "GENERATE IDEAS FROM PROBLEM"
+                      )}
                     </button>
                   )}
                 </div>
@@ -818,7 +1171,14 @@ Format the output nicely in Markdown.`,
               </div>
             ) : (
               <button suppressHydrationWarning onClick={runGenerate} disabled={loading || !niche} className={`font-ms border-none px-11 py-4 text-[13px] font-bold ${niche && !loading ? "cursor-pointer" : "cursor-default"} ${loading ? "bg-ms-panel-light text-ms-green" : niche ? "bg-ms-green text-ms-bg" : "bg-ms-panel-light text-ms-text-muted"}`}>
-                {loading ? `⟳  ${loadingMsg}` : "⚡  Generate Ideas + Launch Kits →"}
+                {loading ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="inline-block">⟳</motion.span>
+                    <span>{loadingMsg}</span>
+                  </div>
+                ) : (
+                  "⚡  Generate Ideas + Launch Kits →"
+                )}
               </button>
             )}
           </div>
@@ -878,7 +1238,7 @@ Format the output nicely in Markdown.`,
               <motion.div 
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="w-full bg-ms-panel border-2 border-ms-green p-8 md:p-12 shadow-[0_0_60px_rgba(92,230,160,0.3)] rounded-sm relative overflow-hidden"
+                className="w-full max-w-xl bg-ms-panel border-2 border-ms-green p-8 md:p-12 shadow-[0_0_60px_rgba(92,230,160,0.3)] rounded-sm relative overflow-hidden"
               >
                 {/* Animated tech grid background */}
                 <motion.div 
@@ -891,75 +1251,69 @@ Format the output nicely in Markdown.`,
                   transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                 />
                 
-                {/* Animated background glow */}
-                <motion.div 
-                  className="absolute inset-0 bg-gradient-to-r from-ms-green/0 via-ms-green/10 to-ms-green/0"
-                  animate={{ x: ['-100%', '100%'] }}
-                  transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                />
-                
-                <div className="flex items-center justify-between mb-8 relative z-10">
-                  <div className="flex items-center gap-4 text-ms-green font-ms text-lg md:text-xl font-bold">
-                    <motion.span 
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                      className="inline-block"
-                    >
-                      ⟳
-                    </motion.span>
-                    <div className="flex items-center">
-                      <AnimatePresence mode="wait">
-                        <motion.span
-                          key={loadingMsg}
-                          initial={{ opacity: 0, y: 5 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -5 }}
-                          className="tracking-wide"
-                        >
-                          {loadingMsg}
-                        </motion.span>
-                      </AnimatePresence>
+                <div className="flex flex-col gap-8 relative z-10">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4 text-ms-green font-ms text-lg md:text-xl font-bold">
                       <motion.span 
-                        animate={{ opacity: [1, 0] }} 
-                        transition={{ duration: 0.8, repeat: Infinity }}
-                        className="ml-1"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                        className="inline-block"
                       >
-                        _
+                        ⟳
                       </motion.span>
+                      <span className="tracking-[2px] uppercase">Processing AI Signal...</span>
+                    </div>
+                    <div className="text-ms-bg font-ms text-base md:text-lg font-bold bg-ms-green px-3 py-1.5 rounded-sm shadow-[0_0_15px_rgba(80,230,160,0.5)]">
+                      {loadingProgress}%
                     </div>
                   </div>
-                  <motion.div 
-                    key={loadingProgress}
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    className="text-ms-bg font-ms text-base md:text-lg font-bold bg-ms-green px-3 py-1.5 rounded-sm shadow-[0_0_15px_rgba(92,230,160,0.5)]"
-                  >
-                    {loadingProgress}%
-                  </motion.div>
-                </div>
-                <div className="h-4 w-full bg-ms-bg border border-ms-border/50 rounded-full overflow-hidden relative z-10 shadow-inner">
-                  <motion.div 
-                    className="h-full bg-ms-green relative overflow-hidden" 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${loadingProgress}%` }}
-                    transition={{ type: "spring", bounce: 0, duration: 0.8 }}
-                  >
-                    {/* Barber pole stripes */}
-                    <motion.div 
-                      className="absolute inset-0 opacity-30"
-                      style={{
-                        backgroundImage: 'linear-gradient(45deg, rgba(255,255,255,0.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.15) 75%, transparent 75%, transparent)',
-                        backgroundSize: '1rem 1rem'
-                      }}
-                      animate={{ backgroundPosition: ['0rem 0rem', '1rem 1rem'] }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                    />
-                    <motion.div 
-                      className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent"
-                      animate={{ x: ['-100%', '100%'] }}
-                      transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-                    />
-                  </motion.div>
+
+                  <div className="bg-ms-bg/60 backdrop-blur-md border border-ms-green/20 p-6 shadow-inner">
+                    <div className="flex flex-col gap-4">
+                      {/* Granular Progress Message */}
+                      <div className="flex items-center gap-3 border-b border-ms-border/50 pb-4 mb-2">
+                        <div className="w-1.5 h-1.5 bg-ms-green rounded-full animate-pulse shadow-[0_0_8px_#5ce6a0]" />
+                        <AnimatePresence mode="wait">
+                          <motion.div
+                            key={loadingMsg}
+                            initial={{ opacity: 0, x: 10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -10 }}
+                            className="text-ms-green font-bold text-[14px] tracking-tight uppercase"
+                          >
+                            {loadingMsg}
+                          </motion.div>
+                        </AnimatePresence>
+                      </div>
+
+                      <ProgressSteps 
+                        steps={LOADING_STEPS}
+                        isComplete={false}
+                        intervalMs={Math.max(800, 15000 / LOADING_STEPS.length)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between font-ms text-[10px] text-ms-text-muted tracking-widest uppercase font-bold">
+                      <span>Neural Mapping in Progress</span>
+                      <span>{loadingProgress}% Accuracy</span>
+                    </div>
+                    <div className="h-3 w-full bg-ms-bg border border-ms-border/50 rounded-sm overflow-hidden relative shadow-inner">
+                      <motion.div 
+                        className="h-full bg-ms-green relative overflow-hidden" 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${loadingProgress}%` }}
+                        transition={{ type: "spring", bounce: 0, duration: 0.5 }}
+                      >
+                        <motion.div 
+                          className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent"
+                          animate={{ x: ['-100%', '100%'] }}
+                          transition={{ duration: 0.8, repeat: Infinity, ease: "linear" }}
+                        />
+                      </motion.div>
+                    </div>
+                  </div>
                 </div>
               </motion.div>
             </div>
@@ -1246,11 +1600,32 @@ Format the output nicely in Markdown.`,
                               </button>
                               {expandedAbout === i && (
                                 <div className="mt-2.5 p-3.5 bg-ms-panel border border-ms-border">
-                                  <div className="mb-3">
+                                  <div className="mb-4 space-y-4">
                                     <SL color="#5ce6a0">Idea Genesis</SL>
                                     <div className="font-ms text-[12px] text-ms-text-light leading-[1.6]">{idea.genesis || "Genesis information is not available for this idea."}</div>
                                   </div>
-                                  <div className="mb-4">
+
+                                  {idea.industryInsights && (
+                                    <div className="mb-4 border-t border-ms-border pt-4">
+                                      <SL color="#ffc857">Industry Insights</SL>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                                        <div>
+                                          <div className="font-ms text-[10px] text-ms-text-muted font-bold tracking-[1px] mb-1">TYPICAL CHALLENGES</div>
+                                          <ul className="list-disc pl-4 m-0 font-ms text-[12px] text-ms-text-light flex flex-col gap-1.5">
+                                            {idea.industryInsights.typicalChallenges?.map((tc: string, j: number) => <li key={j} className="leading-relaxed">{tc}</li>)}
+                                          </ul>
+                                        </div>
+                                        <div>
+                                          <div className="font-ms text-[10px] text-ms-text-muted font-bold tracking-[1px] mb-1">ADOPTION HURDLES</div>
+                                          <ul className="list-disc pl-4 m-0 font-ms text-[12px] text-ms-text-light flex flex-col gap-1.5">
+                                            {idea.industryInsights.softwareAdoptionHurdles?.map((ah: string, j: number) => <li key={j} className="leading-relaxed">{ah}</li>)}
+                                          </ul>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="mb-4 border-t border-ms-border pt-4">
                                     <SL color="#ffc857">Market Analysis</SL>
                                     <div className="font-ms text-[12px] text-ms-text-light leading-[1.6]">{idea.marketAnalysis || "Market analysis is not available for this idea."}</div>
                                   </div>
@@ -1317,17 +1692,12 @@ Format the output nicely in Markdown.`,
                                     {!aiMarketValidation[i] && <button suppressHydrationWarning onClick={e => { e.stopPropagation(); runAIMarketValidation(idea, i); }} className="font-ms bg-ms-yellow-dark border border-ms-yellow text-ms-yellow px-5 py-2.5 text-[12px] font-bold cursor-pointer w-full hover:bg-ms-yellow hover:text-ms-bg transition-colors">🤖 AI-Powered Market Validation</button>}
                                     {aiMarketValidation[i]?.loading && (
                                       <div className="bg-ms-panel border border-ms-border p-5">
-                                        <GranularLoader 
-                                          messages={[
-                                            "Fetching recent forum discussions...",
-                                            "Analyzing social media sentiment...",
-                                            "Performing competitor analysis...",
-                                            "Calculating go/no-go score..."
-                                          ]} 
-                                          intervalMs={2500}
-                                          className="mb-4"
+                                        <ProgressSteps 
+                                          steps={RESEARCH_STEPS} 
+                                          isComplete={!!aiMarketValidation[i].data}
+                                          intervalMs={1800}
                                         />
-                                        <div className="space-y-3 animate-pulse">
+                                        <div className="mt-6 space-y-3 animate-pulse opacity-50">
                                           <div className="h-3 w-full bg-ms-border rounded"></div>
                                           <div className="h-3 w-5/6 bg-ms-border rounded"></div>
                                           <div className="h-3 w-4/6 bg-ms-border rounded"></div>
@@ -1353,17 +1723,12 @@ Format the output nicely in Markdown.`,
                                     {!deepResearch[i] && <button suppressHydrationWarning onClick={e => { e.stopPropagation(); runDeepResearch(idea, i); }} className="font-ms bg-transparent border border-ms-border text-ms-green px-5 py-2.5 text-[12px] font-bold cursor-pointer w-full hover:bg-ms-panel-light transition-colors">🔍 Deep Research (Find Real Complaints & Validation)</button>}
                                     {deepResearch[i]?.loading && (
                                       <div className="bg-ms-panel border border-ms-border p-5">
-                                        <GranularLoader 
-                                          messages={[
-                                            "Searching the web for complaints...",
-                                            "Analyzing user sentiment...",
-                                            "Extracting validation points...",
-                                            "Synthesizing research report..."
-                                          ]} 
-                                          intervalMs={2500}
-                                          className="mb-4"
+                                        <ProgressSteps 
+                                          steps={RESEARCH_STEPS} 
+                                          isComplete={!!deepResearch[i].data}
+                                          intervalMs={2200}
                                         />
-                                        <div className="space-y-3 animate-pulse">
+                                        <div className="mt-6 space-y-3 animate-pulse opacity-50">
                                           <div className="h-3 w-full bg-ms-border rounded"></div>
                                           <div className="h-3 w-5/6 bg-ms-border rounded"></div>
                                           <div className="h-3 w-4/6 bg-ms-border rounded"></div>
@@ -1547,18 +1912,18 @@ Format the output nicely in Markdown.`,
                               )}
                               {kit?.loading && (
                                 <div className="bg-ms-panel border border-ms-border p-5">
-                                  <GranularLoader 
-                                    messages={[
+                                  <ProgressSteps 
+                                    steps={[
                                       "Analyzing SaaS idea...",
                                       "Generating Lovable.dev prompt...",
                                       "Structuring database schema...",
                                       "Writing marketing copy...",
                                       "Finalizing launch kit..."
                                     ]} 
-                                    intervalMs={3000}
-                                    className="mb-4"
+                                    isComplete={!!kit?.data}
+                                    intervalMs={2500}
                                   />
-                                  <div className="space-y-4 animate-pulse">
+                                  <div className="mt-6 space-y-4 animate-pulse opacity-50">
                                     <div>
                                       <div className="h-3 w-48 bg-ms-green/20 rounded mb-2"></div>
                                       <div className="h-20 w-full bg-ms-border rounded"></div>
@@ -1643,7 +2008,14 @@ Format the output nicely in Markdown.`,
                 </button>
               ) : (
                 <button suppressHydrationWarning onClick={generateMoreIdeas} disabled={loadingMore} className={`font-ms bg-transparent border border-ms-green text-ms-green px-[22px] py-3 text-[12px] font-bold ${loadingMore ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-ms-green-dark"}`}>
-                  {loadingMore ? `⟳ ${loadingMsg}` : "◈ Generate More Ideas"}
+                  {loadingMore ? (
+                    <div className="flex items-center justify-center gap-2">
+                       <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="inline-block">⟳</motion.span>
+                       <span>{loadingMsg}</span>
+                    </div>
+                  ) : (
+                    "◈ Generate More Ideas"
+                  )}
                 </button>
               )}
               <button suppressHydrationWarning onClick={resetAll} className="font-ms bg-transparent border border-ms-green text-ms-green px-[22px] py-3 text-[12px] cursor-pointer font-bold">◈ New Niche</button>
@@ -1709,6 +2081,7 @@ Format the output nicely in Markdown.`,
       <div className="border-t border-ms-border px-4 md:px-7 py-3 flex justify-between flex-wrap gap-2 font-ms text-[10px] text-ms-text-muted relative z-[1]">
         <span>MICRO-SAAS SIGNAL ENGINE v5.1 · MAKER EDITION</span>
         <span>FIND MONEY WHERE NO ONE ELSE LOOKS</span>
+      </div>
       </div>
     </div>
   );
