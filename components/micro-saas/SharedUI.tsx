@@ -58,6 +58,25 @@ export const BoringScore = ({ score }: { score: number | string }) => {
   );
 };
 
+export const MetricGauge = ({ label, level, max = 3, color, valueText, tip }: { label: string, level: number, max?: number, color: string, valueText: string, tip?: string }) => {
+  const content = (
+    <div className="flex flex-col items-center justify-center min-w-[70px] cursor-help p-1.5 rounded hover:bg-ms-panel-light transition-colors group">
+      <div className="font-ms text-[9px] font-bold tracking-[1px] mb-1.5 text-ms-text-muted text-center uppercase">{label} {tip ? "ⓘ" : ""}</div>
+      <div className="flex gap-[3px]">
+        {Array.from({ length: max }).map((_, i) => (
+          <div 
+            key={i} 
+            className="w-[12px] h-[10px] transition-all duration-300 group-hover:scale-y-125" 
+            style={{ backgroundColor: i < level ? color : "#1e301e", borderRadius: 1 }} 
+          />
+        ))}
+      </div>
+      <div className="font-ms text-[9px] font-bold mt-1.5 text-center uppercase" style={{ color }}>{valueText}</div>
+    </div>
+  );
+  return tip ? <Tooltip text={tip}>{content}</Tooltip> : content;
+};
+
 export const DomainBadge = ({ status, domain, onCheck }: { status?: string, domain: string, onCheck?: () => void }) => {
   const isError = status?.startsWith("error:");
   const baseStatus = isError ? "error" : (status || "none");

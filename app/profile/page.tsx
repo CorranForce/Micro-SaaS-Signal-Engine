@@ -22,26 +22,48 @@ export default function ProfilePage() {
   const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
     if (user) {
       setFetching(true);
-      const docRef = doc(db, 'users', user.uid);
-      getDoc(docRef).then((docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setBio(data.bio || "");
-          setDisplayName(data.displayName || user.displayName || "");
-          setPhotoURL(data.photoURL || user.photoURL || "");
-        } else {
-          setDisplayName(user.displayName || "");
-          setPhotoURL(user.photoURL || "");
-        }
-      }).catch(err => {
-        console.error(err);
-        toast.error("Failed to load profile data");
-      }).finally(() => {
-        setFetching(false);
-      });
+      try {
+        const docRef = doc(db, 'users', user.uid);
+        
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Firestore timeout")), 3000)
+        );
+
+        Promise.race([getDoc(docRef), timeoutPromise])
+          .then((result: any) => {
+            if (!isMounted) return;
+            const docSnap = result;
+            if (docSnap && typeof docSnap.exists === 'function' && docSnap.exists()) {
+              const data = docSnap.data();
+              setBio(data.bio || "");
+              setDisplayName(data.displayName || user.displayName || "");
+              setPhotoURL(data.photoURL || user.photoURL || "");
+            } else {
+              setDisplayName(user.displayName || "");
+              setPhotoURL(user.photoURL || "");
+            }
+          })
+          .catch(err => {
+            if (!isMounted) return;
+            console.error("Profile fetch error:", err);
+            // Don't show toast for timeout if they don't have Firestore set up yet, just use defaults
+            setDisplayName(user.displayName || "");
+            setPhotoURL(user.photoURL || "");
+          })
+          .finally(() => {
+            if (isMounted) setFetching(false);
+          });
+      } catch (err) {
+        console.error("Profile synchronous fetch error:", err);
+        setDisplayName(user.displayName || "");
+        setPhotoURL(user.photoURL || "");
+        if (isMounted) setFetching(false);
+      }
     }
+    return () => { isMounted = false; };
   }, [user]);
 
   const handleGoogleLogin = async () => {
@@ -102,10 +124,14 @@ export default function ProfilePage() {
         photoURL,
         bio,
         role: userRole,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        lastActive: user.metadata.lastSignInTime || new Date().toISOString()
       };
 
-      await setDoc(docRef, profileData, { merge: true });
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Firestore save timeout. Your data may not have been saved remotely.")), 5000)
+      );
+      await Promise.race([setDoc(docRef, profileData, { merge: true }), timeoutPromise]);
 
       // Sync to Supabase if configured
       const localSupabaseUrl = localStorage.getItem("ms-supabase-url");
@@ -122,7 +148,8 @@ export default function ProfilePage() {
               photo_url: photoURL,
               bio,
               role: userRole,
-              updated_at: profileData.updatedAt
+              updated_at: profileData.updatedAt,
+              last_active: profileData.lastActive
             });
             if (error && error.message?.includes('Could not find the table')) {
               console.warn("Supabase warning: 'users' table not found. Profile saved locally but not synced.");

@@ -98,17 +98,18 @@ const UserRoleManager = ({ supabaseUrl, supabaseKey }: { supabaseUrl: string, su
               <th className="px-4 py-3">USER</th>
               <th className="px-4 py-3">EMAIL</th>
               <th className="px-4 py-3">ROLE</th>
+              <th className="px-4 py-3">LAST ACTIVE</th>
               <th className="px-4 py-3">ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-ms-text-muted">Loading users...</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-ms-text-muted">Loading users...</td>
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-ms-text-muted">No users found in Supabase.</td>
+                <td colSpan={5} className="px-4 py-8 text-center text-ms-text-muted">No users found in Supabase.</td>
               </tr>
             ) : (
               users.map(u => (
@@ -124,6 +125,9 @@ const UserRoleManager = ({ supabaseUrl, supabaseKey }: { supabaseUrl: string, su
                     }`}>
                       {u.role || 'viewer'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-ms-text-muted whitespace-nowrap">
+                    {u.last_active ? new Date(u.last_active).toLocaleString() : 'N/A'}
                   </td>
                   <td className="px-4 py-3">
                     <select 
@@ -157,6 +161,8 @@ export default function SettingsPage() {
   const [geminiKey, setGeminiKey] = useState("");
   const [testingGoDaddy, setTestingGoDaddy] = useState(false);
   const [testingGemini, setTestingGemini] = useState(false);
+  const [testingSupabase, setTestingSupabase] = useState(false);
+  const [autoSyncProfiles, setAutoSyncProfiles] = useState(false);
 
   useEffect(() => {
     // Load from local storage for now to maintain compatibility with existing components
@@ -166,6 +172,7 @@ export default function SettingsPage() {
     const localSupabaseKey = localStorage.getItem("ms-supabase-key") || "";
     const localResendKey = localStorage.getItem("ms-resend-key") || "";
     const localGeminiKey = localStorage.getItem("ms-gemini-key") || "";
+    const localAutoSync = localStorage.getItem("ms-auto-sync-supabase") === 'true';
     
     setGoDaddyKey(localGoDaddyKey);
     setGoDaddySecret(localGoDaddySecret);
@@ -173,6 +180,7 @@ export default function SettingsPage() {
     setSupabaseKey(localSupabaseKey);
     setResendKey(localResendKey);
     setGeminiKey(localGeminiKey);
+    setAutoSyncProfiles(localAutoSync);
 
     // Try to sync from Supabase
     if (localSupabaseUrl && localSupabaseKey) {
@@ -204,6 +212,10 @@ export default function SettingsPage() {
               if (data.gemini_key) {
                 setGeminiKey(data.gemini_key);
                 localStorage.setItem("ms-gemini-key", data.gemini_key);
+              }
+              if (data.auto_sync_profiles !== null && data.auto_sync_profiles !== undefined) {
+                setAutoSyncProfiles(data.auto_sync_profiles);
+                localStorage.setItem("ms-auto-sync-supabase", String(data.auto_sync_profiles));
               }
             }
           });
@@ -272,7 +284,8 @@ export default function SettingsPage() {
           const { error } = await supabase.from('app_settings').upsert({
             id: 'global',
             supabase_url: supabaseUrl,
-            supabase_key: supabaseKey
+            supabase_key: supabaseKey,
+            auto_sync_profiles: autoSyncProfiles
           });
           if (error && error.message?.includes('Could not find the table')) {
             console.warn("Supabase warning: 'app_settings' table not found. Credentials saved locally but not synced.");
@@ -286,6 +299,36 @@ export default function SettingsPage() {
     }
     
     toast.success("Supabase credentials saved locally and synced");
+  };
+
+  const handleSaveAutoSync = async (checked: boolean) => {
+    setAutoSyncProfiles(checked);
+    localStorage.setItem("ms-auto-sync-supabase", String(checked));
+    
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const { getSupabase } = await import('@/lib/supabase');
+        const supabase = getSupabase(supabaseUrl, supabaseKey);
+        if (supabase) {
+          const { error } = await supabase.from('app_settings').upsert({
+            id: 'global',
+            auto_sync_profiles: checked
+          });
+          if (error && error.message?.includes('Could not find the table')) {
+            console.warn("Supabase warning: 'app_settings' table not found.");
+          } else if (!error && checked) {
+            toast.success("Auto-Sync enabled and settings saved!");
+          } else if (!error && !checked) {
+            toast.success("Auto-Sync disabled and settings saved!");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to save auto-sync to Supabase", e);
+      }
+    } else {
+      if (checked) toast.success("Auto-Sync enabled locally!");
+      else toast.success("Auto-Sync disabled locally!");
+    }
   };
 
   const handleSaveResend = async () => {
@@ -371,7 +414,7 @@ export default function SettingsPage() {
       const { GoogleGenAI } = await import("@google/genai");
       const ai = new GoogleGenAI({ apiKey: geminiKey });
       await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-3.5-flash",
         contents: "Test connection. Reply 'OK' if successful."
       });
       toast.success("Connection successful!", { id: loadingToast });
@@ -400,6 +443,42 @@ export default function SettingsPage() {
       toast.error(`Error: ${e.message}`, { id: loadingToast });
     } finally {
       setTestingGoDaddy(false);
+    }
+  };
+
+  const testSupabase = async () => {
+    if (!supabaseUrl || !supabaseKey) {
+      toast.error("Please enter both URL and Anon Key first");
+      return;
+    }
+    setTestingSupabase(true);
+    const loadingToast = toast.loading("Testing Supabase connection...");
+    try {
+      const { getSupabase } = await import('@/lib/supabase');
+      const supabase = getSupabase(supabaseUrl, supabaseKey);
+      
+      if (!supabase) {
+        toast.error("Failed to initialize Supabase client. Please check URL and Key formats.", { id: loadingToast });
+        return;
+      }
+      
+      const { error } = await Promise.race([
+        supabase.from('app_settings').select('id').limit(1),
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Request timed out")), 10000))
+      ]);
+      if (error) {
+        if (error.code === 'PGRST116' || error.code === '42P01') {
+          toast.success("Connection works, but 'app_settings' table not found.", { id: loadingToast });
+        } else {
+          toast.success(`Connected, query returned: ${error.message}`, { id: loadingToast });
+        }
+      } else {
+        toast.success("Connection successful! 'app_settings' table found.", { id: loadingToast });
+      }
+    } catch (e: any) {
+      toast.error(`Connection failed: ${e.message}`, { id: loadingToast });
+    } finally {
+      setTestingSupabase(false);
     }
   };
 
@@ -553,7 +632,7 @@ export default function SettingsPage() {
             <h2 className="text-white text-lg font-bold">Supabase Integration</h2>
             <p className="text-ms-text-muted text-xs mt-1">Configure your Supabase project to save and retrieve generated Launch Kits. (Saved locally and synced to Supabase `app_settings` table)</p>
             <div className="mt-3 bg-ms-yellow-dark/20 border border-ms-yellow/30 p-3 rounded-sm">
-              <p className="text-ms-yellow text-[10px] font-bold">⚠️ IMPORTANT: To enable syncing, you must create a table named `app_settings` in your Supabase database with columns: `id` (text, primary key), `godaddy_key` (text), `godaddy_secret` (text), `supabase_url` (text), and `supabase_key` (text).</p>
+              <p className="text-ms-yellow text-[10px] font-bold">⚠️ IMPORTANT: To enable syncing, you must create a table named `app_settings` with columns: `id` (text, primary), `godaddy_key` (text), `godaddy_secret` (text), `supabase_url` (text), `supabase_key` (text), `auto_sync_profiles` (boolean).</p>
             </div>
           </div>
 
@@ -587,13 +666,29 @@ export default function SettingsPage() {
                 <p className="text-ms-yellow text-[10px] mt-1">Key should be a JWT starting with &quot;eyJ&quot;</p>
               )}
             </div>
-            <div className="pt-2">
+            <div className="pt-2 flex flex-wrap gap-3 items-center">
               <button 
                 onClick={handleSaveSupabase}
                 className="bg-ms-green-dark border border-ms-green text-ms-green px-4 py-2 text-xs font-bold hover:bg-ms-green hover:text-ms-bg transition-colors"
               >
                 SAVE CREDENTIALS
               </button>
+              <button 
+                onClick={testSupabase}
+                disabled={testingSupabase}
+                className="bg-transparent border border-ms-green text-ms-green px-4 py-2 text-xs font-bold hover:bg-ms-green-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {testingSupabase ? "TESTING..." : "TEST CONNECTION"}
+              </button>
+              <label className="flex items-center gap-2 cursor-pointer ml-2 md:ml-4">
+                <input 
+                  type="checkbox" 
+                  checked={autoSyncProfiles} 
+                  onChange={e => handleSaveAutoSync(e.target.checked)}
+                  className="accent-ms-green w-4 h-4"
+                />
+                <span className="text-xs text-ms-text font-bold uppercase tracking-wider">AUTO-SYNC PROFILES</span>
+              </label>
             </div>
           </div>
         </div>

@@ -22,19 +22,36 @@ import {
   Zap,
   LayoutDashboard,
   ShieldCheck,
-  LineChart
+  LineChart,
+  LogIn,
+  Users,
+  Briefcase,
+  Activity,
+  Rocket,
+  CheckSquare,
+  Globe,
+  ArrowRight,
+  Mail,
+  ExternalLink,
+  Clock,
+  ClipboardCheck
 } from "lucide-react";
 import { useMetadata } from "@/hooks/use-metadata";
 import { NICHE_CATEGORIES, DEMAND_CFG, COMP_CFG, CHURN_CFG, COMPLEX_CFG, toDomain, toDomainHyphen } from "@/lib/constants";
 import { ideaGenerationSchema, launchKitSchema, moreIdeasSchema } from "@/lib/gemini-schemas";
 import { Tooltip } from "./Tooltip";
-import { Tag, SL, BoringScore, DomainBadge, CopyButton } from "./SharedUI";
+import { Tag, SL, BoringScore, DomainBadge, CopyButton, MetricGauge } from "./SharedUI";
 import { LocalBusinessFinder } from "./LocalBusinessFinder";
 import { IdeaLandscapeChart } from "./IdeaLandscapeChart";
+import { IdeaRoiChart } from "./IdeaRoiChart";
+import { IdeaRadarChart } from "./IdeaRadarChart";
+import { OpportunityScoreTrendChart } from "./OpportunityScoreTrendChart";
 import { PreSellChecklist } from "./PreSellChecklist";
 import { EmailModal } from "./EmailModal";
 import { LaunchKitPanel } from "./LaunchKitPanel";
-import { checkDomainAction, sendEmailAction, checkConfigAction, testGoDaddyAction } from "@/app/actions";
+import { VoiceInput } from "./VoiceInput";
+
+import { checkDomainAction, sendEmailAction, checkConfigAction, testGoDaddyAction, searchLeadsWithGroundingAction } from "@/app/actions";
 import { getSupabase } from "@/lib/supabase";
 import toast from 'react-hot-toast';
 import Link from 'next/link';
@@ -51,6 +68,52 @@ const getGeminiKey = () => {
     if (localKey) return localKey;
   }
   return process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+};
+
+const cleanRepetitiveText = (text: any): string => {
+  if (typeof text !== 'string') return String(text || '');
+  
+  // Clean basic adjacent repetitions like "word word word"
+  let cleaned = text.replace(/\b(\w+)(?:\s+\1\b){3,}/gi, '$1');
+  
+  // Clean alternating repetitive phrases (e.g. "limit limits limit limits")
+  cleaned = cleaned.replace(/\b(\w+)\s+(\w+)(?:\s+\1\s+\2){3,}/gi, '$1 $2');
+  
+  // Specific defense against the "limit" looping phenomenon
+  const limitCount = (cleaned.match(/\blimit(s)?\b/gi) || []).length;
+  if (limitCount > 6) {
+    const patternIdx = cleaned.search(/\blimit(s)?\s+limits\b/i);
+    if (patternIdx !== -1) {
+      return cleaned.substring(0, patternIdx).trim() + "...";
+    }
+    const ruleIdx = cleaned.search(/\blimit\s+licenses\b/i);
+    if (ruleIdx !== -1) {
+      return cleaned.substring(0, ruleIdx).trim() + "...";
+    }
+    const generalIdx = cleaned.toLowerCase().indexOf("limit");
+    if (generalIdx !== -1) {
+      const words = cleaned.split(/\s+/);
+      let repetitionStartIdx = -1;
+      for (let i = 0; i < words.length; i++) {
+        const w = words[i].toLowerCase().replace(/[^a-z]/g, "");
+        if (w === "limit" || w === "limits") {
+          let countSeen = 0;
+          for (let j = 0; j <= i; j++) {
+            const wj = words[j].toLowerCase().replace(/[^a-z]/g, "");
+            if (wj === "limit" || wj === "limits") countSeen++;
+          }
+          if (countSeen > 2) {
+            repetitionStartIdx = i;
+            break;
+          }
+        }
+      }
+      if (repetitionStartIdx !== -1) {
+        return words.slice(0, repetitionStartIdx).join(" ") + "...";
+      }
+    }
+  }
+  return cleaned;
 };
 
 function SidebarItem({ icon, label, isOpen, active, onClick, color }: { icon: React.ReactNode, label: string, isOpen: boolean, active?: boolean, onClick: () => void, color?: string }) {
@@ -103,6 +166,68 @@ function SidebarItem({ icon, label, isOpen, active, onClick, color }: { icon: Re
   );
 }
 
+const ROI_CHART_MARGIN = { top: 5, right: 0, left: 0, bottom: 0 };
+const TOOLTIP_CONTENT_STYLE = { backgroundColor: '#060f06', border: '1px solid #142014', fontSize: '10px', fontFamily: 'monospace' };
+const TOOLTIP_LABEL_STYLE = { color: '#6a8a6a' };
+
+function RoiChart({ buildCostUSD, monthlyExpensesUSD, realisticMRRMonth1USD, roiColor, showGradient = false, identifier = "0" }: { buildCostUSD: string, monthlyExpensesUSD: string, realisticMRRMonth1USD: string, roiColor: string, showGradient?: boolean, identifier?: string }) {
+  const chartData = useMemo(() => {
+    const buildCost = parseFloat((buildCostUSD || "0").replace(/[^0-9.-]+/g,""));
+    const monthlyExp = parseFloat((monthlyExpensesUSD || "0").replace(/[^0-9.-]+/g,""));
+    const mrr = parseFloat((realisticMRRMonth1USD || "0").replace(/[^0-9.-]+/g,""));
+    if (showGradient) {
+      return [
+        { month: 'M0', profit: -buildCost },
+        { month: 'M1', profit: -buildCost + mrr - monthlyExp },
+        { month: 'M2', profit: -buildCost + 2*mrr - 2*monthlyExp },
+        { month: 'M3', profit: -buildCost + 3*mrr - 3*monthlyExp },
+        { month: 'M4', profit: -buildCost + 4*mrr - 4*monthlyExp },
+        { month: 'M5', profit: -buildCost + 5*mrr - 5*monthlyExp },
+        { month: 'M6', profit: -buildCost + 6*mrr - 6*monthlyExp },
+      ];
+    }
+    return [
+      { profit: -buildCost },
+      { profit: -buildCost + mrr - monthlyExp },
+      { profit: -buildCost + 2*mrr - 2*monthlyExp },
+      { profit: -buildCost + 3*mrr - 3*monthlyExp },
+    ];
+  }, [buildCostUSD, monthlyExpensesUSD, realisticMRRMonth1USD, showGradient]);
+
+  const tooltipItemStyle = useMemo(() => ({ color: roiColor }), [roiColor]);
+  const handleTooltipFormat = useCallback((value: any) => [`$${Number(value).toFixed(0)}`, 'Cumulative Profit'], []);
+
+  if (!showGradient) {
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={chartData}>
+          <Area type="monotone" dataKey="profit" stroke={roiColor} strokeWidth={1} fill={roiColor} fillOpacity={0.2} isAnimationActive={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={chartData} margin={ROI_CHART_MARGIN}>
+        <defs>
+          <linearGradient id={`colorProfit${identifier}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={roiColor} stopOpacity={0.3}/>
+            <stop offset="95%" stopColor={roiColor} stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <RechartsTooltip 
+          contentStyle={TOOLTIP_CONTENT_STYLE}
+          itemStyle={tooltipItemStyle}
+          formatter={handleTooltipFormat}
+          labelStyle={TOOLTIP_LABEL_STYLE}
+        />
+        <Area type="monotone" dataKey="profit" stroke={roiColor} strokeWidth={2} fillOpacity={1} fill={`url(#colorProfit${identifier})`} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
 export default function MicroSaaSFinder() {
   const { setMetadata, resetMetadata } = useMetadata();
   const { user, role } = useAuth();
@@ -147,6 +272,85 @@ export default function MicroSaaSFinder() {
   const [showCompareModal, setShowCompareModal] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Launch Wizard state declarations
+  const [activeWizardIdea, setActiveWizardIdea] = useState<any>(null);
+  const [activeWizardIndex, setActiveWizardIndex] = useState<number | null>(null);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [wizardLeadsCity, setWizardLeadsCity] = useState("Seattle, WA");
+  const [wizardLeadsQuery, setWizardLeadsQuery] = useState("");
+  const [wizardLeads, setWizardLeads] = useState<any[]>([]);
+  const [wizardLeadsSources, setWizardLeadsSources] = useState<any[]>([]);
+  const [searchingWizardLeads, setSearchingWizardLeads] = useState(false);
+  const [wizardLeadsError, setWizardLeadsError] = useState("");
+  const [wizardOutreachList, setWizardOutreachList] = useState<Set<string>>(new Set());
+
+  const startLaunchWizard = (idea: any, index: number) => {
+    setActiveWizardIdea(idea);
+    setActiveWizardIndex(index);
+    setWizardStep(1);
+    setWizardLeadsCity("Seattle, WA");
+    const defaultSearchQuery = idea.niche || idea.targetAudience || idea.name;
+    setWizardLeadsQuery(defaultSearchQuery);
+    setWizardLeads([]);
+    setWizardLeadsSources([]);
+    setWizardLeadsError("");
+    setWizardOutreachList(new Set());
+    
+    // Smooth scroll to top of wizard viewport
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleGroundingLeadSearch = async (query: string, city: string) => {
+    if (!query.trim() || !city.trim()) {
+      toast.error("Please enter both a service query and a city/region.");
+      return;
+    }
+    setSearchingWizardLeads(true);
+    setWizardLeadsError("");
+    setWizardLeads([]);
+    setWizardLeadsSources([]);
+    try {
+      const localGeminiKey = localStorage.getItem("ms-gemini-key") || undefined;
+      const res = await searchLeadsWithGroundingAction(query, city, localGeminiKey);
+      if (res.error) {
+        setWizardLeadsError(res.error);
+        toast.error(res.error);
+      } else {
+        setWizardLeads(res.leads || []);
+        setWizardLeadsSources(res.sources || []);
+        toast.success(`Found ${res.leads?.length || 0} real leads via Google Search grounding!`);
+      }
+    } catch (err: any) {
+      setWizardLeadsError(err.message || "An error occurred while searching leads.");
+      toast.error(err.message || "An error occurred while searching leads.");
+    } finally {
+      setSearchingWizardLeads(false);
+    }
+  };
+
+  const toggleWizardOutreach = (id: string) => {
+    setWizardOutreachList(prev => {
+      const n = new Set(prev);
+      if (n.has(id)) {
+        n.delete(id);
+      } else {
+        n.add(id);
+      }
+      return n;
+    });
+  };
+
+  const copyWizardOutreach = () => {
+    const sel = wizardLeads.filter((_, idx) => wizardOutreachList.has(idx.toString()));
+    if (!sel.length) {
+      toast.error("Please select at least one prospect to copy.");
+      return;
+    }
+    const txt = sel.map(b => [b.name, b.website, b.phone, b.address, b.description].filter(Boolean).join(" | ")).join("\n");
+    navigator.clipboard.writeText(txt);
+    toast.success(`Copied ${sel.length} contact(s) to clipboard!`);
+  };
 
   // Update dynamic metadata for SEO
   useEffect(() => {
@@ -274,6 +478,10 @@ export default function MicroSaaSFinder() {
 
   const formatGeminiError = (err: any) => {
     let msg = err.message || "Unknown error";
+    const lower = msg.toLowerCase();
+    if (lower.includes("429") || lower.includes("rate limit") || lower.includes("quota") || lower.includes("resource_exhausted") || lower.includes("exhausted")) {
+      return "API Rate Limit or Quota Exceeded: The AI service is receiving too many requests or your API key has run out of quota. Please check your billing/limits or try again in a few minutes.";
+    }
     if (msg.includes("API key not valid") || msg.includes("API_KEY_INVALID")) {
       return "Your Gemini API key is missing or invalid. Please configure it in the AI Studio Secrets panel (top right).";
     }
@@ -334,7 +542,7 @@ export default function MicroSaaSFinder() {
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.5-flash",
         contents: `User Background/Interests: "${userInterests}"
 
 Based on this background, suggest 8 highly specific, underserved B2B Micro-SaaS niches where this user could have an advantage or unique insight.
@@ -476,7 +684,7 @@ Rules:
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
+        model: "gemini-3.1-pro-preview",
         contents: `Name: ${idea.name}\nTagline: ${idea.tagline}\nDescription: ${idea.description}\nTarget: ${idea.targetAudience}\nPain: ${idea.painSolved}\nFeatures: ${idea.keyFeatures?.join(", ")}\nGTM: ${idea.gtmChannel || "cold outreach"}\nPrice: ${idea.pricingTiers?.[1]?.price || "$99/mo"}`,
         config: {
           systemInstruction: sp,
@@ -522,11 +730,11 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-pro-preview",
         contents: redditText ? `Niche: ${niche}\n\nContext:\n${redditText.slice(0, 6000)}` : `Niche: ${niche}`,
         config: {
-          systemInstruction: sp,
-          temperature: 0.7,
+          systemInstruction: sp + "\nEnsure all text fields are extremely concise, rich in signal, and contain absolutely no duplicate word chains, loops, or word repetition cycles.",
+          temperature: 0.5,
           maxOutputTokens: 8192,
           responseMimeType: "application/json",
           responseSchema: ideaGenerationSchema
@@ -537,11 +745,6 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
       setResult(parsed); setView("results"); setExpandedIdea(0);
       if (parsed.saasIdeas?.length) {
         checkAllDomains(parsed.saasIdeas);
-        // Automatically trigger validation and research for all ideas
-        parsed.saasIdeas.forEach((idea: any, idx: number) => {
-          runAIMarketValidation(idea, idx);
-          runDeepResearch(idea, idx);
-        });
       }
     } catch (err: any) { 
       setError(`Generation failed: ${formatGeminiError(err)}`); 
@@ -602,7 +805,7 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.1-pro-preview",
         contents: `Niche: ${niche}
 
 Research Context:
@@ -612,8 +815,8 @@ Existing ideas to avoid: ${existingIdeaNames}
 
 Generate 3 MORE completely different SaaS ideas for this niche that solve the pain points found in research.`,
         config: {
-          systemInstruction: sp,
-          temperature: 0.8,
+          systemInstruction: sp + "\nEnsure all text fields are extremely concise, rich in signal, and contain absolutely no duplicate word chains, loops, or word repetition cycles.",
+          temperature: 0.5,
           maxOutputTokens: 8192,
           responseMimeType: "application/json",
           responseSchema: moreIdeasSchema
@@ -622,17 +825,11 @@ Generate 3 MORE completely different SaaS ideas for this niche that solve the pa
       
       const parsed = parseJSONResponse(response.text || "{}");
       if (parsed.saasIdeas?.length) {
-        const startIndex = result?.saasIdeas?.length || 0;
         setResult((prev: any) => ({
           ...prev,
           saasIdeas: [...(prev?.saasIdeas || []), ...parsed.saasIdeas]
         }));
         checkAllDomains(parsed.saasIdeas);
-        // Automatically trigger validation and research for NEW ideas
-        parsed.saasIdeas.forEach((idea: any, idx: number) => {
-          runAIMarketValidation(idea, startIndex + idx);
-          runDeepResearch(idea, startIndex + idx);
-        });
       }
     } catch (err: any) { 
       toast.error(`Failed to generate more ideas: ${formatGeminiError(err)}`); 
@@ -671,7 +868,7 @@ Rules:
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
+        model: "gemini-3.1-pro-preview",
         contents: `Generate a single, detailed micro-SaaS idea for this problem: ${askAiInput}. Focus on high-signal market validation and deep competitive analysis.`,
         config: {
           systemInstruction: sp,
@@ -685,10 +882,6 @@ Rules:
       setView("results");
       if (parsed.saasIdeas?.length) {
         checkAllDomains(parsed.saasIdeas);
-        parsed.saasIdeas.forEach((idea: any, idx: number) => {
-          runAIMarketValidation(idea, idx);
-          runDeepResearch(idea, idx);
-        });
       }
     } catch (err: any) { 
       setError(formatGeminiError(err)); 
@@ -702,22 +895,25 @@ Rules:
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
+        model: "gemini-3.1-pro-preview",
         contents: `Perform a comprehensive market validation for the following B2B micro-SaaS idea:
 Name: ${idea.name}
 Description: ${idea.description}
 Pain Solved: ${idea.painSolved}
 Target Audience: ${idea.targetAudience}
 
-Use Google Search to find:
-1. Recent forum discussions (Reddit, specialized forums) related to this pain point.
-2. Social media sentiment and complaints.
-3. Competitor analysis (who is already doing this, what are their weaknesses).
+Use Google Search to find and incorporate actual customer data, discussions, and video feedback using Google Search, Reddit, and YouTube:
+1. Reddit threads and communities (site:reddit.com) discussing this pain point, manual workarounds, or software recommendations.
+2. YouTube videos, guides, software walkthroughs, or review channels (site:youtube.com) discussing this challenge, demonstrating existing bad solutions, or suggesting tools.
+3. Industry analysis and general Google Search results about the depth of this issue in the legacy line represented.
+4. Competitor analysis (who is already doing this, what are their weaknesses).
 
 Based on your findings, provide:
-- A summary of forum discussions and social media sentiment.
+- A summary of Google Search findings.
+- An analysis of Reddit community posts and discussions.
+- Insights from relevant YouTube videos, software walkthroughs, and tutorial comments.
 - A brief competitor analysis.
-- A 'go/no-go' score (1-10).
+- A 'go/no-go' validation score (1-10).
 - A brief reasoning for the score.
 
 Format the output nicely in Markdown.`,
@@ -737,8 +933,15 @@ Format the output nicely in Markdown.`,
     try {
       const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
       const response = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
-        contents: `Search the web for people in the "${niche}" industry complaining about this pain point: "${idea.painSolved}" or asking for an app that does "${idea.description}". Provide a concise summary of the search results, prioritizing and highlighting specific examples of user complaints and validation points found online. Do not output raw text, format it nicely.`,
+        model: "gemini-3.1-pro-preview",
+        contents: `Perform deep marketing research using Google Search, Reddit, and YouTube for people in the "${niche}" industry complaining about this pain point: "${idea.painSolved}" or asking for an app that does "${idea.description}".
+
+You MUST use the Search tool to query and discover source material from:
+- Reddit (site:reddit.com): Learn what users complain about, their frustration level, and their current manual hacks.
+- YouTube (site:youtube.com): Find software reviews, workflows, tutorial videos, or videos describing the industry process and users' friction.
+- General Web Search results: Identify the standard solutions, tools, or lack thereof.
+
+Provide a beautifully formatted Markdown summary of the search results, explicitly categorizing your insights into "Google Search Insights", "Reddit Feedback Logs", and "YouTube Review & Workflow Trends". Prioritize and highlight specific examples of actual customer complaints, software gaps, and validation signs found online. Do not output raw JSON or unformatted text.`,
         config: {
           tools: [{ googleSearch: {} }]
         }
@@ -758,6 +961,658 @@ Format the output nicely in Markdown.`,
       
       setDeepResearch(prev => ({ ...prev, [idx]: { loading: false, data: null, error: msg, chunks: [] } }));
     }
+  };
+
+  // Helper nested circular SVG-based spider/radar chart for visual indication
+  const IdeaRadarChart = ({ demandLevel, competitionLevel, churnRisk, buildComplexity }: { demandLevel: number; competitionLevel: number; churnRisk: number; buildComplexity: number }) => {
+    const dVal = Math.min(Math.max(demandLevel || 2, 1), 4);
+    const cVal = Math.min(Math.max(competitionLevel || 2, 1), 4);
+    const rVal = Math.min(Math.max(churnRisk || 2, 1), 4);
+    const bVal = Math.min(Math.max(5 - (buildComplexity || 2), 1), 4); // 5 - complexity gives "Ease of Build"
+
+    const pDemand = { x: 100, y: 100 - (dVal / 4) * 75 };
+    const pCompetition = { x: 100 + (cVal / 4) * 75, y: 100 };
+    const pChurn = { x: 100, y: 100 + (rVal / 4) * 75 };
+    const pEase = { x: 100 - (bVal / 4) * 75, y: 100 };
+
+    const polygonPoints = `${pDemand.x},${pDemand.y} ${pCompetition.x},${pCompetition.y} ${pChurn.x},${pChurn.y} ${pEase.x},${pEase.y}`;
+
+    return (
+      <div className="w-full flex flex-col items-center justify-center">
+        <svg viewBox="0 0 200 200" className="w-[180px] h-[180px]">
+          {[0.25, 0.5, 0.75, 1].map((scale, i) => (
+            <polygon
+              key={i}
+              points={`100,${100 - scale * 75} ${100 + scale * 75},100 100,${100 + scale * 75} ${100 - scale * 75},100`}
+              fill="none"
+              stroke="rgba(92, 230, 160, 0.12)"
+              strokeWidth="1"
+              strokeDasharray={i === 3 ? "0" : "2,2"}
+            />
+          ))}
+
+          <line x1="100" y1="20" x2="100" y2="180" stroke="rgba(92, 230, 160, 0.18)" strokeWidth="1" />
+          <line x1="20" y1="100" x2="180" y2="100" stroke="rgba(92, 230, 160, 0.18)" strokeWidth="1" />
+
+          <text x="100" y="14" textAnchor="middle" className="fill-ms-green font-ms font-bold text-[8px] tracking-wider">DEMAND</text>
+          <text x="188" y="103" textAnchor="start" className="fill-ms-green font-ms font-bold text-[8px] tracking-wider">COMP.</text>
+          <text x="100" y="196" textAnchor="middle" className="fill-ms-green font-ms font-bold text-[8px] tracking-wider">CHURN RISK</text>
+          <text x="12" y="103" textAnchor="end" className="fill-ms-green font-ms font-bold text-[8px] tracking-wider">BUILD EASE</text>
+
+          <polygon
+            points={polygonPoints}
+            fill="rgba(92, 230, 160, 0.28)"
+            stroke="#5ce6a0"
+            strokeWidth="1.5"
+            className="transition-all duration-500"
+          />
+
+          <circle cx={pDemand.x} cy={pDemand.y} r="3" className="fill-[#5ce6a0] stroke-ms-bg stroke-2" />
+          <circle cx={pCompetition.x} cy={pCompetition.y} r="3" className="fill-[#5ce6a0] stroke-ms-bg stroke-2" />
+          <circle cx={pChurn.x} cy={pChurn.y} r="3" className="fill-[#5ce6a0] stroke-ms-bg stroke-2" />
+          <circle cx={pEase.x} cy={pEase.y} r="3" className="fill-[#5ce6a0] stroke-ms-bg stroke-2" />
+        </svg>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-3.5 text-left w-full max-w-[200px] text-[10px] font-ms text-ms-text-muted">
+          <div className="flex items-center gap-1"><span className="text-ms-green">◈</span> Demand: <strong className="text-white ml-auto">{dVal}/4</strong></div>
+          <div className="flex items-center gap-1"><span className="text-ms-green">◈</span> Comp: <strong className="text-white ml-auto">{cVal}/4</strong></div>
+          <div className="flex items-center gap-1"><span className="text-ms-green">◈</span> Churn: <strong className="text-white ml-auto">{rVal}/4</strong></div>
+          <div className="flex items-center gap-1"><span className="text-ms-green">◈</span> Ease: <strong className="text-white ml-auto">{bVal}/4</strong></div>
+        </div>
+      </div>
+    );
+  };
+
+  // Immersive interactive Step-by-Step Launch Wizard
+  const renderLaunchWizard = () => {
+    if (!activeWizardIdea) return null;
+    const ideaIdx = activeWizardIndex ?? 0;
+    const kit = launchKits[ideaIdx];
+
+    return (
+      <div className="w-full">
+        {/* Header Brief */}
+        <div className="mb-6 bg-ms-panel border border-ms-border p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <span className="font-ms text-[10px] text-ms-green tracking-[3px] font-bold uppercase">🚀 DIRECTIVE LAUNCH WIZARD CAMPAIGN</span>
+            <h2 className="font-ms text-[20px] m-0 text-white font-bold leading-tight flex items-center gap-2 mt-1">
+              {activeWizardIdea.name}
+              <span className="font-ms text-[10px] text-ms-green bg-ms-green-dark border border-ms-green px-2 py-0.5 mt-0.5 font-normal">
+                {activeWizardIdea.niche || "Boring B2B SaaS"}
+              </span>
+            </h2>
+            <p className="font-ms text-[11px] text-ms-text-muted leading-[1.5] m-0 mt-1">{activeWizardIdea.tagline}</p>
+          </div>
+          <button 
+            suppressHydrationWarning
+            onClick={() => { setActiveWizardIdea(null); setActiveWizardIndex(null); }}
+            className="font-ms bg-transparent border border-ms-border hover:border-ms-red text-ms-text-muted hover:text-ms-red px-4 py-2 text-[11px] font-bold cursor-pointer transition-all shrink-0 uppercase"
+          >
+            ✕ Exit Wizard
+          </button>
+        </div>
+
+        {/* PROGRESS BAR & STEP SWITCHER */}
+        <div className="mb-8 bg-ms-panel border border-ms-border p-5 rounded-md relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-[3px] bg-ms-border">
+            <div 
+              className="h-full bg-ms-green transition-all duration-300" 
+              style={{ width: `${((wizardStep - 1) / 3) * 100}%` }}
+            />
+          </div>
+          
+          <div className="flex flex-col md:flex-row justify-between items-center gap-6 relative z-10">
+            {[
+              { step: 1, title: "Market Vision", icon: <Briefcase className="w-4 h-4" />, desc: "Briefing & Roadmap" },
+              { step: 2, title: "Prospect Targeting", icon: <Users className="w-4 h-4" />, desc: "Google Grounding Leads" },
+              { step: 3, title: "Signal Validation", icon: <Activity className="w-4 h-4" />, desc: "AI Feedback & Signals" },
+              { step: 4, title: "Launch Enablement", icon: <Rocket className="w-4 h-4" />, desc: "Kit & Checklists" }
+            ].map((s) => {
+              const isActive = wizardStep === s.step;
+              const isCompleted = wizardStep > s.step;
+              return (
+                <div 
+                  key={s.step} 
+                  onClick={() => setWizardStep(s.step)}
+                  className="flex items-center gap-3 cursor-pointer group flex-1 w-full md:w-auto"
+                >
+                  <div className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all shrink-0 ${
+                    isActive ? "bg-ms-green border-ms-green text-ms-bg font-bold scale-110 shadow-[0_0_10px_rgba(92,230,160,0.3)]" :
+                    isCompleted ? "bg-ms-green-dark border-ms-green text-ms-green" :
+                    "bg-ms-bg border-ms-border text-ms-text-muted group-hover:border-ms-text-muted"
+                  }`}>
+                    {isCompleted ? "✓" : s.icon}
+                  </div>
+                  <div>
+                    <div className={`font-ms text-[12px] font-bold ${
+                      isActive ? "text-ms-green" :
+                      isCompleted ? "text-white" :
+                      "text-ms-text-muted group-hover:text-ms-text-light"
+                    }`}>
+                      Step {s.step}: {s.title}
+                    </div>
+                    <div className="font-ms text-[9px] text-ms-text-muted max-w-[150px] leading-tight truncate">{s.desc}</div>
+                  </div>
+                  {s.step < 4 && <div className="hidden md:block flex-1 border-t border-ms-border ml-4 border-dashed group-hover:border-ms-border-light" />}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* STEPS CONTENT */}
+        <div className="min-h-[400px]">
+          {/* STEP 1: MARKET VISION */}
+          {wizardStep === 1 && (
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+              <div className="xl:col-span-2 space-y-5">
+                <div className="bg-ms-panel border border-ms-border p-5">
+                  <SL color="#5ce6a0">Opportunity Overview</SL>
+                  <p className="font-ms text-[13px] text-slate-200 leading-[1.7] my-3.5">{activeWizardIdea.description}</p>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5 pt-4 border-t border-ms-border/50">
+                    <div>
+                      <SL color="#ffc857">Pain Point Solved ⚡</SL>
+                      <p className="font-ms text-[12px] text-ms-text-light leading-[1.6] mt-2">{activeWizardIdea.painSolved}</p>
+                    </div>
+                    <div>
+                      <SL>Target Customer Persona 🎯</SL>
+                      <p className="font-ms text-[12px] text-ms-text-light leading-[1.6] mt-2">{cleanRepetitiveText(activeWizardIdea.targetAudience)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-ms-panel border border-ms-border p-5">
+                  <SL color="#ffc857">Industry Context & Genesis Idea</SL>
+                  <p className="font-ms text-[12px] text-ms-text-muted italic my-3 leading-relaxed">&ldquo;{activeWizardIdea.genesis || "Every boring business segment has specific manual bottlenecks. Overcoming spreadsheet risk with built-for-purpose workflows is your unfair advantage."}&rdquo;</p>
+                  
+                  {activeWizardIdea.industryInsights ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4.5 pt-4 border-t border-ms-border/50">
+                      <div>
+                        <div className="font-ms text-[10px] text-ms-text-muted font-bold tracking-[1px] mb-2 uppercase">Typical Workarounds & Challenge List</div>
+                        <ul className="list-disc pl-4 m-0 font-ms text-[12px] text-ms-text-light flex flex-col gap-1.5 leading-relaxed">
+                          {activeWizardIdea.industryInsights.typicalChallenges?.map((tc: string, k: number) => <li key={k}>{tc}</li>)}
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="font-ms text-[10px] text-ms-text-muted font-bold tracking-[1px] mb-2 uppercase">Software Adoption Hurdles</div>
+                        <ul className="list-disc pl-4 m-0 font-ms text-[12px] text-ms-text-light flex flex-col gap-1.5 leading-relaxed">
+                          {activeWizardIdea.industryInsights.softwareAdoptionHurdles?.map((ah: string, k: number) => <li key={k}>{ah}</li>)}
+                        </ul>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 font-ms text-ms-text-muted text-[11px] italic">No detailed industry insights available. Proceed to validation steps.</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div className="bg-ms-panel border border-ms-border p-5 flex flex-col min-h-[300px]">
+                  <div className="p-2 border-b border-ms-border font-ms text-[10px] font-bold text-ms-green uppercase tracking-widest text-center">
+                    Opportunity Radar
+                  </div>
+                  <div className="flex-1 min-h-[200px] mt-4 flex items-center justify-center">
+                    <IdeaRadarChart 
+                      demandLevel={activeWizardIdea.demandLevel} 
+                      competitionLevel={activeWizardIdea.competitionLevel}
+                      churnRisk={activeWizardIdea.churnRisk}
+                      buildComplexity={activeWizardIdea.buildComplexity}
+                    />
+                  </div>
+                </div>
+
+                <div className="bg-ms-panel border border-ms-border p-5">
+                  <SL color="#ff6b6b">Competitive Advantage</SL>
+                  <p className="font-ms text-[12px] text-ms-text-light leading-[1.6] mt-2 mb-4">
+                    Replacing manual work with customizable, direct-value visual workflows.
+                  </p>
+                  
+                  {activeWizardIdea.competitorAnalysis ? (
+                    <div className="space-y-4 pt-3 border-t border-ms-border/50">
+                      <div>
+                        <div className="font-ms text-[10px] text-ms-text-muted font-bold uppercase tracking-[1.5px] mb-1">Competitors Analyzed</div>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {activeWizardIdea.competitorAnalysis.majorCompetitors?.map((compName: string, k: number) => (
+                            <span key={k} className="font-ms bg-transparent border border-ms-border text-white text-[10px] px-2 py-0.5">{compName}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="font-ms text-[10px] text-ms-green font-bold uppercase tracking-[1.5px] mb-1">Your USP</div>
+                        <p className="font-ms text-[11px] text-ms-green leading-[1.5] m-0">{activeWizardIdea.competitorAnalysis.uniqueSellingProposition}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="font-ms text-[11px] text-ms-text-muted italic">Competitor analysis details unavailable.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 2: PROSPECT TARGETING (GOOGLE SEARCH GROUNDING LEAD SOURCING) */}
+          {wizardStep === 2 && (
+            <div className="space-y-5 animate-fade-in">
+              <div className="bg-ms-panel border border-ms-border p-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-[22px] pb-4 border-b border-ms-border">
+                  <div>
+                    <h3 className="font-ms text-[15px] text-white font-bold m-0 flex items-center gap-2">
+                      <span>🔍 Live Lead Grounding Sourcing Engine</span>
+                      <span className="font-ms text-[9.5px] text-ms-yellow bg-ms-yellow/12 border border-ms-yellow/30 px-2.5 py-0.5 font-normal tracking-wide">
+                        GOOGLE GROUNDING POWERED
+                      </span>
+                    </h3>
+                    <p className="font-ms text-[11px] text-ms-text-muted m-0 mt-1">
+                      Lookup real-world companies and service providers in specific local cities/regions using real-time search grounding indexers.
+                    </p>
+                  </div>
+                  {wizardLeads.length > 0 && wizardOutreachList.size > 0 && (
+                    <button suppressHydrationWarning onClick={copyWizardOutreach} className="font-ms text-[11px] font-bold bg-ms-green text-[#060f06] px-4 py-2 hover:bg-ms-green-light cursor-pointer rounded-sm shrink-0 flex items-center gap-1.5">
+                      <ClipboardCheck className="w-3.5 h-3.5" />
+                      <span>Copy {wizardOutreachList.size} Selected Prospects</span>
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4.5 mb-5">
+                  <div>
+                    <label className="block font-ms text-[10px] text-ms-text-muted font-bold tracking-[1px] mb-1.5 uppercase">Professional Service / Group</label>
+                    <input 
+                      type="text"
+                      value={wizardLeadsQuery}
+                      onChange={(e) => setWizardLeadsQuery(e.target.value)}
+                      placeholder="e.g. Dentists, Real Estate Agencies, CPA Firms"
+                      className="w-full bg-ms-bg border border-ms-border px-3.5 py-2 text-white font-ms text-[12px] rounded focus:outline-none focus:border-ms-green"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-ms text-[10px] text-ms-text-muted font-bold tracking-[1px] mb-1.5 uppercase">Target City / State</label>
+                    <input 
+                      type="text"
+                      value={wizardLeadsCity}
+                      onChange={(e) => setWizardLeadsCity(e.target.value)}
+                      placeholder="e.g. Chicago, IL or New York, NY"
+                      className="w-full bg-ms-bg border border-ms-border px-3.5 py-2 text-white font-ms text-[12px] rounded focus:outline-none focus:border-ms-green"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <button
+                      disabled={searchingWizardLeads}
+                      onClick={() => handleGroundingLeadSearch(wizardLeadsQuery, wizardLeadsCity)}
+                      className="w-full font-ms text-[12px] font-bold bg-ms-green hover:bg-ms-green-light text-ms-bg px-5 py-3 shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {searchingWizardLeads ? (
+                        <>
+                          <motion.span animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="inline-block">⟳</motion.span>
+                          <span>Grounding Live Sourcing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-4 h-4" />
+                          <span>Search Verified Local Leads</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {!wizardLeads.length && !searchingWizardLeads && !wizardLeadsError && (
+                  <div className="border border-ms-border border-dashed p-10 text-center rounded">
+                    <Users className="w-8 h-8 text-ms-text-muted mx-auto mb-3 opacity-60" />
+                    <div className="font-ms text-[13px] text-white font-bold mb-1">Index Real Prospects Near You</div>
+                    <p className="font-ms text-[11px] text-ms-text-muted max-w-md mx-auto m-0 leading-relaxed">
+                      SaaS founders need actual customers to launch. Search local businesses above using our live indexer to extract curated buyer contact lists instantly.
+                    </p>
+                  </div>
+                )}
+
+                {searchingWizardLeads && (
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3 mt-4 animate-pulse">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                      <div key={i} className="p-4 border bg-ms-panel border-ms-border rounded">
+                        <div className="h-4 w-3/4 bg-ms-border rounded mb-3"></div>
+                        <div className="h-3 w-1/4 bg-ms-green/20 rounded mb-2"></div>
+                        <div className="h-3 w-full bg-ms-border/50 rounded mb-1.5"></div>
+                        <div className="h-3 w-1/2 bg-ms-border/50 rounded"></div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {wizardLeadsError && (
+                  <div className="bg-ms-red-dark border border-ms-red-dark text-ms-red p-4 font-ms text-[12px] rounded flex justify-between items-center mt-3">
+                    <span>✕ Error: {wizardLeadsError}</span>
+                    <button suppressHydrationWarning onClick={() => handleGroundingLeadSearch(wizardLeadsQuery, wizardLeadsCity)} className="font-ms bg-transparent border border-ms-red text-ms-red px-3 py-1.5 text-[11px] font-bold cursor-pointer transition-all hover:bg-ms-red/10">Retry Sourcing</button>
+                  </div>
+                )}
+
+                {wizardLeads.length > 0 && (
+                  <div>
+                    <div className="font-ms text-[10px] text-ms-green font-bold tracking-[1.5px] mb-3.5 mt-2 uppercase flex items-center justify-between">
+                      <span>Verified Live Leads ({wizardLeads.length} Found) · CLICK + TO SELECT prospects for copy</span>
+                      {wizardOutreachList.size > 0 && <span className="text-ms-yellow font-extrabold">{wizardOutreachList.size} Selected</span>}
+                    </div>
+                    
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3.5 mb-5">
+                      {wizardLeads.map((b, idx) => {
+                        const isAdded = wizardOutreachList.has(idx.toString());
+                        const websiteUrl = b.website || "";
+                        const safeUrl = websiteUrl.startsWith("http") ? websiteUrl : `https://${websiteUrl}`;
+                        return (
+                          <div key={idx} className={`p-4 border transition-all rounded ${isAdded ? "bg-ms-green-dark/15 border-ms-green shadow-[0_0_8px_rgba(92,230,160,0.1)]" : "bg-ms-bg border-ms-border hover:border-ms-border-light"}`}>
+                            <div className="flex justify-between items-start mb-2 gap-2">
+                              <div className="font-ms text-[13px] text-white font-bold leading-snug truncate flex-1" title={b.name}>{b.name}</div>
+                              <button 
+                                suppressHydrationWarning 
+                                onClick={() => toggleWizardOutreach(idx.toString())} 
+                                className={`font-ms text-[11px] font-bold shrink-0 w-6 h-6 rounded-sm cursor-pointer border flex items-center justify-center transition-all ${
+                                  isAdded ? "bg-ms-green border-ms-green text-[#060f06]" : "bg-transparent border-ms-border hover:border-ms-text-muted text-[#4a6a4a]"
+                                }`}
+                              >
+                                {isAdded ? "✓" : "+"}
+                              </button>
+                            </div>
+
+                            <div className="space-y-1 block mt-1.5 pt-2 border-t border-ms-border/40">
+                              {b.website && (
+                                <div className="font-ms text-[10px] text-ms-green overflow-hidden text-ellipsis whitespace-nowrap flex items-center gap-1">
+                                  <Globe className="w-3 h-3 text-ms-green/70" />
+                                  <a href={safeUrl} target="_blank" rel="noreferrer" referrerPolicy="no-referrer" className="text-ms-green font-medium hover:underline">
+                                    {websiteUrl.replace(/^https?:\/\//, "")}
+                                  </a>
+                                </div>
+                              )}
+                              {b.phone && <div className="font-ms text-[10px] text-ms-text-light flex items-center gap-1"><span>📞</span> <span>{b.phone}</span></div>}
+                              {b.address && <div className="font-ms text-[10px] text-ms-text-muted truncate flex items-center gap-1"><span>📍</span> <span title={b.address}>{b.address}</span></div>}
+                            </div>
+                            <p className="font-ms text-[11px] text-ms-text-muted mt-2 border-t border-ms-border/20 pt-2 leading-relaxed italic m-0">
+                              &ldquo;{b.description}&rdquo;
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {wizardLeadsSources.length > 0 && (
+                      <div className="mt-5 pt-3 border-t border-ms-border bg-ms-bg/40 p-4 rounded-sm">
+                        <div className="font-ms text-[10px] text-ms-text-muted font-bold tracking-[1.5px] uppercase flex items-center gap-1.5 mb-2.5">
+                          <ExternalLink className="w-3.5 h-3.5 text-ms-green" />
+                          <span>Google Grounding Search Sourced Web Results</span>
+                        </div>
+                        <ul className="m-0 p-0 pl-4 space-y-1.5">
+                          {wizardLeadsSources.map((src, sIdx) => {
+                            return (
+                              <li key={sIdx} className="font-ms text-[11px] leading-relaxed">
+                                <a href={src.uri} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" className="text-ms-green hover:underline">
+                                  {src.title || src.uri} 
+                                </a>
+                                <span className="text-ms-text-muted font-mono text-[9px] ml-1.5">({src.uri})</span>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3: SIGNAL VALIDATION */}
+          {wizardStep === 3 && (
+            <div className="space-y-5 animate-fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="bg-ms-panel border border-ms-border p-5">
+                  <SL color="#ff9999">Web Community Reddit Complaint Signals 📣</SL>
+                  <p className="font-ms text-[11px] text-slate-300 leading-relaxed my-3">{activeWizardIdea.redditSignal}</p>
+                  
+                  <div className="bg-ms-bg/60 border border-ms-border p-3.5 rounded mt-4">
+                    <div className="font-ms text-[10px] text-ms-yellow font-bold uppercase tracking-[1.5px] mb-2">Ideal Adoption / Signal Score</div>
+                    {activeWizardIdea.marketValidation?.goNoGoScore ? (
+                      <div className="flex justify-between items-center bg-ms-yellow-dark/10 p-3 rounded border border-ms-yellow-dark/20">
+                        <span className="font-ms text-[12px] text-ms-yellow leading-[1.5] max-w-sm">{activeWizardIdea.marketValidation.goNoGoReason}</span>
+                        <span className="font-ms text-[32px] font-bold text-ms-yellow tracking-tighter shrink-0 ml-4">{activeWizardIdea.marketValidation.goNoGoScore}/10</span>
+                      </div>
+                    ) : (
+                      <span className="text-ms-text-muted font-ms text-[11px] italic">Validation score details blank.</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-ms-panel border border-ms-border p-5 flex flex-col justify-between">
+                  <div>
+                    <SL color="#5ce6a0">Deep AI Audits & Live Web Signal Checks</SL>
+                    <p className="font-ms text-[12px] text-ms-text-light leading-[1.6] my-3">
+                      Run deep-dive AI validation reports to check for software hurdles, outline a detailed buyer psychology brief, and probe live complaint loops to bulletproof your SaaS idea.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5 mt-4">
+                    <div className="flex gap-2.5">
+                      <button 
+                        onClick={() => runAIMarketValidation(activeWizardIdea, ideaIdx)}
+                        className="flex-1 font-ms cursor-pointer text-[11px] font-bold bg-ms-yellow text-[#060f06] hover:bg-ms-yellow-light p-3 border-none rounded-sm uppercase tracking-wider transition-colors"
+                      >
+                        🤖 Run Deep AI Validation
+                      </button>
+                      <button 
+                        onClick={() => runDeepResearch(activeWizardIdea, ideaIdx)}
+                        className="flex-1 font-ms cursor-pointer text-[12px] font-bold bg-ms-green text-ms-bg hover:bg-ms-green-light p-3 border-none rounded-sm uppercase tracking-wider transition-colors"
+                      >
+                        🔍 Sift Live Web Signals
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Show Validation/Research logs inside the active wizard panel */}
+              {(aiMarketValidation[ideaIdx] || deepResearch[ideaIdx]) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+                  {aiMarketValidation[ideaIdx] && (
+                    <div className="bg-ms-panel border border-ms-border p-5 rounded-md">
+                      <div className="font-ms text-[11px] text-ms-yellow font-bold tracking-[1.5px] uppercase mb-3 border-b border-ms-border pb-2.5">🤖 AI Validation Brief</div>
+                      {aiMarketValidation[ideaIdx].loading && (
+                        <ProgressSteps 
+                          steps={RESEARCH_STEPS} 
+                          isComplete={!!aiMarketValidation[ideaIdx].data}
+                          intervalMs={1800}
+                        />
+                      )}
+                      {aiMarketValidation[ideaIdx].error && (
+                        <div className="text-ms-red font-ms text-[12px]">✕ Error: {aiMarketValidation[ideaIdx].error}</div>
+                      )}
+                      {aiMarketValidation[ideaIdx].data && (
+                        <div className="font-ms text-[12.5px] text-ms-text leading-[1.6] prose prose-invert prose-sm max-h-[350px] overflow-y-auto pr-2 scrollbar-hide">
+                          <ReactMarkdown>{aiMarketValidation[ideaIdx].data}</ReactMarkdown>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {deepResearch[ideaIdx] && (
+                    <div className="bg-ms-panel border border-ms-border p-5 rounded-md">
+                      <div className="font-ms text-[11px] text-ms-green font-bold tracking-[1.5px] uppercase mb-3 border-b border-ms-border pb-2.5">🔍 Live Target Sifting Log</div>
+                      {deepResearch[ideaIdx].loading && (
+                        <ProgressSteps 
+                          steps={RESEARCH_STEPS} 
+                          isComplete={!!deepResearch[ideaIdx].data}
+                          intervalMs={2200}
+                        />
+                      )}
+                      {deepResearch[ideaIdx].error && (
+                        <div className="text-ms-red font-ms text-[12px]">✕ Error: {deepResearch[ideaIdx].error}</div>
+                      )}
+                      {deepResearch[ideaIdx].data && (
+                        <div className="font-ms text-[12.5px] text-ms-text leading-[1.6] prose prose-invert prose-sm max-h-[350px] overflow-y-auto pr-2 scrollbar-hide">
+                          <ReactMarkdown>{deepResearch[ideaIdx].data}</ReactMarkdown>
+                          {deepResearch[ideaIdx].chunks?.length > 0 && (
+                            <div className="mt-4 pt-3 border-t border-ms-border">
+                              <div className="font-ms text-[10px] text-ms-text-muted font-bold uppercase tracking-[1px] mb-1.5">Indexed Sift Resources</div>
+                              <ul className="pl-4 m-0 p-0 text-[11px] space-y-1">
+                                {deepResearch[ideaIdx].chunks.map((ch: any, cIdx: number) => (
+                                  <li key={cIdx}>
+                                    <a href={ch.web?.uri} target="_blank" rel="noopener noreferrer" className="text-ms-green hover:underline">
+                                      {ch.web?.title || ch.web?.uri}
+                                    </a>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STEP 4: OPERATIONAL LAUNCH KIT */}
+          {wizardStep === 4 && (
+            <div className="space-y-5 animate-fade-in">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-ms-panel border border-ms-border p-5">
+                <div>
+                  <SL color="#5ce6a0">Setup Channels & Registrar checks</SL>
+                  <p className="font-ms text-[12px] text-ms-text-light leading-[1.6] my-2">
+                    Check if standard brand domain variations are ready for registry on the GoDaddy domain network.
+                  </p>
+                  
+                  <div className="p-3.5 border bg-ms-bg border-ms-border rounded mt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="font-ms text-[13px] text-white font-bold">{toDomain(activeWizardIdea.name)}</span>
+                      <button
+                        onClick={() => checkDomain(toDomain(activeWizardIdea.name))}
+                        className="bg-transparent border border-ms-green text-ms-green px-2.5 py-1 hover:bg-ms-green/10 cursor-pointer font-ms text-[10px]"
+                      >
+                        <span>Verify Domain</span>
+                      </button>
+                    </div>
+                    {domainStatus[toDomain(activeWizardIdea.name)] && (
+                      <div className={`mt-2.5 font-ms text-[10px] font-bold px-2 py-1 rounded ${
+                        domainStatus[toDomain(activeWizardIdea.name)] === "available" ? "bg-ms-green text-ms-bg" : "bg-ms-red/20 text-ms-red"
+                      }`}>
+                        {domainStatus[toDomain(activeWizardIdea.name)].toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <SL color="#ffc857">Subscription Pricing & MRR</SL>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mt-3">
+                    {activeWizardIdea.pricingTiers?.map((tier: any, tIdx: number) => {
+                      const isStr = typeof tier === "string";
+                      const title = isStr ? tier : tier.name;
+                      const price = isStr ? "$49/mo" : tier.price;
+                      return (
+                        <div key={tIdx} className="bg-ms-bg border border-ms-border p-3 text-center rounded">
+                          <div className="font-ms text-[11px] text-white font-bold truncate">{title}</div>
+                          <div className="font-ms text-[14px] font-bold text-ms-green mt-1">{price}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Core Features */}
+              <div className="bg-ms-panel border border-ms-border p-5">
+                <SL>Minimum Viable Product Architecture</SL>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {activeWizardIdea.keyFeatures?.map((f: any, fIdx: number) => {
+                    const label = typeof f === "string" ? f : f?.name || f?.feature;
+                    return (
+                      <span key={fIdx} className="font-ms bg-transparent border border-ms-green text-ms-green px-3 py-1 text-[11px] rounded-sm">
+                        ⚙ {label}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Fulfillment Kit */}
+              <div className="border border-ms-border bg-ms-panel p-5 rounded-md">
+                <div className="flex justify-between items-center flex-wrap gap-2 mb-3">
+                  <SL color="#5ce6a0">🚀 SYSTEM FULFILLMENT LAUNCH KIT & PLAN</SL>
+                  {kit?.data && (
+                    <button 
+                      onClick={() => saveKitToSupabase(activeWizardIdea, kit.data, activeWizardIdea.roiEstimate)}
+                      className="font-ms bg-transparent border border-ms-border text-ms-green px-2.5 py-1 text-[10px] cursor-pointer"
+                    >
+                      🗄️ Save to Supabase
+                    </button>
+                  )}
+                </div>
+                
+                {!kit && (
+                  <button 
+                    onClick={() => generateLaunchKit(activeWizardIdea, ideaIdx)}
+                    className="w-full font-ms cursor-pointer text-[13px] font-bold bg-ms-green text-ms-bg hover:bg-ms-green-light p-4 shadow-md rounded border-none transition-all flex items-center justify-center gap-2"
+                  >
+                    <Rocket className="w-5 h-5 animate-pulse" />
+                    <span>GENERATE SAAS LAUNCH KIT (PROMPTS + SCRIPTS + PLAN)</span>
+                  </button>
+                )}
+
+                {kit?.loading && (
+                  <ProgressSteps 
+                    steps={[
+                      "Structuring specification blueprints...",
+                      "Creating developer copy-paste prompt blocks with visual aids...",
+                      "Drafting conversion cold outreach sequences...",
+                      "Formulating launch checklist loops..."
+                    ]} 
+                    isComplete={!!kit?.data}
+                    intervalMs={2200}
+                  />
+                )}
+
+                {kit?.error && (
+                  <div className="text-ms-red font-ms text-[12px] p-2 bg-ms-red-dark/15 rounded border border-ms-red-dark/30">
+                    ✕ Kit Setup Error: {kit.error}
+                  </div>
+                )}
+
+                {kit?.data && (
+                  <div className="mt-4 pt-4 border-t border-ms-border">
+                    <LaunchKitPanel 
+                      kit={kit.data} 
+                      idea={activeWizardIdea} 
+                      roi={activeWizardIdea.roiEstimate} 
+                      onEmailClick={() => setEmailModal({ idea: activeWizardIdea, kit: kit.data, roi: activeWizardIdea.roiEstimate })} 
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* CONTROLS */}
+        <div className="mt-8 pt-5 border-t border-ms-border flex justify-between">
+          <button
+            disabled={wizardStep === 1}
+            onClick={() => setWizardStep(prev => prev - 1)}
+            className="font-ms bg-transparent border border-ms-border text-ms-text-muted hover:text-white px-5 py-2.5 text-[12px] font-bold cursor-pointer rounded disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Previous Step</span>
+          </button>
+          
+          <button
+            disabled={wizardStep === 4}
+            onClick={() => setWizardStep(prev => prev + 1)}
+            className="font-ms bg-ms-green text-ms-bg hover:bg-ms-green-light px-6 py-2.5 text-[12px] font-bold cursor-pointer rounded disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all shadow-md"
+          >
+            <span>Next Step</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -827,13 +1682,6 @@ Format the output nicely in Markdown.`,
           <div className={`px-3 mb-2 font-bold text-[10px] text-ms-text-muted tracking-widest uppercase transition-opacity ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
             System
           </div>
-
-          <SidebarItem 
-            icon={<User className="w-5 h-5" strokeWidth={2.5} />} 
-            label="Profile" 
-            isOpen={sidebarOpen} 
-            onClick={() => window.location.href = "/profile"}
-          />
 
           {(role === 'admin' || role === 'owner') && (
             <SidebarItem 
@@ -991,18 +1839,43 @@ Format the output nicely in Markdown.`,
             {view !== "niche" && (
               <button 
                 onClick={() => setView("niche")}
-                className="flex items-center gap-2 bg-ms-green text-ms-bg px-3 py-1.5 font-bold font-ms text-[11px] hover:bg-ms-green-light transition-colors rounded-sm ml-2"
+                className="flex items-center gap-2 bg-ms-green text-ms-bg px-3 py-1.5 font-bold font-ms text-[11px] hover:bg-ms-green-light transition-colors rounded-sm ml-2 cursor-pointer"
               >
                 <Search className="w-3.5 h-3.5" />
                 <span>REFINE</span>
               </button>
             )}
+
+            {/* Top Nav Menu Login Button */}
+            {!user ? (
+              <button 
+                onClick={() => window.location.href = "/profile"}
+                className="cursor-pointer font-ms text-[11px] font-bold text-ms-green border border-ms-green/45 hover:border-ms-green bg-ms-green/10 hover:bg-ms-green/18 px-3 py-1.5 rounded transition-all flex items-center gap-1.5 shrink-0 ml-1.5"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>LOG IN</span>
+              </button>
+            ) : (
+              <button 
+                onClick={() => window.location.href = "/profile"}
+                className="cursor-pointer font-ms text-[11px] font-bold text-slate-300 hover:text-white bg-ms-panel border border-ms-border hover:border-ms-green px-3 py-1.5 rounded transition-all flex items-center gap-1.5 shrink-0 ml-1.5"
+              >
+                {user.photoURL ? (
+                  <img src={user.photoURL} alt={user.displayName || "User"} className="w-4 h-4 rounded-full border border-ms-green" referrerPolicy="no-referrer" />
+                ) : (
+                  <User className="w-3.5 h-3.5 text-ms-green" />
+                )}
+                <span className="max-w-[120px] truncate">{(user.displayName || user.email || "PROFILE").toUpperCase()}</span>
+              </button>
+            )}
           </div>
         </header>
 
-        <div className="max-w-[780px] w-full mx-auto p-4 md:p-7 flex-1 relative z-[1]">
+        <div className="w-full max-w-full p-4 md:p-7 flex-1 relative z-[1]">
 
-        {/* ══ NICHE VIEW ══ */}
+        {activeWizardIdea ? renderLaunchWizard() : (
+          <>
+            {/* ══ NICHE VIEW ══ */}
         {view === "niche" && (
           <div>
             <div className="mb-[22px]">
@@ -1107,12 +1980,17 @@ Format the output nicely in Markdown.`,
                   <span>🤖 ASK AI</span>
                 </div>
                 <div className="flex flex-col gap-3">
-                  <textarea 
-                    value={askAiInput} 
-                    onChange={e => setAskAiInput(e.target.value)} 
-                    placeholder="Describe a problem you've noticed, a specific industry, or a workflow that needs fixing... (e.g., 'Dentists struggle to manage their online reviews and follow up with patients who leave bad ones.')" 
-                    className="font-ms w-full bg-ms-bg border border-ms-border text-ms-text px-3 py-2 text-[12px] outline-none focus:border-ms-green resize-y min-h-[80px]"
-                  />
+                  <div className="relative">
+                    <textarea 
+                      value={askAiInput} 
+                      onChange={e => setAskAiInput(e.target.value)} 
+                      placeholder="Describe a problem you've noticed, a specific industry, or a workflow that needs fixing... (e.g., 'Dentists struggle to manage their online reviews and follow up with patients who leave bad ones.')" 
+                      className="font-ms w-full bg-ms-bg border border-ms-border text-ms-text px-3 py-2 pr-[40px] text-[12px] outline-none focus:border-ms-green resize-y min-h-[80px]"
+                    />
+                    <div className="absolute right-2 bottom-2">
+                       <VoiceInput currentText={askAiInput} onTranscriptChange={setAskAiInput} />
+                    </div>
+                  </div>
                   {!user ? (
                     <div className="text-ms-text-muted text-[11px] mt-2">
                       <Link href="/profile" className="text-ms-green hover:underline">Log in</Link> to generate ideas.
@@ -1364,7 +2242,7 @@ Format the output nicely in Markdown.`,
                             <Tag label={`${(a.willingnessToPay || "").toUpperCase()} $`} color={pc} tip={`These customers are ${a.willingnessToPay === "high" ? "very likely to pay and have budgets for software" : "moderately open to paying for software"}.`} />
                           </div>
                         </div>
-                        <div className="font-ms text-[11px] text-ms-text-light leading-[1.6]">{a.description}</div>
+                        <div className="font-ms text-[11px] text-ms-text-light leading-[1.6]">{cleanRepetitiveText(a.description)}</div>
                       </div>;
                     })}
                   </div>
@@ -1396,6 +2274,12 @@ Format the output nicely in Markdown.`,
 
             {/* Idea Landscape Chart */}
             <IdeaLandscapeChart ideas={result.saasIdeas} />
+
+            {/* Idea Financial & ROI Chart */}
+            <IdeaRoiChart ideas={result.saasIdeas} />
+
+            {/* Market Opportunity Score Trends Area Chart */}
+            <OpportunityScoreTrendChart ideas={result.saasIdeas} />
 
             {/* Local Business Finder */}
             <LocalBusinessFinder niche={niche} />
@@ -1434,6 +2318,10 @@ Format the output nicely in Markdown.`,
                     const churn = CHURN_CFG[(idea.churnRisk || "").toLowerCase()] || CHURN_CFG.medium;
                     const bldC = COMPLEX_CFG[(idea.buildComplexity || "").toLowerCase()] || COMPLEX_CFG.moderate;
                     const intC = COMPLEX_CFG[(idea.integrationComplexity || "").toLowerCase()] || COMPLEX_CFG.moderate;
+                    const demandLvl = (idea.demandLevel || "").toLowerCase() === 'high' ? 3 : (idea.demandLevel || "").toLowerCase() === 'medium' ? 2 : 1;
+                    const compLvl = compLevel === 'high' ? 3 : compLevel === 'medium' ? 2 : 1;
+                    const churnStr = (idea.churnRisk || "").toLowerCase();
+                    const churnLvl = churnStr === 'high' ? 4 : churnStr === 'medium' ? 3 : churnStr === 'low' ? 2 : 1;
                     const isOpen = expandedIdea === i;
                     const roiRaw = typeof idea.roiEstimate === 'string' ? { assumptions: idea.roiEstimate } : (idea.roiEstimate || {});
                     const roi = {
@@ -1470,13 +2358,31 @@ Format the output nicely in Markdown.`,
                                 <div className="font-ms text-[11px] text-ms-text-muted truncate">{idea.tagline}</div>
                               </div>
                             </div>
-                            <div className={`font-ms text-[13px] shrink-0 ml-2 ${isOpen ? "text-ms-green" : "text-ms-text-muted"}`}>{isOpen ? "▲" : "▼"}</div>
+                            <div className="flex items-center gap-2.5 shrink-0 ml-2">
+                              <button
+                                suppressHydrationWarning
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startLaunchWizard(idea, i);
+                                }}
+                                className="cursor-pointer font-ms text-[10px] font-bold bg-ms-green/12 text-ms-green hover:bg-ms-green hover:text-ms-bg border border-ms-green/40 px-2.5 py-1.5 flex items-center gap-1 transition-all rounded"
+                                title="Start Step-by-Step Launch Wizard"
+                              >
+                                <Rocket className="w-3 h-3 animate-pulse" />
+                                <span>LAUNCH WIZARD</span>
+                              </button>
+                              <div className={`font-ms text-[13px] ${isOpen ? "text-ms-green" : "text-ms-text-muted"}`}>
+                                {isOpen ? "▲" : "▼"}
+                              </div>
+                            </div>
                           </div>
                           
-                          <div className="flex flex-col gap-2 w-full pt-2">
+                          <div className="flex flex-col gap-3 w-full pt-3 border-t border-ms-border mt-1">
                             <div className="flex flex-wrap items-center gap-2.5 w-full">
                               <BoringScore score={idea.boringScore} />
-                              <Tag label={churn.label} color={churn.color} bg={churn.bg} tip={churn.tip} />
+                              <MetricGauge label="Demand" level={demandLvl} color={d.color} valueText={d.label.replace(/ DEMAND|DEMAND/, '')} tip={d.tip} />
+                              <MetricGauge label="Competition" level={compLvl} color={c.color} valueText={c.label.replace(/ COMP/, '')} tip={c.tip} />
+                              <MetricGauge label="Churn Risk" level={churnLvl} max={4} color={churn.color} valueText={churn.label.replace(/ CHURN|🔒 |⚠ /g, '')} tip={churn.tip} />
                               <DomainBadge status={domStat} domain={domain} onCheck={() => checkDomain(domain)} />
                               {roi.roiMonth1Pct && (
                                 <div className="ml-auto">
@@ -1486,21 +2392,13 @@ Format the output nicely in Markdown.`,
                                       <div className="font-ms text-[13px] font-bold" style={{ color: roiColor }}>{roi.roiMonth1Pct}</div>
                                       <div className="w-full h-[14px] mt-1">
                                         {(() => {
-                                          const buildCost = parseFloat((roi.buildCostUSD || "0").replace(/[^0-9.-]+/g,""));
-                                          const monthlyExp = parseFloat((roi.monthlyExpensesUSD || "0").replace(/[^0-9.-]+/g,""));
-                                          const mrr = parseFloat((roi.realisticMRRMonth1USD || "0").replace(/[^0-9.-]+/g,""));
-                                          const chartData = [
-                                            { profit: -buildCost },
-                                            { profit: -buildCost + mrr - monthlyExp },
-                                            { profit: -buildCost + 2*mrr - 2*monthlyExp },
-                                            { profit: -buildCost + 3*mrr - 3*monthlyExp },
-                                          ];
                                           return (
-                                            <ResponsiveContainer width="100%" height="100%">
-                                              <AreaChart data={chartData}>
-                                                <Area type="monotone" dataKey="profit" stroke={roiColor} strokeWidth={1.5} fill={roiColor} fillOpacity={0.2} isAnimationActive={false} />
-                                              </AreaChart>
-                                            </ResponsiveContainer>
+                                            <RoiChart 
+                                              buildCostUSD={roi.buildCostUSD} 
+                                              monthlyExpensesUSD={roi.monthlyExpensesUSD} 
+                                              realisticMRRMonth1USD={roi.realisticMRRMonth1USD} 
+                                              roiColor={roiColor} 
+                                            />
                                           );
                                         })()}
                                       </div>
@@ -1508,10 +2406,6 @@ Format the output nicely in Markdown.`,
                                   </Tooltip>
                                 </div>
                               )}
-                            </div>
-                            <div className="flex gap-1 shrink-0 flex-wrap">
-                              <Tag label={d.label} color={d.color} bg={d.bg} tip={d.tip} />
-                              <Tag label={c.label} color={c.color} tip={c.tip} />
                             </div>
                           </div>
                         </div>
@@ -1587,10 +2481,31 @@ Format the output nicely in Markdown.`,
                               </div>
                             )}
 
-                            {/* Desc + Pain */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 mb-3.5">
-                              <div><SL>Description</SL><div className="font-ms text-[13px] text-ms-text leading-[1.7]">{idea.description}</div></div>
-                              <div><SL color="#ffc857">Pain It Solves</SL><div className="font-ms text-[13px] text-ms-text leading-[1.7]">{idea.painSolved}</div></div>
+                            {/* Radar, Desc + Pain */}
+                            <div className="mb-3.5 flex flex-col xl:flex-row gap-3.5">
+                              <div className="w-full xl:w-1/3 min-h-[250px] border border-ms-border bg-ms-panel flex flex-col">
+                                <div className="p-2 border-b border-ms-border font-ms text-[10px] font-bold text-ms-green uppercase tracking-widest text-center">
+                                  Opportunity Radar
+                                </div>
+                                <div className="flex-1 min-h-[220px]">
+                                  <IdeaRadarChart 
+                                    demandLevel={idea.demandLevel} 
+                                    competitionLevel={idea.competitionLevel}
+                                    churnRisk={idea.churnRisk}
+                                    buildComplexity={idea.buildComplexity}
+                                  />
+                                </div>
+                              </div>
+                              <div className="w-full xl:w-2/3 grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                <div className="p-3.5 border border-ms-border bg-ms-bg/50">
+                                  <SL>Description</SL>
+                                  <div className="font-ms text-[13px] text-ms-text leading-[1.7]">{idea.description}</div>
+                                </div>
+                                <div className="p-3.5 border border-ms-border bg-ms-bg/50">
+                                  <SL color="#ffc857">Pain It Solves</SL>
+                                  <div className="font-ms text-[13px] text-ms-text leading-[1.7]">{idea.painSolved}</div>
+                                </div>
+                              </div>
                             </div>
 
                             {/* About This Idea */}
@@ -1771,7 +2686,7 @@ Format the output nicely in Markdown.`,
 
                             {/* 4-col */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2.5 mb-3.5">
-                              <div className="bg-ms-bg border border-ms-border p-2.5"><SL>Target Customer</SL><div className="font-ms text-[11px] text-ms-text-light leading-[1.6]">{idea.targetAudience}</div></div>
+                              <div className="bg-ms-bg border border-ms-border p-2.5"><SL>Target Customer</SL><div className="font-ms text-[11px] text-ms-text-light leading-[1.6]">{cleanRepetitiveText(idea.targetAudience)}</div></div>
                               <div className="bg-ms-bg border border-ms-border p-2.5"><SL color="#ff9999">Reddit Signal</SL><div className="font-ms text-[11px] text-ms-text-light leading-[1.6]">{idea.redditSignal}</div></div>
                               <div className="bg-ms-bg border p-2.5" style={{ borderColor: `${bldC.color}22` }}>
                                 <Tooltip text={bldC.buildTip}>
@@ -1815,19 +2730,6 @@ Format the output nicely in Markdown.`,
                                 ) : null)}
                               </div>
                               {(() => {
-                                const buildCost = parseFloat((roi.buildCostUSD || "0").replace(/[^0-9.-]+/g,""));
-                                const monthlyExp = parseFloat((roi.monthlyExpensesUSD || "0").replace(/[^0-9.-]+/g,""));
-                                const mrr = parseFloat((roi.realisticMRRMonth1USD || "0").replace(/[^0-9.-]+/g,""));
-                                const chartData = [
-                                  { month: 'M0', profit: -buildCost },
-                                  { month: 'M1', profit: -buildCost + mrr - monthlyExp },
-                                  { month: 'M2', profit: -buildCost + 2*mrr - 2*monthlyExp },
-                                  { month: 'M3', profit: -buildCost + 3*mrr - 3*monthlyExp },
-                                  { month: 'M4', profit: -buildCost + 4*mrr - 4*monthlyExp },
-                                  { month: 'M5', profit: -buildCost + 5*mrr - 5*monthlyExp },
-                                  { month: 'M6', profit: -buildCost + 6*mrr - 6*monthlyExp },
-                                ];
-                                
                                 return (
                                   <div className="border-t border-ms-border mt-2.5 pt-2.5 flex flex-col sm:flex-row justify-between items-center flex-wrap gap-4">
                                     <div className="flex gap-6 w-full sm:w-auto">
@@ -1835,23 +2737,14 @@ Format the output nicely in Markdown.`,
                                       <div><div className="font-ms text-[10px]" style={{ color: roiColor }}>ROI Month 1</div><div className="font-ms text-[22px] font-bold leading-none" style={{ color: roiColor }}>{roi.roiMonth1Pct || "—"}</div></div>
                                     </div>
                                     <div className="flex-1 w-full sm:max-w-[250px] h-[60px] ml-auto">
-                                      <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={chartData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
-                                          <defs>
-                                            <linearGradient id={`colorProfit${i}`} x1="0" y1="0" x2="0" y2="1">
-                                              <stop offset="5%" stopColor={roiColor} stopOpacity={0.3}/>
-                                              <stop offset="95%" stopColor={roiColor} stopOpacity={0}/>
-                                            </linearGradient>
-                                          </defs>
-                                          <RechartsTooltip 
-                                            contentStyle={{ backgroundColor: '#060f06', border: '1px solid #142014', fontSize: '10px', fontFamily: 'monospace' }}
-                                            itemStyle={{ color: roiColor }}
-                                            formatter={(value: any) => [`$${Number(value).toFixed(0)}`, 'Cumulative Profit']}
-                                            labelStyle={{ color: '#6a8a6a' }}
-                                          />
-                                          <Area type="monotone" dataKey="profit" stroke={roiColor} strokeWidth={2} fillOpacity={1} fill={`url(#colorProfit${i})`} />
-                                        </AreaChart>
-                                      </ResponsiveContainer>
+                                      <RoiChart 
+                                        buildCostUSD={roi.buildCostUSD} 
+                                        monthlyExpensesUSD={roi.monthlyExpensesUSD} 
+                                        realisticMRRMonth1USD={roi.realisticMRRMonth1USD} 
+                                        roiColor={roiColor} 
+                                        showGradient={true}
+                                        identifier={i.toString()}
+                                      />
                                     </div>
                                   </div>
                                 );
@@ -1896,7 +2789,7 @@ Format the output nicely in Markdown.`,
 
                             {/* Pre-sell */}
                             <div className="mb-3.5">
-                              <PreSellChecklist steps={kit?.data?.presellValidation} />
+                              <PreSellChecklist steps={kit?.data?.presellValidation} ideaName={idea.name} />
                             </div>
 
                             {/* Launch Kit */}
@@ -2074,6 +2967,8 @@ Format the output nicely in Markdown.`,
               </div>
             )}
           </div>
+        )}
+          </>
         )}
 
       </div>

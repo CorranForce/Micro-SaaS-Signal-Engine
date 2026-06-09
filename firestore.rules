@@ -15,6 +15,7 @@ service cloud.firestore {
     //   - photoURL: string (optional) - URL to profile picture
     //   - bio: string (optional, max 1000 chars) - User's biography
     //   - updatedAt: string (optional) - ISO 8601 date string
+    //   - lastActive: string (optional) - ISO 8601 date string
     //
     // Collection: settings
     // Document ID: global
@@ -70,7 +71,8 @@ service cloud.firestore {
              (!('displayName' in data) || data.displayName is string) &&
              (!('photoURL' in data) || data.photoURL is string) &&
              (!('bio' in data) || (data.bio is string && data.bio.size() <= 1000)) &&
-             (!('updatedAt' in data) || data.updatedAt is string);
+             (!('updatedAt' in data) || data.updatedAt is string) &&
+             (!('lastActive' in data) || data.lastActive is string);
     }
 
     function isValidSettings() {

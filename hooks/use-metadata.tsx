@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 
 interface MetadataState {
   title?: string;
@@ -65,13 +65,19 @@ export function MetadataProvider({ children }: { children: ReactNode }) {
       if (twitterImage) twitterImage.setAttribute('content', metadata.image);
     }
   }, [metadata]);
+  
+  const resetMetadata = useCallback(() => {
+    setMetadata(defaultMetadata);
+  }, []);
+
+  const value = useMemo(() => ({
+    metadata,
+    setMetadata,
+    resetMetadata
+  }), [metadata, resetMetadata]);
 
   return (
-    <MetadataContext.Provider value={{ 
-      metadata, 
-      setMetadata, 
-      resetMetadata: () => setMetadata(defaultMetadata) 
-    }}>
+    <MetadataContext.Provider value={value}>
       {children}
     </MetadataContext.Provider>
   );
