@@ -137,10 +137,78 @@ export async function sendEmailAction(toEmail: string, subject: string, html: st
   }
 }
 
+
+function isValidGeminiKey(key?: any): key is string {
+  if (!key || typeof key !== 'string') return false;
+  const trimmed = key.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower === 'undefined' || lower === 'null' || lower === 'my_gemini_api_key' || lower.includes('your_api_key')) return false;
+  if (trimmed.startsWith('MY_') || trimmed.includes('INSERT_') || trimmed.includes('YOUR_')) return false;
+  return trimmed.length >= 10;
+}
+
+function formatServerGeminiError(err: any): string {
+  let msg = err?.message || String(err || "Unknown API Error");
+  if (typeof msg === 'object') {
+    try {
+      msg = JSON.stringify(msg);
+    } catch {
+      msg = "Unknown API Error";
+    }
+  }
+  const lower = msg.toLowerCase();
+  if (lower.includes("invalid") || lower.includes("api key not valid") || lower.includes("api_key_invalid") || lower.includes("400") || lower.includes("argument")) {
+    return "The Gemini API connection could not be established. This is typically due to an invalid or unconfigured API key. Please visit the Settings page to enter a valid Gemini API key starting with 'AIza'.";
+  }
+  if (lower.includes("429") || lower.includes("rate limit") || lower.includes("quota") || lower.includes("resource_exhausted")) {
+    return "API Rate Limit or Quota Exceeded. Please try again after a few moments or use your own custom API key in Settings.";
+  }
+  return msg;
+}
+
+async function runWithRetry<T>(
+  apiCall: () => Promise<T>,
+  maxRetries: number = 5,
+  initialDelayMs: number = 2000
+): Promise<T> {
+  let delay = initialDelayMs;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await apiCall();
+    } catch (error: any) {
+      const msg = error?.message || String(error || "");
+      const lower = msg.toLowerCase();
+      const isRateLimit = lower.includes("429") || 
+                          lower.includes("rate limit") || 
+                          lower.includes("quota") || 
+                          lower.includes("resource_exhausted") || 
+                          lower.includes("too many requests");
+      
+      if (isRateLimit && attempt < maxRetries) {
+        console.log(`[GEMINI API] Rate limit observed. Backoff retry attempt ${attempt} in ${delay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay *= 2; // Exponential backoff
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("API transaction exhausted retry limits");
+}
+
 export async function searchLeadsWithGroundingAction(service: string, city: string, userKey?: string) {
-  const apiKey = userKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  let apiKey = "";
+  if (isValidGeminiKey(userKey)) {
+    apiKey = userKey;
+  } else if (isValidGeminiKey(process.env.GEMINI_API_KEY)) {
+    apiKey = process.env.GEMINI_API_KEY;
+  } else if (isValidGeminiKey(process.env.NEXT_PUBLIC_GEMINI_API_KEY)) {
+    apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  }
+
   if (!apiKey) {
-    return { error: "Gemini API key is required. Please check your API Key in Settings or enter one." };
+    return { error: "Gemini API key is invalid or not configured. Please go to the Settings page and configure a valid Gemini API Key starting with 'AIza'." };
   }
 
   try {
@@ -168,7 +236,7 @@ Return the response as a JSON object with a single property 'leads', which is an
   }>
 }`;
 
-    const response = await ai.models.generateContent({
+    const response = await runWithRetry(() => ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
@@ -196,7 +264,7 @@ Return the response as a JSON object with a single property 'leads', which is an
           }
         }
       },
-    });
+    }));
 
     const text = response.text;
     if (!text) {
@@ -214,14 +282,22 @@ Return the response as a JSON object with a single property 'leads', which is an
 
     return { leads: parsed.leads || [], sources };
   } catch (error: any) {
-    return { error: error.message || "Failed to search leads using Google Search grounding." };
+    return { error: formatServerGeminiError(error) };
   }
 }
 
 export async function compareCompetitorsAction(niche: string, userKey?: string) {
-  const apiKey = userKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  let apiKey = "";
+  if (isValidGeminiKey(userKey)) {
+    apiKey = userKey;
+  } else if (isValidGeminiKey(process.env.GEMINI_API_KEY)) {
+    apiKey = process.env.GEMINI_API_KEY;
+  } else if (isValidGeminiKey(process.env.NEXT_PUBLIC_GEMINI_API_KEY)) {
+    apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  }
+
   if (!apiKey) {
-    return { error: "Gemini API key is required. Please check your API Key in Settings or enter one." };
+    return { error: "Gemini API key is invalid or not configured. Please go to the Settings page and configure a valid Gemini API Key starting with 'AIza'." };
   }
 
   try {
@@ -257,7 +333,7 @@ Return the response as a JSON object with a single property 'competitors', which
   }>
 }`;
 
-    const response = await ai.models.generateContent({
+    const response = await runWithRetry(() => ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: prompt,
       config: {
@@ -286,7 +362,7 @@ Return the response as a JSON object with a single property 'competitors', which
           }
         }
       },
-    });
+    }));
 
     const text = response.text;
     if (!text) {
@@ -304,6 +380,65 @@ Return the response as a JSON object with a single property 'competitors', which
 
     return { competitors: parsed.competitors || [], sources };
   } catch (error: any) {
-    return { error: error.message || "Failed to search and compare competitors." };
+    return { error: formatServerGeminiError(error) };
   }
 }
+
+export async function generateContentAction(options: {
+  model: string;
+  contents: string;
+  config?: any;
+  userKey?: string;
+}) {
+  let apiKey = "";
+  if (isValidGeminiKey(options.userKey)) {
+    apiKey = options.userKey;
+  } else if (isValidGeminiKey(process.env.GEMINI_API_KEY)) {
+    apiKey = process.env.GEMINI_API_KEY;
+  } else if (isValidGeminiKey(process.env.NEXT_PUBLIC_GEMINI_API_KEY)) {
+    apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  }
+
+  if (!apiKey) {
+    return { error: "Gemini API key is invalid or not configured. Please visit the Settings page (via the top-right button) to configure a valid API key." };
+  }
+
+  try {
+    const ai = new GoogleGenAI({ 
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+
+    const response = await runWithRetry(() => ai.models.generateContent({
+      model: options.model,
+      contents: options.contents,
+      config: options.config,
+    }));
+
+    const chunksRaw = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const chunks = chunksRaw.map((chunk: any) => ({
+      web: {
+        title: chunk.web?.title || "Web Search Result",
+        uri: chunk.web?.uri || ""
+      }
+    }));
+    const sources = chunks.map((chunk: any) => ({
+      title: chunk.web?.title,
+      uri: chunk.web?.uri
+    })).filter((src: any) => src.uri);
+
+    return { 
+      text: response.text || "", 
+      sources,
+      chunks
+    };
+  } catch (error: any) {
+    return { error: formatServerGeminiError(error) };
+  }
+}
+
+

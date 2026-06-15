@@ -63,14 +63,16 @@ export const buildEmailHtml = (idea: any, kit: any, roi: any) => {
     }).join(""));
 
   if(Array.isArray(kit.buildRoadmap) && kit.buildRoadmap.length) h+=section("📅 4-Week Build Roadmap",
-    kit.buildRoadmap.map((w: any)=>{
+    kit.buildRoadmap.map((w: any, idx: number)=>{
       if (typeof w === 'string') {
         return `<div style="margin-bottom:13px"><div style="font-size:13px;color:#333;font-family:Verdana,sans-serif">› ${w}</div></div>`;
       }
+      const weekLabel = (w.week && w.week !== 'undefined') ? w.week : `Week ${idx + 1}`;
+      const weekTitle = (w.title && w.title !== 'undefined') ? w.title : "";
       return `<div style="margin-bottom:13px">
         <div style="display:flex;gap:10px;align-items:baseline">
-          <span style="background:${G};color:#fff;font-size:10px;font-weight:bold;padding:3px 8px;border-radius:3px;font-family:Verdana,sans-serif;white-space:nowrap">${w.week}</span>
-          <strong style="font-size:13px;color:#333;font-family:Verdana,sans-serif">${w.title}</strong>
+          <span style="background:${G};color:#fff;font-size:10px;font-weight:bold;padding:3px 8px;border-radius:3px;font-family:Verdana,sans-serif;white-space:nowrap">${weekLabel}</span>
+          ${weekTitle ? `<strong style="font-size:13px;color:#333;font-family:Verdana,sans-serif">${weekTitle}</strong>` : ""}
         </div>
         <div style="margin-top:7px;padding-left:14px">${Array.isArray(w.tasks)?w.tasks.map((t: string)=>bullet(t)).join(""):typeof w.tasks==='string'?bullet(w.tasks):""}</div>
       </div>`;
@@ -144,10 +146,12 @@ export const buildPlainBody = (idea: any, kit: any, roi: any) => {
   });lines.push("");}
   if(!kit) return lines.join("\n");
   if(kit.lovablePrompt){lines.push("─── LOVABLE.DEV STARTER PROMPT ───");lines.push(kit.lovablePrompt);lines.push("");}
-  if(Array.isArray(kit.buildRoadmap) && kit.buildRoadmap.length){lines.push("─── BUILD ROADMAP ───");kit.buildRoadmap.forEach((w: any)=>{
+  if(Array.isArray(kit.buildRoadmap) && kit.buildRoadmap.length){lines.push("─── BUILD ROADMAP ───");kit.buildRoadmap.forEach((w: any, idx: number)=>{
     if (typeof w === 'string') { lines.push(`› ${w}`); }
     else {
-      lines.push(`${w.week}: ${w.title}`);
+      const weekLabel = (w.week && w.week !== 'undefined') ? w.week : `Week ${idx + 1}`;
+      const weekTitle = (w.title && w.title !== 'undefined') ? w.title : "";
+      lines.push(weekTitle ? `${weekLabel}: ${weekTitle}` : weekLabel);
       if (Array.isArray(w.tasks)) w.tasks.forEach((t: string)=>lines.push(`  › ${t}`));
       else if (typeof w.tasks === 'string') lines.push(`  › ${w.tasks}`);
     }

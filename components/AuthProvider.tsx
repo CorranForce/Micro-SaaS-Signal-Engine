@@ -125,13 +125,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (error && error.message?.includes('Could not find the table')) {
                   console.warn("Auto-sync: 'users' table not found in Supabase.");
                 } else if (error) {
-                  console.error("Auto-sync to Supabase failed:", error);
+                  console.warn("Auto-sync to Supabase warning:", error);
                 } else {
                   console.log("Successfully auto-synced profile to Supabase");
                 }
               }
             } catch (syncErr) {
-              console.error("Failed to execute Supabase auto-sync:", syncErr);
+              console.warn("Failed to execute Supabase auto-sync:", syncErr);
             }
           }
         } else {

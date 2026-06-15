@@ -5,6 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { testGoDaddyAction } from '@/app/actions';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import { apiTracker } from '@/utils/apiTracker';
 
 const UserRoleManager = ({ supabaseUrl, supabaseKey }: { supabaseUrl: string, supabaseKey: string }) => {
   const [users, setUsers] = useState<any[]>([]);
@@ -151,6 +152,13 @@ const UserRoleManager = ({ supabaseUrl, supabaseKey }: { supabaseUrl: string, su
   );
 };
 
+const isTableNotFoundError = (error: any) => {
+  if (!error) return false;
+  const msg = error.message?.toLowerCase() || '';
+  const code = error.code || '';
+  return code === '42P01' || code === 'PGRST116' || msg.includes('could not find the table') || msg.includes('does not exist') || msg.includes('relation');
+};
+
 export default function SettingsPage() {
   const { user, role, loading } = useAuth();
   const [goDaddyKey, setGoDaddyKey] = useState("");
@@ -163,6 +171,20 @@ export default function SettingsPage() {
   const [testingGemini, setTestingGemini] = useState(false);
   const [testingSupabase, setTestingSupabase] = useState(false);
   const [autoSyncProfiles, setAutoSyncProfiles] = useState(false);
+  const [apiStats, setApiStats] = useState<any>(null);
+
+  useEffect(() => {
+    setApiStats(apiTracker.getStats());
+
+    const handleStatsUpdate = () => {
+      setApiStats(apiTracker.getStats());
+    };
+
+    window.addEventListener("api-stats-updated", handleStatsUpdate);
+    return () => {
+      window.removeEventListener("api-stats-updated", handleStatsUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     // Load from local storage for now to maintain compatibility with existing components
@@ -248,10 +270,10 @@ export default function SettingsPage() {
             godaddy_key: goDaddyKey,
             godaddy_secret: goDaddySecret
           });
-          if (error && error.message?.includes('Could not find the table')) {
+          if (error && isTableNotFoundError(error)) {
             console.warn("Supabase warning: 'app_settings' table not found. Credentials saved locally but not synced.");
           } else if (error) {
-            console.error("Supabase sync error:", error);
+            console.warn("Supabase sync warning (could be permissions/RLS or database rules):", error);
           }
         }
       } catch (e) {
@@ -281,20 +303,26 @@ export default function SettingsPage() {
         const { getSupabase } = await import('@/lib/supabase');
         const supabase = getSupabase(supabaseUrl, supabaseKey);
         if (supabase) {
-          const { error } = await supabase.from('app_settings').upsert({
+          const payload: any = {
             id: 'global',
             supabase_url: supabaseUrl,
             supabase_key: supabaseKey,
             auto_sync_profiles: autoSyncProfiles
-          });
-          if (error && error.message?.includes('Could not find the table')) {
+          };
+          if (goDaddyKey) payload.godaddy_key = goDaddyKey;
+          if (goDaddySecret) payload.godaddy_secret = goDaddySecret;
+          if (resendKey) payload.resend_key = resendKey;
+          if (geminiKey) payload.gemini_key = geminiKey;
+
+          const { error } = await supabase.from('app_settings').upsert(payload);
+          if (error && isTableNotFoundError(error)) {
             console.warn("Supabase warning: 'app_settings' table not found. Credentials saved locally but not synced.");
           } else if (error) {
-            console.error("Supabase sync error:", error);
+            console.warn("Supabase sync warning (could be permissions/RLS or database rules):", error);
           }
         }
       } catch (e) {
-        console.error("Failed to save to Supabase", e);
+        console.warn("Failed to save to Supabase", e);
       }
     }
     
@@ -314,7 +342,7 @@ export default function SettingsPage() {
             id: 'global',
             auto_sync_profiles: checked
           });
-          if (error && error.message?.includes('Could not find the table')) {
+          if (error && isTableNotFoundError(error)) {
             console.warn("Supabase warning: 'app_settings' table not found.");
           } else if (!error && checked) {
             toast.success("Auto-Sync enabled and settings saved!");
@@ -323,7 +351,7 @@ export default function SettingsPage() {
           }
         }
       } catch (e) {
-        console.error("Failed to save auto-sync to Supabase", e);
+        console.warn("Failed to save auto-sync to Supabase", e);
       }
     } else {
       if (checked) toast.success("Auto-Sync enabled locally!");
@@ -353,14 +381,14 @@ export default function SettingsPage() {
             id: 'global',
             resend_key: resendKey
           });
-          if (error && error.message?.includes('Could not find the table')) {
+          if (error && isTableNotFoundError(error)) {
             console.warn("Supabase warning: 'app_settings' table not found. Credentials saved locally but not synced.");
           } else if (error) {
-            console.error("Supabase sync error:", error);
+            console.warn("Supabase sync warning (could be permissions/RLS or database rules):", error);
           }
         }
       } catch (e) {
-        console.error("Failed to save to Supabase", e);
+        console.warn("Failed to save to Supabase", e);
       }
     }
     
@@ -368,12 +396,8 @@ export default function SettingsPage() {
   };
 
   const handleSaveGemini = async () => {
-    if (geminiKey && geminiKey.length < 20) {
+    if (geminiKey && geminiKey.length < 10) {
       toast.error("Gemini API Key seems invalid (too short).");
-      return;
-    }
-    if (geminiKey && !geminiKey.startsWith('AIza')) {
-      toast.error("Gemini API Key seems invalid (should start with 'AIza').");
       return;
     }
 
@@ -389,14 +413,14 @@ export default function SettingsPage() {
             id: 'global',
             gemini_key: geminiKey
           });
-          if (error && error.message?.includes('Could not find the table')) {
+          if (error && isTableNotFoundError(error)) {
             console.warn("Supabase warning: 'app_settings' table not found. Credentials saved locally but not synced.");
           } else if (error) {
-            console.error("Supabase sync error:", error);
+            console.warn("Supabase sync warning (could be permissions/RLS or database rules):", error);
           }
         }
       } catch (e) {
-        console.error("Failed to save to Supabase", e);
+        console.warn("Failed to save to Supabase", e);
       }
     }
     
@@ -409,16 +433,19 @@ export default function SettingsPage() {
       return;
     }
     setTestingGemini(true);
+    apiTracker.logAttempt();
     const loadingToast = toast.loading("Testing Gemini connection...");
     try {
       const { GoogleGenAI } = await import("@google/genai");
       const ai = new GoogleGenAI({ apiKey: geminiKey });
-      await ai.models.generateContent({
+      const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
         contents: "Test connection. Reply 'OK' if successful."
       });
+      apiTracker.logSuccess("Test connection", response.text || "");
       toast.success("Connection successful!", { id: loadingToast });
     } catch (e: any) {
+      apiTracker.logFailure(e);
       toast.error(`Error: ${e.message}`, { id: loadingToast });
     } finally {
       setTestingGemini(false);
@@ -550,10 +577,10 @@ export default function SettingsPage() {
                 value={geminiKey} 
                 onChange={e => setGeminiKey(e.target.value)}
                 className="w-full bg-ms-bg border border-ms-border text-ms-text px-3 py-2.5 text-xs outline-none focus:border-ms-green transition-colors"
-                placeholder="AIza..."
+                placeholder="Enter Gemini API key"
               />
-              {geminiKey && !geminiKey.startsWith('AIza') && (
-                <p className="text-ms-yellow text-[10px] mt-1">Key should start with &quot;AIza&quot;</p>
+              {geminiKey && geminiKey.length < 10 && (
+                <p className="text-ms-yellow text-[10px] mt-1">Key seems too short. Please verify.</p>
               )}
             </div>
             <div className="flex gap-3 pt-2">
@@ -571,6 +598,96 @@ export default function SettingsPage() {
                 {testingGemini ? "TESTING..." : "TEST CONNECTION"}
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Gemini API Usage Statistics and Status */}
+        <div className="bg-ms-panel border border-ms-border p-6">
+          <div className="mb-6 border-b border-ms-border pb-4 flex flex-wrap justify-between items-center gap-3">
+            <div>
+              <h2 className="text-white text-lg font-bold">AI Connection & Usage Monitor</h2>
+              <p className="text-ms-text-muted text-xs mt-1">Real-time stats and request telemetry tracked locally to help gauge quota limits.</p>
+            </div>
+            <div>
+              {(!apiStats || apiStats.status === "idle") && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-ms-panel border border-ms-border text-ms-text-muted rounded-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-ms-text-muted" /> Idle
+                </span>
+              )}
+              {apiStats?.status === "connected" && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-ms-green-dark border border-ms-green text-ms-green rounded-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-ms-green" /> Connected / Active
+                </span>
+              )}
+              {apiStats?.status === "rate_limited" && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-ms-yellow-dark/20 border border-ms-yellow text-ms-yellow rounded-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-ms-yellow" /> Rate Limited (429)
+                </span>
+              )}
+              {apiStats?.status === "invalid_key" && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-ms-red-dark/20 border border-ms-red text-ms-red rounded-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-ms-red" /> Invalid Key
+                </span>
+              )}
+              {apiStats?.status === "failed" && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider bg-ms-red-dark/20 border border-ms-red text-ms-red rounded-sm">
+                  <span className="w-1.5 h-1.5 rounded-full bg-ms-red" /> Connection Error
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-ms-bg border border-ms-border/50 p-4">
+              <span className="block font-ms text-[9px] text-ms-green font-bold tracking-[1px] uppercase mb-1">Total Attempts</span>
+              <span className="text-white text-xl font-bold font-mono">{apiStats?.totalRequests ?? 0}</span>
+            </div>
+            
+            <div className="bg-ms-bg border border-ms-border/50 p-4">
+              <span className="block font-ms text-[9px] text-ms-green font-bold tracking-[1px] uppercase mb-1">Success Rate</span>
+              <span className="text-white text-xl font-bold font-mono">
+                {apiStats?.totalRequests 
+                  ? `${Math.round((apiStats.successfulRequests / apiStats.totalRequests) * 100)}%` 
+                  : "100%"}
+              </span>
+              <span className="block text-[9px] text-ms-text-muted mt-0.5">{apiStats?.successfulRequests ?? 0} success / {apiStats?.failedRequests ?? 0} fail</span>
+            </div>
+
+            <div className="bg-ms-bg border border-ms-border/50 p-4">
+              <span className="block font-ms text-[9px] text-ms-green font-bold tracking-[1px] uppercase mb-1">Est. Tokens Used</span>
+              <span className="text-white text-xl font-bold font-mono">{(apiStats?.estimatedTokens ?? 0).toLocaleString()}</span>
+              <span className="block text-[9px] text-ms-text-muted mt-0.5">Approx. {Math.round((apiStats?.estimatedTokens ?? 0) * 0.00035 * 100) / 100}¢ cost</span>
+            </div>
+
+            <div className="bg-ms-bg border border-ms-border/50 p-4">
+              <span className="block font-ms text-[9px] text-ms-green font-bold tracking-[1px] uppercase mb-1">Rate Limit Hits</span>
+              <span className={`text-xl font-bold font-mono ${(apiStats?.rateLimitErrors ?? 0) > 0 ? "text-ms-yellow" : "text-white"}`}>
+                {apiStats?.rateLimitErrors ?? 0}
+              </span>
+              <span className="block text-[9px] text-ms-text-muted mt-0.5">HTTP 429 count</span>
+            </div>
+          </div>
+
+          {apiStats?.lastErrorMessage && (
+            <div className="bg-ms-red-dark/10 border border-ms-red/20 p-3 mb-6 rounded-sm text-xs">
+              <span className="text-ms-red font-bold">Last Error Logged:</span>
+              <p className="text-ms-text text-[11px] mt-1 font-mono break-all leading-relaxed bg-ms-bg/50 p-2 border border-ms-border/20 rounded-sm">{apiStats.lastErrorMessage}</p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap justify-between items-center gap-4 pt-2">
+            <div className="text-[10px] text-ms-text-muted leading-relaxed max-w-[500px]">
+              <span className="text-ms-green font-bold tracking-[0.5px]">💡 QUOTA TIPS:</span> The Gemini standard free tier has a limit of <strong className="text-white">15 RPM</strong> (Requests Per Minute) and <strong className="text-white">1,500 RPD</strong> (Requests Per Day). We have implemented a smart retry utility with exponential backoff on server routes to help mitigate limits automatically.
+            </div>
+            <button 
+              onClick={() => {
+                apiTracker.resetStats();
+                toast.success("Usage statistics reset successfully");
+              }}
+              className="bg-transparent border border-ms-border text-ms-text-muted px-4 py-2 text-xs hover:text-white transition-colors"
+            >
+              RESET STATISTICS
+            </button>
           </div>
         </div>
 

@@ -18,12 +18,138 @@ interface ChecklistItem {
   text: string;
 }
 
+const getValidationScriptAndLocation = (text: string, ideaName: string) => {
+  const t = text.toLowerCase();
+  const name = ideaName || "this micro-SaaS solution";
+  
+  if (t.includes("identify") || t.includes("list") || t.includes("find") || t.includes("prospect") || t.includes("business")) {
+    return {
+      category: "📡 Target Sifting & Finding",
+      where: [
+        "LinkedIn Search: Look up Title ('Owner', 'Operations Leader', 'VP') in your target sector (e.g. logistics, agency). Filter by company size: 1-10 or 11-50.",
+        "Google Maps: Zoom in on key metro areas, search for regional services/retailers, and compile their domains.",
+        "Apollo.io / Hunter.io: Sign up for a free tier to extract direct B2B corporate emails.",
+        "Industry Directories: Check niche directories, Clutch.co listings, or local chamber of commerce sheets."
+      ],
+      script: `Hi [Prospect Name],
+
+I hope your week is off to a great start. I'm researching operational bottlenecks in the B2B space—specifically regarding how owners manage workflows around ${name}.
+
+I'm not selling anything today; just wrapping up a brief 5-minute research sprint. 
+
+Would you be open to giving some expert feedback on a 5-minute phone call next Tuesday? I would appreciate your insights.
+
+Best,
+[Your Name]`
+    };
+  }
+  
+  if (t.includes("contact") || t.includes("email") || t.includes("reach") || t.includes("message") || t.includes("reddit") || t.includes("forum")) {
+    return {
+      category: "✉️ Channel Outreach & Inquiries",
+      where: [
+        "Cold Email: Send direct highly personalized business emails using a clean domain.",
+        "LinkedIn Connection: Connect with a personalized note first, then follow up.",
+        "Industry Forums: Search Reddit (e.g. r/smallbusiness, r/construction) or specific Facebook groups where founders discuss daily operations."
+      ],
+      script: `Subject: Quick question about [specific bottleneck/process] at [Company Name]?
+
+Hi [Prospect Name],
+
+My name is [Your Name] and I've been following [Company Name]'s growth. 
+
+I'm currently validating a simple tool specifically designed for B2B operators to streamline ${name}. In talking to others in your industry, a common headache is the hours wasted on manual tracking and data reconciliation.
+
+Is this manual bottleneck something that currently affects your team's velocity? 
+
+Would appreciate your quick take.
+
+Best,
+[Your Name]`
+    };
+  }
+
+  if (t.includes("describe") || t.includes("problem") || t.includes("interview") || t.includes("explore") || t.includes("confirm")) {
+    return {
+      category: "🔬 The Mom Test Interview",
+      where: [
+        "Zoom / Google Meet: Record a quick 10-minute feedback chat.",
+        "Phone Call: Keep it casual. Don't frame it as a 'pitch'; frame it as seeking domain-expert perspective."
+      ],
+      script: `Focus on their past and current actions, not future promises. Ask these questions:
+
+1. "How do you currently handle the day-to-day work of [specific challenge]?"
+2. "What's the absolute hardest part about that process?"
+3. "Are you currently paying for any tools, spreadsheets, or systems to solve this?"
+4. "What did you hate most about the solutions you tried in the past?"
+5. "How often does this bottleneck arise, and who on your team handles it?"`
+    };
+  }
+
+  if (t.includes("quote") || t.includes("price") || t.includes("charge") || t.includes("pricing") || t.includes("cost") || t.includes("tier")) {
+    return {
+      category: "💵 Pricing Fit & Budget Validation",
+      where: [
+        "Natural transition during your feedback call once the prospect confirms the pain point.",
+        "Follow-up email summary after they help you detail their ideal workflow."
+      ],
+      script: `Hi [Prospect Name],
+
+Based on our chat about how manual overhead is costing your team several hours of friction, we're building a lightweight B2B service called ${name} to fully automate this workflow.
+
+We're accepting just 3 founding pilot partners for next month's launch. Since you helped us outline the core specs, we want to offer you a lifetime subscription at only $99/month (normally $199/month).
+
+Is this a cost you'd be ready to allocate budget for to automate this problem away?`
+    };
+  }
+
+  if (t.includes("commitment") || t.includes("order") || t.includes("deposit") || t.includes("pay") || t.includes("payment") || t.includes("subscribe") || t.includes("buy")) {
+    return {
+      category: "🤝 Pre-Launch Commitment & Deposits",
+      where: [
+        "Stripe Payment Links: Create a test or live product in Stripe and send a direct payment URL.",
+        "Letter of Intent (LOI): Send a non-binding PDF stating they plan to try the tool upon release."
+      ],
+      script: `Hi [Prospect Name],
+
+To reserve your custom workspace slot in next month's pilot release of ${name} (and guarantee your grandfathered lifetime rate of $99/mo), we're asking our partners for a fully refundable $50 pre-order deposit.
+
+This ensures we prioritize configuring your specific legacy templates and formats before onboarding other users. If we don't save you hours of work inside your first 30 days, we'll refund it immediately.
+
+You can secure your spot on our launch manifest here: [Stripe Link]
+
+Excited to build this for you.
+
+Best,
+[Your Name]`
+    };
+  }
+
+  return {
+    category: "💡 Operational Validation Tactics",
+    where: [
+      "LinkedIn: Search the niche job titles and reach out dynamically.",
+      "Reddit: Join relevant interest groups (e.g. B2B, legacy niches).",
+      "Local Businesses: Call or visit nearby locations to ask about their digital solutions."
+    ],
+    script: `Hi [Prospect Name],
+
+I'm validating a lightweight micro-services project specifically answering hurdles in B2B systems.
+
+No sales pitch—I'm trying to learn about actual day-to-day hassles operators suffer with ${name}. Would you be up for a 2-minute chat?
+
+Thanks,
+[Your Name]`
+  };
+};
+
 export const PreSellChecklist = ({ steps, ideaName }: { steps?: any[]; ideaName?: string }) => {
   const [mounted, setMounted] = useState(false);
   const [items, setItems] = useState<ChecklistItem[]>([]);
   const [checks, setChecks] = useState<Record<string, boolean>>({});
   const [newStepText, setNewStepText] = useState("");
   const [showAddCustom, setShowAddCustom] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const normalizedIdeaName = ideaName || "default-idea";
   const stepsStorageKey = `ms-validation-steps-${normalizedIdeaName}`;
@@ -199,10 +325,13 @@ export const PreSellChecklist = ({ steps, ideaName }: { steps?: any[]; ideaName?
         </div>
       </div>
 
-      <div className="space-y-2 mb-4 max-h-[250px] overflow-y-auto pr-1">
+      <div className="space-y-2.5 mb-4 max-h-[450px] overflow-y-auto pr-1">
         <AnimatePresence initial={false}>
           {items.map((item) => {
             const isChecked = !!checks[item.id];
+            const isExpanded = expandedId === item.id;
+            const details = getValidationScriptAndLocation(item.text, normalizedIdeaName);
+            
             return (
               <motion.div
                 key={item.id}
@@ -211,36 +340,121 @@ export const PreSellChecklist = ({ steps, ideaName }: { steps?: any[]; ideaName?
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.2 }}
-                onClick={() => handleToggle(item.id)}
-                className="group flex gap-2.5 cursor-pointer items-start hover:bg-ms-panel-light/30 p-1 rounded-sm transition-all"
+                className="border border-ms-border/20 hover:border-ms-border bg-ms-bg/20 p-2 rounded-sm transition-all"
               >
-                <div className={`w-[17px] h-[17px] shrink-0 mt-[1px] border-2 flex items-center justify-center transition-all ${isChecked ? "border-ms-green bg-ms-green-dark" : "border-ms-border-light bg-transparent group-hover:border-ms-yellow/60"}`}>
-                  {isChecked && (
-                    <motion.span 
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="text-ms-green text-[10px] font-bold"
+                {/* Header Row */}
+                <div 
+                  onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                  className="flex gap-2.5 cursor-pointer items-start justify-between group"
+                >
+                  <div className="flex gap-2.5 items-start flex-1 min-w-0">
+                    {/* Checkbox */}
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggle(item.id);
+                      }}
+                      className={`w-[17px] h-[17px] shrink-0 mt-[1.5px] border-2 flex items-center justify-center transition-all ${isChecked ? "border-ms-green bg-ms-green-dark" : "border-ms-border-light bg-transparent hover:border-ms-yellow/60"}`}
                     >
-                      ✓
-                    </motion.span>
-                  )}
+                      {isChecked && (
+                        <motion.span 
+                          initial={{ scale: 0 }}
+                          animate={{ scale: 1 }}
+                          className="text-ms-green text-[10px] font-bold"
+                        >
+                          ✓
+                        </motion.span>
+                      )}
+                    </div>
+
+                    <span className={`font-ms text-[11.5px] leading-[1.5] transition-all flex-1 min-w-0 ${isChecked ? "text-ms-text-muted line-through" : "text-ms-text-light no-underline font-medium group-hover:text-white"}`}>
+                      {item.text}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-center">
+                    {/* Expand indicator label */}
+                    <span className="font-ms text-[9px] text-ms-text-muted group-hover:text-ms-yellow transition-all uppercase tracking-tight hidden sm:inline">
+                      {isExpanded ? "Hide Script" : "View Script 💬"}
+                    </span>
+                    
+                    <span className={`text-[10px] text-ms-text-muted transition-transform duration-200 ${isExpanded ? "rotate-180 text-ms-yellow" : "rotate-0"}`}>
+                      ▼
+                    </span>
+
+                    {item.id.startsWith("custom-") && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRemoveStep(item.id, e);
+                        }}
+                        className="text-[9px] text-ms-text-muted hover:text-red-400 p-0.5 font-mono ml-1"
+                        title="Delete step"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
-                
-                <div className="flex-1 flex justify-between items-start gap-2">
-                  <span className={`font-ms text-[11px] leading-[1.5] transition-all ${isChecked ? "text-ms-text-muted line-through" : "text-ms-text-light no-underline"}`}>
-                    {item.text}
-                  </span>
-                  
-                  {item.id.startsWith("custom-") && (
-                    <button
-                      onClick={(e) => handleRemoveStep(item.id, e)}
-                      className="text-[9px] text-ms-text-muted hover:text-red-400 p-0.5 font-mono opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Delete step"
+
+                {/* Expanded Details Panel */}
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.25, ease: "easeInOut" }}
+                      className="overflow-hidden border-t border-ms-border/30 mt-2 pt-2.5 space-y-3 font-ms text-[11px]"
                     >
-                      ✕
-                    </button>
+                      {/* Badge category */}
+                      <div className="flex justify-between items-center bg-[#182818]/50 border border-ms-green/20 px-2 py-1 rounded-sm">
+                        <span className="font-bold text-ms-green text-[9px] tracking-wider uppercase font-mono font-normal">
+                          {details.category}
+                        </span>
+                        <span className="text-ms-text-muted text-[9.5px]">Validation Intel</span>
+                      </div>
+
+                      {/* Where to find potential clients */}
+                      <div className="bg-ms-panel/50 border border-ms-border/30 p-2.5 rounded-sm">
+                        <div className="text-ms-white font-bold mb-1.5 flex items-center gap-1.5">
+                          <span className="text-ms-green">📡</span>
+                          <span>Where to find potential customers?</span>
+                        </div>
+                        <ul className="list-disc pl-4 space-y-1 text-ms-text-muted leading-relaxed">
+                          {details.where.map((loc, idx) => (
+                            <li key={idx} className="marker:text-ms-green">
+                              {loc}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {/* Outreach script */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center text-ms-white font-bold px-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-ms-yellow">💬</span>
+                            <span>Example Outreach Script</span>
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(details.script);
+                              toast.success("Script copied to clipboard!");
+                            }}
+                            className="bg-ms-panel-light hover:bg-ms-panel border border-ms-border text-ms-green hover:text-white px-2 py-0.5 text-[9px] font-mono font-bold cursor-pointer transition-all uppercase rounded-sm flex items-center gap-1"
+                          >
+                            <span>📋</span> Copy Script
+                          </button>
+                        </div>
+                        <pre className="p-3 bg-ms-bg font-mono border border-ms-border/40 text-[10px] text-ms-text-light whitespace-pre-wrap break-words leading-relaxed select-text shadow-inner max-h-[170px] overflow-y-auto">
+                          {details.script}
+                        </pre>
+                      </div>
+                    </motion.div>
                   )}
-                </div>
+                </AnimatePresence>
               </motion.div>
             );
           })}

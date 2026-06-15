@@ -4,6 +4,7 @@ import { useState } from "react";
 import { SL } from "./SharedUI";
 import { PreSellChecklist } from "./PreSellChecklist";
 import { compareCompetitorsAction } from "@/app/actions";
+import { apiTracker } from "@/utils/apiTracker";
 
 export const LaunchKitPanel = ({ kit, idea, roi, onEmailClick }: any) => {
   const [tab, setTab] = useState("build");
@@ -24,17 +25,21 @@ export const LaunchKitPanel = ({ kit, idea, roi, onEmailClick }: any) => {
   const handleSearchCompetitors = async () => {
     setLoadingComp(true);
     setCompError(null);
+    apiTracker.logAttempt();
     try {
       const nicheQuery = idea.niche || idea.name;
       const res = await compareCompetitorsAction(nicheQuery);
       if (res.error) {
         setCompError(res.error);
+        apiTracker.logFailure(new Error(res.error));
       } else {
         setCompetitors(res.competitors || []);
         setCompSources(res.sources || []);
+        apiTracker.logSuccess(nicheQuery || "", JSON.stringify(res.competitors || ""));
       }
     } catch (err: any) {
       setCompError(err.message || "An unexpected error occurred.");
+      apiTracker.logFailure(err);
     } finally {
       setLoadingComp(false);
     }

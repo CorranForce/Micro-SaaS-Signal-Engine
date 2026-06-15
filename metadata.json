@@ -1,5 +1,6 @@
 {
   "name": "Micro-SaaS Signal Engine",
   "description": "Discover highly profitable, boring B2B micro-SaaS opportunities in legacy industries. Generate complete launch kits, ROI estimates, validation checklists, and find local business leads with this AI-powered research tool.",
-  "requestFramePermissions": ["geolocation"]
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

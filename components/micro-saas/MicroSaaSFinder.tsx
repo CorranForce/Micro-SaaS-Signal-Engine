@@ -51,23 +51,68 @@ import { EmailModal } from "./EmailModal";
 import { LaunchKitPanel } from "./LaunchKitPanel";
 import { VoiceInput } from "./VoiceInput";
 
-import { checkDomainAction, sendEmailAction, checkConfigAction, testGoDaddyAction, searchLeadsWithGroundingAction } from "@/app/actions";
+import { checkDomainAction, sendEmailAction, checkConfigAction, testGoDaddyAction, searchLeadsWithGroundingAction as rawSearchLeadsWithGroundingAction, generateContentAction as rawGenerateContentAction } from "@/app/actions";
 import { getSupabase } from "@/lib/supabase";
 import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { useAuth } from "@/components/AuthProvider";
 import { GoogleGenAI } from "@google/genai";
+import { apiTracker } from "@/utils/apiTracker";
+
+const generateContentAction = async (options: any) => {
+  apiTracker.logAttempt();
+  try {
+    const res = await rawGenerateContentAction(options);
+    if (res.error) {
+      apiTracker.logFailure(new Error(res.error));
+    } else {
+      apiTracker.logSuccess(JSON.stringify(options.contents || ""), res.text || "");
+    }
+    return res;
+  } catch (err: any) {
+    apiTracker.logFailure(err);
+    throw err;
+  }
+};
+
+const searchLeadsWithGroundingAction = async (service: string, city: string, userKey?: string) => {
+  apiTracker.logAttempt();
+  try {
+    const res = await rawSearchLeadsWithGroundingAction(service, city, userKey);
+    if (res.error) {
+      apiTracker.logFailure(new Error(res.error));
+    } else {
+      apiTracker.logSuccess(`${service} in ${city}`, JSON.stringify(res.leads || ""));
+    }
+    return res;
+  } catch (err: any) {
+    apiTracker.logFailure(err);
+    throw err;
+  }
+};
 
 import { GranularLoader } from "@/components/GranularLoader";
 import { ProgressSteps } from "@/components/ProgressSteps";
 import { OnboardingTour } from "@/components/OnboardingTour";
 
-const getGeminiKey = () => {
+const isValidGeminiKey = (key?: any): key is string => {
+  if (!key || typeof key !== 'string') return false;
+  const trimmed = key.trim();
+  if (!trimmed) return false;
+  const lower = trimmed.toLowerCase();
+  if (lower === 'undefined' || lower === 'null' || lower === 'my_gemini_api_key' || lower.includes('your_api_key')) return false;
+  if (trimmed.startsWith('MY_') || trimmed.includes('INSERT_') || trimmed.includes('YOUR_')) return false;
+  return trimmed.length >= 10;
+};
+
+const getGeminiKey = (): string => {
   if (typeof window !== 'undefined') {
     const localKey = localStorage.getItem("ms-gemini-key");
-    if (localKey) return localKey;
+    if (localKey && isValidGeminiKey(localKey)) return localKey;
   }
-  return process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  const publicVar = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+  if (isValidGeminiKey(publicVar)) return publicVar;
+  return "";
 };
 
 const cleanRepetitiveText = (text: any): string => {
@@ -482,8 +527,8 @@ export default function MicroSaaSFinder() {
     if (lower.includes("429") || lower.includes("rate limit") || lower.includes("quota") || lower.includes("resource_exhausted") || lower.includes("exhausted")) {
       return "API Rate Limit or Quota Exceeded: The AI service is receiving too many requests or your API key has run out of quota. Please check your billing/limits or try again in a few minutes.";
     }
-    if (msg.includes("API key not valid") || msg.includes("API_KEY_INVALID")) {
-      return "Your Gemini API key is missing or invalid. Please configure it in the AI Studio Secrets panel (top right).";
+    if (msg.includes("API key not valid") || msg.includes("API_KEY_INVALID") || msg.includes("apikey is required") || msg.includes("api key is required") || msg === "api key is required" || msg.includes("api key required") || lower.includes("invalid key") || lower.includes("key is required") || lower.includes("unconfigured")) {
+      return "Your Gemini API key is missing, invalid, or placeholder. Please visit the Settings page (via the top-right button) to configure a valid API key starting with 'AIza'.";
     }
     if (msg.includes("xhr error") || msg.includes("code: 6") || msg.includes("500")) {
       return "The AI took too long to respond (timeout). Please try again.";
@@ -540,8 +585,7 @@ export default function MicroSaaSFinder() {
     if (!userInterests.trim()) return;
     setIsSuggestingNiches(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
-      const response = await ai.models.generateContent({
+      const response = await generateContentAction({
         model: "gemini-3.5-flash",
         contents: `User Background/Interests: "${userInterests}"
 
@@ -555,8 +599,14 @@ Example: ["HVAC Inventory Management", "Custom Cabinetry CRM", "Marine Logbook D
             type: "ARRAY",
             items: { type: "STRING" }
           }
-        }
+        },
+        userKey: getGeminiKey()
       });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
       const niches = parseJSONResponse(response.text || "[]");
       setSuggestedNiches(niches);
       if (niches.length > 0) {
@@ -682,16 +732,20 @@ Rules:
    - Week 4: "Polishing & GTM" (UI/UX final touches, error handling, domain connecting, and first 10 cold emails sent).
 3. marketingAssets: All copy must be industry-specific, authoritative, and convert-focused.`;
     try {
-      const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+      const response = await generateContentAction({
+        model: "gemini-3.5-flash",
         contents: `Name: ${idea.name}\nTagline: ${idea.tagline}\nDescription: ${idea.description}\nTarget: ${idea.targetAudience}\nPain: ${idea.painSolved}\nFeatures: ${idea.keyFeatures?.join(", ")}\nGTM: ${idea.gtmChannel || "cold outreach"}\nPrice: ${idea.pricingTiers?.[1]?.price || "$99/mo"}`,
         config: {
           systemInstruction: sp,
           responseMimeType: "application/json",
           responseSchema: launchKitSchema
-        }
+        },
+        userKey: getGeminiKey()
       });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
       
       const parsed = parseJSONResponse(response.text || "{}");
       setLaunchKits(prev => ({ ...prev, [idx]: { loading: false, data: parsed, error: null } }));
@@ -728,9 +782,8 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
 - INDUSTRY INSIGHTS: Detail 3-5 typical challenges and 2-3 common software adoption hurdles founders will face.
 - KEY FEATURES: Extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
     try {
-      const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+      const response = await generateContentAction({
+        model: "gemini-3.5-flash",
         contents: redditText ? `Niche: ${niche}\n\nContext:\n${redditText.slice(0, 6000)}` : `Niche: ${niche}`,
         config: {
           systemInstruction: sp + "\nEnsure all text fields are extremely concise, rich in signal, and contain absolutely no duplicate word chains, loops, or word repetition cycles.",
@@ -738,8 +791,13 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
           maxOutputTokens: 8192,
           responseMimeType: "application/json",
           responseSchema: ideaGenerationSchema
-        }
+        },
+        userKey: getGeminiKey()
       });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
       
       const parsed = parseJSONResponse(response.text || "{}");
       setResult(parsed); setView("results"); setExpandedIdea(0);
@@ -803,9 +861,8 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
 - KEY FEATURES: Extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
 
     try {
-      const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+      const response = await generateContentAction({
+        model: "gemini-3.5-flash",
         contents: `Niche: ${niche}
 
 Research Context:
@@ -820,8 +877,13 @@ Generate 3 MORE completely different SaaS ideas for this niche that solve the pa
           maxOutputTokens: 8192,
           responseMimeType: "application/json",
           responseSchema: moreIdeasSchema
-        }
+        },
+        userKey: getGeminiKey()
       });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
       
       const parsed = parseJSONResponse(response.text || "{}");
       if (parsed.saasIdeas?.length) {
@@ -866,16 +928,20 @@ Rules:
 - Ensure the output strictly matches the ideaGenerationSchema.`;
 
     try {
-      const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+      const response = await generateContentAction({
+        model: "gemini-3.5-flash",
         contents: `Generate a single, detailed micro-SaaS idea for this problem: ${askAiInput}. Focus on high-signal market validation and deep competitive analysis.`,
         config: {
           systemInstruction: sp,
           responseMimeType: "application/json",
           responseSchema: ideaGenerationSchema
-        }
+        },
+        userKey: getGeminiKey()
       });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
       
       const parsed = parseJSONResponse(response.text || "{}");
       setResult(parsed);
@@ -893,9 +959,8 @@ Rules:
   const runAIMarketValidation = async (idea: any, idx: number) => {
     setAiMarketValidation(prev => ({ ...prev, [idx]: { loading: true, data: null, error: null } }));
     try {
-      const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+      const response = await generateContentAction({
+        model: "gemini-3.5-flash",
         contents: `Perform a comprehensive market validation for the following B2B micro-SaaS idea:
 Name: ${idea.name}
 Description: ${idea.description}
@@ -919,8 +984,13 @@ Based on your findings, provide:
 Format the output nicely in Markdown.`,
         config: {
           tools: [{ googleSearch: {} }]
-        }
+        },
+        userKey: getGeminiKey()
       });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
       
       setAiMarketValidation(prev => ({ ...prev, [idx]: { loading: false, data: response.text, error: null } }));
     } catch (err: any) {
@@ -931,9 +1001,8 @@ Format the output nicely in Markdown.`,
   const runDeepResearch = async (idea: any, idx: number) => {
     setDeepResearch(prev => ({ ...prev, [idx]: { loading: true, data: null, error: null, chunks: [] } }));
     try {
-      const ai = new GoogleGenAI({ apiKey: getGeminiKey() });
-      const response = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
+      const response = await generateContentAction({
+        model: "gemini-3.5-flash",
         contents: `Perform deep marketing research using Google Search, Reddit, and YouTube for people in the "${niche}" industry complaining about this pain point: "${idea.painSolved}" or asking for an app that does "${idea.description}".
 
 You MUST use the Search tool to query and discover source material from:
@@ -944,10 +1013,15 @@ You MUST use the Search tool to query and discover source material from:
 Provide a beautifully formatted Markdown summary of the search results, explicitly categorizing your insights into "Google Search Insights", "Reddit Feedback Logs", and "YouTube Review & Workflow Trends". Prioritize and highlight specific examples of actual customer complaints, software gaps, and validation signs found online. Do not output raw JSON or unformatted text.`,
         config: {
           tools: [{ googleSearch: {} }]
-        }
+        },
+        userKey: getGeminiKey()
       });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
       
-      const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const chunks = response.chunks || [];
       setDeepResearch(prev => ({ ...prev, [idx]: { loading: false, data: response.text, chunks, error: null } }));
     } catch (err: any) {
       let msg = formatGeminiError(err);
@@ -964,11 +1038,42 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
   };
 
   // Helper nested circular SVG-based spider/radar chart for visual indication
-  const IdeaRadarChart = ({ demandLevel, competitionLevel, churnRisk, buildComplexity }: { demandLevel: number; competitionLevel: number; churnRisk: number; buildComplexity: number }) => {
-    const dVal = Math.min(Math.max(demandLevel || 2, 1), 4);
-    const cVal = Math.min(Math.max(competitionLevel || 2, 1), 4);
-    const rVal = Math.min(Math.max(churnRisk || 2, 1), 4);
-    const bVal = Math.min(Math.max(5 - (buildComplexity || 2), 1), 4); // 5 - complexity gives "Ease of Build"
+  const IdeaRadarChart = ({ 
+    demandLevel, 
+    competitionLevel, 
+    churnRisk, 
+    buildComplexity 
+  }: { 
+    demandLevel: any; 
+    competitionLevel: any; 
+    churnRisk: any; 
+    buildComplexity: any; 
+  }) => {
+    // Parser for level strings/numbers to 1-4 points scale
+    const parseLevelStr = (val: any, invert: boolean = false): number => {
+      if (typeof val === 'number') {
+        return val;
+      }
+      if (typeof val === 'string') {
+        const lower = val.toLowerCase().trim();
+        if (lower === 'high' || lower === 'complex' || lower === 'hard') {
+          return invert ? 1 : 4;
+        }
+        if (lower === 'medium' || lower === 'moderate' || lower === 'some' || lower === 'medium-high' || lower === 'medium-low') {
+          return 2.5;
+        }
+        if (lower === 'low' || lower === 'simple' || lower === 'easy' || lower === 'none') {
+          return invert ? 4 : 1;
+        }
+      }
+      return 2; // general default fallback
+    };
+
+    const dVal = Math.min(Math.max(parseLevelStr(demandLevel, false), 1), 4);
+    const cVal = Math.min(Math.max(parseLevelStr(competitionLevel, true), 1), 4);
+    const rVal = Math.min(Math.max(parseLevelStr(churnRisk, true), 1), 4);
+    const rawComplexity = parseLevelStr(buildComplexity, false);
+    const bVal = Math.min(Math.max(5 - rawComplexity, 1), 4); // 5 - complexity gives "Ease of Build"
 
     const pDemand = { x: 100, y: 100 - (dVal / 4) * 75 };
     const pCompetition = { x: 100 + (cVal / 4) * 75, y: 100 };
@@ -2339,7 +2444,13 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                     const kit = launchKits[i];
 
                     return (
-                      <div key={i} className={`transition-all duration-180 border ${isOpen ? "bg-ms-panel-light border-ms-green" : "bg-ms-panel border-ms-border"}`}>
+                      <motion.div 
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: i * 0.05, ease: "easeOut" }}
+                        key={i} 
+                        className={`transition-all duration-180 border ${isOpen ? "bg-ms-panel-light border-ms-green" : "bg-ms-panel border-ms-border"}`}
+                      >
                         {/* Header */}
                         <div className="px-4.5 py-3.5 flex flex-col gap-3 cursor-pointer" onClick={() => setExpandedIdea(isOpen ? null : i)}>
                           <div className="flex items-center gap-2.5 w-full justify-between">
@@ -2851,7 +2962,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                             </div>
                           </div>
                         )}
-                      </div>
+                      </motion.div>
                     );
                   })}
                 </div>
