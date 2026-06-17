@@ -158,12 +158,25 @@ function formatServerGeminiError(err: any): string {
     }
   }
   const lower = msg.toLowerCase();
-  if (lower.includes("invalid") || lower.includes("api key not valid") || lower.includes("api_key_invalid") || lower.includes("400") || lower.includes("argument")) {
-    return "The Gemini API connection could not be established. This is typically due to an invalid or unconfigured API key. Please visit the Settings page to enter a valid Gemini API key starting with 'AIza'.";
+  
+  // Specific checks for API key errors:
+  if (
+    lower.includes("api key not valid") || 
+    lower.includes("api_key_invalid") || 
+    lower.includes("key is invalid") ||
+    lower.includes("api key invalid") ||
+    lower.includes("invalid api key") ||
+    lower.includes("unauthorized") ||
+    lower.includes("forbidden") ||
+    (lower.includes("api key") && lower.includes("invalid"))
+  ) {
+    return "The Gemini API connection could not be established. This is typically due to an invalid or unconfigured API key. Please visit the Settings page (via the gear icon) to enter a valid Gemini API key starting with 'AIza'.";
   }
+  
   if (lower.includes("429") || lower.includes("rate limit") || lower.includes("quota") || lower.includes("resource_exhausted")) {
     return "API Rate Limit or Quota Exceeded. Please try again after a few moments or use your own custom API key in Settings.";
   }
+  
   return msg;
 }
 

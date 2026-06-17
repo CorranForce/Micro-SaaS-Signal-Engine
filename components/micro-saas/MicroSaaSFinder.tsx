@@ -46,6 +46,7 @@ import { IdeaLandscapeChart } from "./IdeaLandscapeChart";
 import { IdeaRoiChart } from "./IdeaRoiChart";
 import { IdeaRadarChart } from "./IdeaRadarChart";
 import { OpportunityScoreTrendChart } from "./OpportunityScoreTrendChart";
+import { MarketDemandSaturationChart } from "./MarketDemandSaturationChart";
 import { PreSellChecklist } from "./PreSellChecklist";
 import { EmailModal } from "./EmailModal";
 import { LaunchKitPanel } from "./LaunchKitPanel";
@@ -2377,14 +2378,20 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
               )}
             </div>
 
-            {/* Idea Landscape Chart */}
-            <IdeaLandscapeChart ideas={result.saasIdeas} />
+            {/* Charts Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+              {/* Idea Landscape Chart */}
+              <IdeaLandscapeChart ideas={result.saasIdeas} />
 
-            {/* Idea Financial & ROI Chart */}
-            <IdeaRoiChart ideas={result.saasIdeas} />
+              {/* Demand vs Saturation Matrix Chart */}
+              <MarketDemandSaturationChart ideas={result.saasIdeas} />
 
-            {/* Market Opportunity Score Trends Area Chart */}
-            <OpportunityScoreTrendChart ideas={result.saasIdeas} />
+              {/* Idea Financial & ROI Chart */}
+              <IdeaRoiChart ideas={result.saasIdeas} />
+
+              {/* Market Opportunity Score Trends Area Chart */}
+              <OpportunityScoreTrendChart ideas={result.saasIdeas} />
+            </div>
 
             {/* Local Business Finder */}
             <LocalBusinessFinder niche={niche} />
