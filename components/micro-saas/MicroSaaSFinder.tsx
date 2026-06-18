@@ -503,13 +503,13 @@ export default function MicroSaaSFinder() {
 
   const LOADING_STEPS = [
     "Initializing neural market scanners...",
-    "Scanning industry pain points...",
-    "Analyzing B2B market gaps...",
-    "Identifying friction in legacy workflows...",
+    "Crawling industry forums and community boards...",
+    "Scanning B2B pain points on social media...",
+    "Analyzing live feed complaints & legacy workflow friction...",
     "Mapping technical feasibility on Lovable.dev...",
     "Generating high-retention SaaS blueprints...",
     "Calculating ROI and MRR estimates...",
-    "Refining go-to-market strategies...",
+    "Refining go-to-market strategies with live sentiment...",
     "Finalizing market signal report..."
   ];
 
@@ -546,6 +546,8 @@ export default function MicroSaaSFinder() {
   const parseJSONResponse = (text: string) => {
     if (!text) return {};
     let clean = text.trim();
+    
+    // 1. Strip markdown backticks
     if (clean.startsWith('```json')) {
       clean = clean.substring(7);
     } else if (clean.startsWith('```')) {
@@ -554,7 +556,112 @@ export default function MicroSaaSFinder() {
     if (clean.endsWith('```')) {
       clean = clean.substring(0, clean.length - 3);
     }
-    return JSON.parse(clean.trim());
+    clean = clean.trim();
+
+    // 2. Locate boundaries of the JSON object/array if available to filter out surrounding text
+    const firstBrace = clean.indexOf('{');
+    const firstBracket = clean.indexOf('[');
+    const lastBrace = clean.lastIndexOf('}');
+    const lastBracket = clean.lastIndexOf(']');
+    
+    let startIndex = -1;
+    let endIndex = -1;
+    
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+      startIndex = firstBrace;
+      endIndex = lastBrace;
+    } else if (firstBracket !== -1) {
+      startIndex = firstBracket;
+      endIndex = lastBracket;
+    }
+    
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+      clean = clean.substring(startIndex, endIndex + 1);
+    }
+
+    // 3. Try standard parsing first
+    try {
+      return JSON.parse(clean.trim());
+    } catch (e) {
+      console.warn("JSON parse failed on initial pass, attempting automatic repair...", e);
+    }
+
+    // 4. Detailed Repair Process
+    let inString = false;
+    let escape = false;
+    const stack: string[] = [];
+
+    for (let i = 0; i < clean.length; i++) {
+      const char = clean[i];
+
+      if (escape) {
+        escape = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escape = true;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') {
+          stack.push('}');
+        } else if (char === '[') {
+          stack.push(']');
+        } else if (char === '}') {
+          if (stack.length > 0 && stack[stack.length - 1] === '}') {
+            stack.pop();
+          }
+        } else if (char === ']') {
+          if (stack.length > 0 && stack[stack.length - 1] === ']') {
+            stack.pop();
+          }
+        }
+      }
+    }
+
+    if (inString) {
+      if (escape) {
+        clean = clean.slice(0, -1);
+      }
+      clean += '"';
+    }
+
+    // Clean up trailing commas, colons, or incomplete property pairs
+    let prevClean = "";
+    while (clean !== prevClean) {
+      prevClean = clean;
+      clean = clean.trim();
+      
+      if (clean.endsWith(",") || clean.endsWith(":")) {
+        clean = clean.slice(0, -1);
+        continue;
+      }
+      
+      const propertyMatch = clean.match(/(,?\s*"[^"]*"\s*)$/);
+      if (propertyMatch) {
+        clean = clean.slice(0, -propertyMatch[0].length);
+        continue;
+      }
+    }
+
+    // Append necessary matching closing brackets/braces from the stack
+    while (stack.length > 0) {
+      clean += stack.pop();
+    }
+
+    try {
+      return JSON.parse(clean.trim());
+    } catch (finalError) {
+      console.error("Failed to parse and repair JSON response.", clean, finalError);
+      throw finalError;
+    }
   };
 
   const checkDomain = useCallback(async (domain: string) => {
@@ -770,28 +877,33 @@ ${userInterests ? `The user has the following background/interests: "${userInter
 Return ONLY valid JSON matching the schema.
 Exactly 1 saasIdea, 1 targetAudience, 1 topPainPoint. Build costs: Lovable.dev Pro $50/mo. Simple=1-3 days=$50-150. Moderate=3-7 days=$150-300. Complex=$300-600. Monthly ops=$50-120 (Lovable+Supabase+APIs).
 
-CRITICAL INSTRUCTIONS FOR IDEA GENERATION:
-1. Provide a concise description (max 80 words) that elaborates on the exact problem it solves, the workflow it replaces, and its core value proposition.
-2. Include its genesis (how the idea originated) and marketAnalysis (why it's a good market). If competitionLevel is 'high' or 'medium', provide a competitionReason explaining why it's competitive.
+CRITICAL INSTRUCTIONS FOR MORE COMPREHENSIVE RESEARCH:
+1. You MUST use Google Search grounding tool to analyze real active discussions, posts, and threads from social media and industry forums (such as Reddit e.g. site:reddit.com, Quora e.g. site:quora.com, and specific industry bulletin boards) related to the niche/industry: "${niche}".
+2. Identify user complaints, friction points, manual spreadsheets/workarounds mentioned on social channels or forums. State explicitly in your "genesis" fields how this idea directly solves a verified problem active in social/forum discussions.
+3. Provide a concise description (max 80 words) that elaborates on the exact problem it solves, the workflow it replaces, and its core value proposition.
+4. Include its genesis (how the idea originated from forum/social platforms) and marketAnalysis (why it's a good market). If competitionLevel is 'high' or 'medium', provide a competitionReason explaining why it's competitive.
 
 SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
 - GTM PLAYBOOK: Must be an extremely specific, actionable playbook. Avoid generic terms. Include specific details about the outreach message content, the exact value proposition mentioned, and the specific trial or pilot offer.
 - COMPETITOR ANALYSIS: Name 2-3 direct/indirect competitors. Include established 'giants' (e.g. Calendly, Acuity) and modern 'niche AI' players (e.g. Motion, Reclaim). Detail their strengths AND specific user-documented weaknesses (e.g. "Complexity Exhaustion" for non-tech users, "Personalization Chasm" in link-sharing).
 - UNIQUE SELLING PROPOSITION (USP): Suggest a USP specifically designed to exploit those weaknesses (e.g. Conversational SMS scheduling that requires ZERO links, or white-labeled 'Receptionist' interface).
-- MARKET VALIDATION: Provide 3+ distinct 'marketValidation.indicators' based on documented user frustrations from Reddit/Forums (e.g. '30+ comments in r/legaladvice about scheduling link drop-offs'). 
+- MARKET VALIDATION: Provide 3+ distinct 'marketValidation.indicators' based on actual customer frustrations and posts found on Reddit or web forums (e.g. '30+ comments in r/legaladvice about scheduling link drop-offs'). 
 - GO/NO-GO: Provide a refined 'goNoGoScore' (1-10) and 'goNoGoReason' based on this enhanced validation.
 - INDUSTRY INSIGHTS: Detail 3-5 typical challenges and 2-3 common software adoption hurdles founders will face.
 - KEY FEATURES: Extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
     try {
       const response = await generateContentAction({
         model: "gemini-3.5-flash",
-        contents: redditText ? `Niche: ${niche}\n\nContext:\n${redditText.slice(0, 6000)}` : `Niche: ${niche}`,
+        contents: redditText 
+          ? `Niche/Industry: ${niche}\n\nPre-defined Context:\n${redditText.slice(0, 6000)}\n\nPlease perform deep live Web Searches across Reddit, YouTube, and relevant industry forums to cross-examine and inspect customer complaints before mapping out the SaaS idea blueprint.` 
+          : `Niche/Industry: ${niche}\n\nPlease perform deep live Web Searches across Reddit, YouTube, and relevant industry forums to cross-examine and inspect customer complaints before mapping out the SaaS idea blueprint. Check specific subreddits, Quora questions, and B2B community blogs.`,
         config: {
           systemInstruction: sp + "\nEnsure all text fields are extremely concise, rich in signal, and contain absolutely no duplicate word chains, loops, or word repetition cycles.",
           temperature: 0.5,
           maxOutputTokens: 8192,
           responseMimeType: "application/json",
-          responseSchema: ideaGenerationSchema
+          responseSchema: ideaGenerationSchema,
+          tools: [{ googleSearch: {} }]
         },
         userKey: getGeminiKey()
       });
@@ -801,6 +913,7 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
       }
       
       const parsed = parseJSONResponse(response.text || "{}");
+      parsed.sources = response.sources || [];
       setResult(parsed); setView("results"); setExpandedIdea(0);
       if (parsed.saasIdeas?.length) {
         checkAllDomains(parsed.saasIdeas);
@@ -847,10 +960,11 @@ ${deepResearchFindings || "None yet."}
 Return ONLY valid JSON matching the schema.
 Exactly 3 saasIdeas. Build costs: Lovable.dev Pro $50/mo. Simple=1-3 days=$50-150. Moderate=3-7 days=$150-300. Complex=$300-600. Monthly ops=$50-120 (Lovable+Supabase+APIs).
 
-CRITICAL INSTRUCTIONS:
-1. Incorporate findings from the provided research context into the new ideas. Focus on solving the specific, documented pain points found in complaints and forum discussions.
-2. Provide a concise description (max 80 words) for each.
-3. Include genesis and marketAnalysis. 
+CRITICAL INSTRUCTIONS FOR MORE COMPREHENSIVE RESEARCH:
+1. You MUST actively use Google Search grounding tool to analyze real active discussions, posts, complaints, and threads from forums (Reddit, Quora, specialist boards, etc.) and social media related to the niche/industry: "${niche}".
+2. Incorporate findings from the provided research context and social media/forum live queries into the new ideas. Focus on solving the specific, documented pain points found in complaints and forum discussions.
+3. Provide a concise description (max 80 words) for each.
+4. Include genesis and marketAnalysis. 
 
 SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
 - GTM PLAYBOOK: Must be an extremely specific, actionable playbook. Avoid generic terms.
@@ -871,13 +985,14 @@ ${researchContext}
 
 Existing ideas to avoid: ${existingIdeaNames}
 
-Generate 3 MORE completely different SaaS ideas for this niche that solve the pain points found in research.`,
+Generate 3 MORE completely different SaaS ideas for this niche that solve the pain points found in research. Please perform live queries targeting social media and forums (such as site:reddit.com, site:youtube.com, and specialized B2B community boards) to identify real user problems and complaints related to "${niche}".`,
         config: {
           systemInstruction: sp + "\nEnsure all text fields are extremely concise, rich in signal, and contain absolutely no duplicate word chains, loops, or word repetition cycles.",
           temperature: 0.5,
           maxOutputTokens: 8192,
           responseMimeType: "application/json",
-          responseSchema: moreIdeasSchema
+          responseSchema: moreIdeasSchema,
+          tools: [{ googleSearch: {} }]
         },
         userKey: getGeminiKey()
       });
@@ -890,7 +1005,8 @@ Generate 3 MORE completely different SaaS ideas for this niche that solve the pa
       if (parsed.saasIdeas?.length) {
         setResult((prev: any) => ({
           ...prev,
-          saasIdeas: [...(prev?.saasIdeas || []), ...parsed.saasIdeas]
+          saasIdeas: [...(prev?.saasIdeas || []), ...parsed.saasIdeas],
+          sources: [...(prev?.sources || []), ...(response.sources || [])]
         }));
         checkAllDomains(parsed.saasIdeas);
       }
@@ -2327,6 +2443,28 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
               <span className="font-ms text-[10px] text-ms-green font-bold tracking-[1.5px] mr-2.5">MARKET:</span>
               <span className="font-ms text-[13px] text-ms-text leading-[1.7]">{result.marketSummary}</span>
             </div>}
+
+            {/* Social Media & Forum Crawled Sources */}
+            {result.sources && result.sources.length > 0 && (
+              <div className="bg-ms-panel border border-ms-border px-4 py-3 pb-3.5 mb-4.5 rounded-sm">
+                <div className="font-ms text-[10px] text-ms-green font-bold tracking-[1.5px] mb-2 flex items-center gap-1.5">
+                  <span className="animate-pulse text-ms-green">●</span> LIVE CHANNELS INVESTIGATED (REDDIT & B2B FORUMS)
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {result.sources.map((src: any, sIdx: number) => (
+                    <a 
+                      key={sIdx} 
+                      href={src.uri} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="font-ms text-[11px] text-ms-text hover:text-ms-green bg-ms-bg border border-ms-border hover:border-ms-green/40 px-2.5 py-1 transition-all rounded duration-150 flex items-center gap-1"
+                    >
+                      <span className="text-[10px] text-ms-green/70">🌐</span> {src.title || "Social Feed / Forum Post"}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Audiences + Pain */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5.5">
