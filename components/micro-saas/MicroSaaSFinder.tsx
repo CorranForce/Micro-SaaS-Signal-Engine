@@ -284,6 +284,8 @@ export default function MicroSaaSFinder() {
   const [selectedNiche, setSelectedNiche] = useState("");
   const [customNiche, setCustomNiche] = useState("");
   const [redditText, setRedditText] = useState("");
+  const [researchReport, setResearchReport] = useState("");
+  const [crawledSourcesState, setCrawledSourcesState] = useState<any[]>([]);
   const [showReddit, setShowReddit] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -677,7 +679,7 @@ export default function MicroSaaSFinder() {
   }, [goDaddyKey, goDaddySecret]);
 
   const checkAllDomains = useCallback(async (ideas: any[]) => {
-    for (const idea of ideas) { 
+    for (const idea of (ideas || []).filter(Boolean)) { 
       const d1 = toDomain(idea.name);
       const d2 = toDomainHyphen(idea.name);
       await checkDomain(d1); 
@@ -865,6 +867,7 @@ Rules:
   const runGenerate = async () => {
     if (!niche) { setError("Select or type a niche first."); return; }
     setLoading(true); setError(""); setResult(null); setDomainStatus({}); setLaunchKits({}); setDeepResearch({}); setEmailSentFor({});
+    setResearchReport(""); setCrawledSourcesState([]);
     setView("loading");
     let mi = 0; setLoadingMsg(LOADING_STEPS[0]); setLoadingProgress(15);
     const interval = setInterval(() => { 
@@ -872,16 +875,14 @@ Rules:
       setLoadingMsg(LOADING_STEPS[mi]); 
       setLoadingProgress(prev => Math.min(95, prev + 15));
     }, 1800);
-    const sp = `You are an elite micro-SaaS researcher specialising in boring, high-retention B2B opportunities in legacy industries.
+    const sp = `You are an elite B2B micro-SaaS researcher specialising in boring, high-retention opportunities in legacy/non-tech industries.
 ${userInterests ? `The user has the following background/interests: "${userInterests}". Tailor your suggestions to leverage this context if applicable, or find high-value niches that align with their strengths.` : ''}
-Return ONLY valid JSON matching the schema.
-Exactly 1 saasIdea, 1 targetAudience, 1 topPainPoint. Build costs: Lovable.dev Pro $50/mo. Simple=1-3 days=$50-150. Moderate=3-7 days=$150-300. Complex=$300-600. Monthly ops=$50-120 (Lovable+Supabase+APIs).
+Return ONLY valid JSON matching the schema format.
+In the root schema, populate exactly 1 item in the "saasIdeas" array, exactly 1 item in the "targetAudiences" array, and exactly 1 item in the "topPainPoints" array. Avoid mixing up array item structures.
 
-CRITICAL INSTRUCTIONS FOR MORE COMPREHENSIVE RESEARCH:
-1. You MUST use Google Search grounding tool to analyze real active discussions, posts, and threads from social media and industry forums (such as Reddit e.g. site:reddit.com, Quora e.g. site:quora.com, and specific industry bulletin boards) related to the niche/industry: "${niche}".
-2. Identify user complaints, friction points, manual spreadsheets/workarounds mentioned on social channels or forums. State explicitly in your "genesis" fields how this idea directly solves a verified problem active in social/forum discussions.
-3. Provide a concise description (max 80 words) that elaborates on the exact problem it solves, the workflow it replaces, and its core value proposition.
-4. Include its genesis (how the idea originated from forum/social platforms) and marketAnalysis (why it's a good market). If competitionLevel is 'high' or 'medium', provide a competitionReason explaining why it's competitive.
+CRITICAL STRUCTURAL RULES:
+1. Provide a concise description (max 80 words) that elaborates on the exact problem it solves, the workflow it replaces, and its core value proposition.
+2. Include its genesis (how the idea originated from forum/social platforms) and marketAnalysis (why it's a good B2B opportunity). If competitionLevel is 'high' or 'medium', provide a competitionReason explaining why it's competitive.
 
 SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
 - GTM PLAYBOOK: Must be an extremely specific, actionable playbook. Avoid generic terms. Include specific details about the outreach message content, the exact value proposition mentioned, and the specific trial or pilot offer.
@@ -892,18 +893,58 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
 - INDUSTRY INSIGHTS: Detail 3-5 typical challenges and 2-3 common software adoption hurdles founders will face.
 - KEY FEATURES: Extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
     try {
+      // Step 1: Deep Live Search over Forums, Reddit & YouTube
+      let searchContextText = "";
+      let crawledSources: any[] = [];
+      try {
+        setLoadingMsg("Crawling Reddit threads & specialist B2B forums...");
+        setLoadingProgress(40);
+        const searchResponse = await generateContentAction({
+          model: "gemini-3.5-flash",
+          contents: redditText 
+            ? `Perform high-granularity online research for the niche: "${niche}". Focus on Reddit (site:reddit.com), YouTube (site:youtube.com), Quora, and customer help-desk forums. 
+Incorporate user frustrations described here: ${redditText.slice(0, 3000)}.
+Find recurring customer complaints, tool flaws, and manual workarounds. Discover real-world thread urls and titles if possible.`
+            : `Perform high-granularity online research for the niche: "${niche}". Focus on crawling site:reddit.com and industry forums for customer complaints, tool gaps, manual hacks or excel sheets that people use to survive.`,
+          config: {
+            tools: [{ googleSearch: {} }]
+          },
+          userKey: getGeminiKey()
+        });
+
+        if (searchResponse.error) {
+          console.warn("Search-grounding phase returned warning: ", searchResponse.error);
+        } else if (searchResponse.text) {
+          searchContextText = searchResponse.text;
+          crawledSources = searchResponse.sources || [];
+          setResearchReport(searchResponse.text);
+          setCrawledSourcesState(searchResponse.sources || []);
+        }
+      } catch (searchErr) {
+        console.warn("Pre-research web search step failed, proceeding with heuristic lookup.", searchErr);
+      }
+
+      // Step 2: Structured JSON generation utilizing the live crawled research findings
+      setLoadingMsg("Synthesizing live reports into high-retention SaaS blueprints...");
+      setLoadingProgress(75);
+
       const response = await generateContentAction({
         model: "gemini-3.5-flash",
-        contents: redditText 
-          ? `Niche/Industry: ${niche}\n\nPre-defined Context:\n${redditText.slice(0, 6000)}\n\nPlease perform deep live Web Searches across Reddit, YouTube, and relevant industry forums to cross-examine and inspect customer complaints before mapping out the SaaS idea blueprint.` 
-          : `Niche/Industry: ${niche}\n\nPlease perform deep live Web Searches across Reddit, YouTube, and relevant industry forums to cross-examine and inspect customer complaints before mapping out the SaaS idea blueprint. Check specific subreddits, Quora questions, and B2B community blogs.`,
+        contents: `Niche/Industry to Analyze: "${niche}"
+
+We crawled Reddit posts, YouTube guides, and community bulletin boards to discover verified user complaints. Use these raw customer findings to construct the SaaS blueprint:
+${searchContextText || "No active forum discussion references available. Generate high-quality B2B SaaS ideas addressing Excel spreadsheet tracking and manual carbon paper reports common to this legacy industry."}
+
+Pre-defined User Context input:
+${redditText ? `User-pasted Context:\n${redditText.slice(0, 5000)}` : "None provided."}
+
+Return the completed structured SaaS idea blueprint in strict schema JSON. No markdown annotations on JSON keys.`,
         config: {
-          systemInstruction: sp + "\nEnsure all text fields are extremely concise, rich in signal, and contain absolutely no duplicate word chains, loops, or word repetition cycles.",
-          temperature: 0.5,
+          systemInstruction: sp + "\nEnsure all text fields are highly concise, short, and distinctive.",
+          temperature: 0.4,
           maxOutputTokens: 8192,
           responseMimeType: "application/json",
-          responseSchema: ideaGenerationSchema,
-          tools: [{ googleSearch: {} }]
+          responseSchema: ideaGenerationSchema
         },
         userKey: getGeminiKey()
       });
@@ -913,7 +954,7 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
       }
       
       const parsed = parseJSONResponse(response.text || "{}");
-      parsed.sources = response.sources || [];
+      parsed.sources = crawledSources;
       setResult(parsed); setView("results"); setExpandedIdea(0);
       if (parsed.saasIdeas?.length) {
         checkAllDomains(parsed.saasIdeas);
@@ -955,14 +996,39 @@ ${validationFindings || "None yet."}
 Deep Research Findings:
 ${deepResearchFindings || "None yet."}
     `.trim();
+
+    let activeResearch = researchReport;
+    let activeSources = crawledSourcesState;
+
+    if (!activeResearch) {
+      try {
+        setLoadingMsg("Grounded social crawlers looking up forum threads...");
+        const searchResponse = await generateContentAction({
+          model: "gemini-3.5-flash",
+          contents: `Perform high-granularity online research for the niche: "${niche}". Focus on crawling site:reddit.com and industry forums for customer complaints, tool gaps, or manual Excel workflow hacks.`,
+          config: {
+            tools: [{ googleSearch: {} }]
+          },
+          userKey: getGeminiKey()
+        });
+        if (!searchResponse.error && searchResponse.text) {
+          activeResearch = searchResponse.text;
+          activeSources = searchResponse.sources || [];
+          setResearchReport(searchResponse.text);
+          setCrawledSourcesState(searchResponse.sources || []);
+        }
+      } catch (e) {
+        console.warn("Secondary search lookup failed.", e);
+      }
+    }
     
     const sp = `You are an elite micro-SaaS researcher specialising in boring, high-retention B2B opportunities in legacy industries.
 Return ONLY valid JSON matching the schema.
 Exactly 3 saasIdeas. Build costs: Lovable.dev Pro $50/mo. Simple=1-3 days=$50-150. Moderate=3-7 days=$150-300. Complex=$300-600. Monthly ops=$50-120 (Lovable+Supabase+APIs).
 
 CRITICAL INSTRUCTIONS FOR MORE COMPREHENSIVE RESEARCH:
-1. You MUST actively use Google Search grounding tool to analyze real active discussions, posts, complaints, and threads from forums (Reddit, Quora, specialist boards, etc.) and social media related to the niche/industry: "${niche}".
-2. Incorporate findings from the provided research context and social media/forum live queries into the new ideas. Focus on solving the specific, documented pain points found in complaints and forum discussions.
+1. Incorporate findings from the provided research context and social media/forum live queries into the new ideas. Focus on solving the specific, documented pain points found in complaints and forum discussions.
+2. State explicitly in your "genesis" fields how this idea directly solves a verified problem active in social/forum discussions.
 3. Provide a concise description (max 80 words) for each.
 4. Include genesis and marketAnalysis. 
 
@@ -976,23 +1042,28 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
 - KEY FEATURES: Extract EXACTLY 3-5 of the most critical MVP features that directly address the core pain point. These must be specific and actionable.`;
 
     try {
+      setLoadingMsg("Generating 3 completely different SaaS expansion ideas...");
+      setLoadingProgress(60);
+
       const response = await generateContentAction({
         model: "gemini-3.5-flash",
         contents: `Niche: ${niche}
 
+Grounded Forums/Reddit Research report:
+${activeResearch || "Generate high-quality B2B SaaS ideas addressing custom Excel integrations and mobile field report submissions."}
+
 Research Context:
 ${researchContext}
 
-Existing ideas to avoid: ${existingIdeaNames}
+Existing ideas to avoid (DO NOT suggest these names or concepts): ${existingIdeaNames}
 
-Generate 3 MORE completely different SaaS ideas for this niche that solve the pain points found in research. Please perform live queries targeting social media and forums (such as site:reddit.com, site:youtube.com, and specialized B2B community boards) to identify real user problems and complaints related to "${niche}".`,
+Generate 3 MORE completely different SaaS ideas for this niche that solve the pain points found in research. Return the response in strict schema JSON. No markdown annotations on JSON keys.`,
         config: {
-          systemInstruction: sp + "\nEnsure all text fields are extremely concise, rich in signal, and contain absolutely no duplicate word chains, loops, or word repetition cycles.",
-          temperature: 0.5,
+          systemInstruction: sp + "\nEnsure all text fields are highly concise, short, and distinctive.",
+          temperature: 0.4,
           maxOutputTokens: 8192,
           responseMimeType: "application/json",
-          responseSchema: moreIdeasSchema,
-          tools: [{ googleSearch: {} }]
+          responseSchema: moreIdeasSchema
         },
         userKey: getGeminiKey()
       });
@@ -1006,7 +1077,7 @@ Generate 3 MORE completely different SaaS ideas for this niche that solve the pa
         setResult((prev: any) => ({
           ...prev,
           saasIdeas: [...(prev?.saasIdeas || []), ...parsed.saasIdeas],
-          sources: [...(prev?.sources || []), ...(response.sources || [])]
+          sources: [...(prev?.sources || []), ...(activeSources || [])]
         }));
         checkAllDomains(parsed.saasIdeas);
       }
@@ -1016,7 +1087,23 @@ Generate 3 MORE completely different SaaS ideas for this niche that solve the pa
     finally { clearInterval(interval); setLoadingMore(false); }
   };
 
-  const resetAll = () => { setView("niche"); setResult(null); setExpandedIdea(null); setExpandedAbout(null); setSelectedNiche(""); setCustomNiche(""); setRedditText(""); setDomainStatus({}); setError(""); setLaunchKits({}); setDeepResearch({}); setEmailModal(null); setEmailSentFor({}); };
+  const resetAll = () => { 
+    setView("niche"); 
+    setResult(null); 
+    setExpandedIdea(null); 
+    setExpandedAbout(null); 
+    setSelectedNiche(""); 
+    setCustomNiche(""); 
+    setRedditText(""); 
+    setResearchReport("");
+    setCrawledSourcesState([]);
+    setDomainStatus({}); 
+    setError(""); 
+    setLaunchKits({}); 
+    setDeepResearch({}); 
+    setEmailModal(null); 
+    setEmailSentFor({}); 
+  };
 
   const runAskAi = async () => {
     if (!askAiInput.trim()) return;
@@ -2083,6 +2170,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                 className="cursor-pointer font-ms text-[11px] font-bold text-slate-300 hover:text-white bg-ms-panel border border-ms-border hover:border-ms-green px-3 py-1.5 rounded transition-all flex items-center gap-1.5 shrink-0 ml-1.5"
               >
                 {user.photoURL ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={user.photoURL} alt={user.displayName || "User"} className="w-4 h-4 rounded-full border border-ms-green" referrerPolicy="no-referrer" />
                 ) : (
                   <User className="w-3.5 h-3.5 text-ms-green" />
@@ -2561,7 +2649,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                 
                 <SL color="#ffc857">⚡ Micro-SaaS Ideas — Click to Expand</SL>
                 <div className="flex flex-col gap-2.5">
-                  {result.saasIdeas.map((idea: any, i: number) => {
+                  {result.saasIdeas.filter(Boolean).map((idea: any, i: number) => {
                     const compLevel = (idea.competitionLevel || "").toLowerCase();
                     const d = DEMAND_CFG[(idea.demandLevel || "").toLowerCase()] || DEMAND_CFG.medium;
                     const c = COMP_CFG[compLevel] || COMP_CFG.medium;

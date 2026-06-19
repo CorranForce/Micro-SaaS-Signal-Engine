@@ -38,7 +38,7 @@ const LEGEND_WRAPPER_STYLE = { paddingTop: '10px', fontSize: '11px', color: '#7a
 export function IdeaLandscapeChart({ ideas }: { ideas: any[] }) {
   const data = React.useMemo(() => {
     if (!ideas || ideas.length === 0) return [];
-    return ideas.map(idea => {
+    return ideas.filter(Boolean).map(idea => {
       const demandScore = idea.demandLevel?.toLowerCase() === 'high' ? 5 : idea.demandLevel?.toLowerCase() === 'medium' ? 3 : 1;
       const compScore = idea.competitionLevel?.toLowerCase() === 'high' ? 5 : idea.competitionLevel?.toLowerCase() === 'medium' ? 3 : 1;
       

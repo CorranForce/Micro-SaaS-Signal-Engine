@@ -101,5 +101,11 @@ export const NICHE_TO_OSM: Record<string, any> = {
   "HVAC Specialists":              { tags:[["craft","hvac"]],                                            gmaps:"hvac+specialists+contractors" },
 };
 
-export const toDomain       = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g,"").replace(/^-|-$/g,"") + ".com";
-export const toDomainHyphen = (n: string) => n.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"") + ".com";
+export const toDomain       = (n: any) => {
+  const str = typeof n === 'string' ? n : String(n || "");
+  return str.toLowerCase().replace(/[^a-z0-9]+/g,"").replace(/^-|-$/g,"") + ".com";
+};
+export const toDomainHyphen = (n: any) => {
+  const str = typeof n === 'string' ? n : String(n || "");
+  return str.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"") + ".com";
+};

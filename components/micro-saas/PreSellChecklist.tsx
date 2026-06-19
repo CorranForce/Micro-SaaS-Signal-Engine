@@ -19,7 +19,7 @@ interface ChecklistItem {
 }
 
 const getValidationScriptAndLocation = (text: string, ideaName: string) => {
-  const t = text.toLowerCase();
+  const t = (text || "").toLowerCase();
   const name = ideaName || "this micro-SaaS solution";
   
   if (t.includes("identify") || t.includes("list") || t.includes("find") || t.includes("prospect") || t.includes("business")) {

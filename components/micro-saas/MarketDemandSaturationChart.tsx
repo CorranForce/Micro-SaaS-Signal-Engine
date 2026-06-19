@@ -96,7 +96,7 @@ export function MarketDemandSaturationChart({ ideas }: MarketDemandSaturationCha
   const data = useMemo(() => {
     if (!ideas || ideas.length === 0) return [];
     
-    return ideas.map((idea, index) => {
+    return ideas.filter(Boolean).map((idea, index) => {
       const dLVal = (idea.demandLevel || "").toLowerCase();
       const cLVal = (idea.competitionLevel || "").toLowerCase();
       

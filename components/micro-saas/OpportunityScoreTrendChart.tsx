@@ -47,7 +47,7 @@ const CustomTooltip = ({ active, payload }: any) => {
 export function OpportunityScoreTrendChart({ ideas }: { ideas: any[] }) {
   const data = useMemo(() => {
     if (!ideas || ideas.length === 0) return [];
-    return ideas.map(idea => {
+    return ideas.filter(Boolean).map(idea => {
       // Aggregate a 100-point composite Opportunity Score:
       // 1. Boring Score (up to 25 points): idea.boringScore (1-5) * 5
       const boringValue = (idea.boringScore || 3) * 5;

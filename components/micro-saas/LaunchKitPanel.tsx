@@ -137,9 +137,9 @@ export const LaunchKitPanel = ({ kit, idea, roi, onEmailClick }: any) => {
               </div>
             )}
             {Array.isArray(kit.noCodeStack) && kit.noCodeStack.length > 0 && (
-              <div className="mb-4.5">
+              <div className="mb-4.5 w-full">
                 <SL>Recommended No-Code Stack</SL>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 w-full">
                   {kit.noCodeStack.map((t: any, i: number) => {
                     if (typeof t === 'string') {
                       return (

@@ -43,7 +43,7 @@ export function IdeaRoiChart({ ideas }: { ideas: any[] }) {
 
   const data = useMemo(() => {
     if (!ideas || ideas.length === 0) return [];
-    return ideas.map(idea => {
+    return ideas.filter(Boolean).map(idea => {
       const roiRaw = typeof idea.roiEstimate === 'string' ? { assumptions: idea.roiEstimate } : (idea.roiEstimate || {});
       
       const roiPct = parseFloat(String(roiRaw.roiMonth1Pct ?? "0").replace(/[^0-9.\-]/g, "")) || 0;

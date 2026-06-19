@@ -141,7 +141,7 @@ out body center;`;
               </button>
             )}
           </div>
-          {!searched && !loading && <div className="font-ms text-[12px] text-[#4a6a4a] py-2">Click <strong className="text-ms-green">Search {radius} Mile Radius</strong> to find real {niche.toLowerCase()} near your location using OpenStreetMap — no API key needed.</div>}
+          {!searched && !loading && <div className="font-ms text-[12px] text-[#4a6a4a] py-2">Click <strong className="text-ms-green">Search {radius} Mile Radius</strong> to find real {(niche || "").toLowerCase()} near your location using OpenStreetMap — no API key needed.</div>}
           {loading && (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-2 mt-2">
               {[1, 2, 3, 4].map(i => (
