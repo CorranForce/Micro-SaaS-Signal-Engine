@@ -183,8 +183,8 @@ function formatServerGeminiError(err: any): string {
 
 async function runWithRetry<T>(
   apiCall: () => Promise<T>,
-  maxRetries: number = 2,
-  initialDelayMs: number = 1000
+  maxRetries: number = 4,
+  initialDelayMs: number = 2000
 ): Promise<T> {
   let delay = initialDelayMs;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
