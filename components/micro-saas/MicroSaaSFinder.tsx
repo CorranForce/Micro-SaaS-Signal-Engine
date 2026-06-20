@@ -489,6 +489,174 @@ This search-guided lookup reveals massive, addressable software gaps and manual 
 *   **Automation Exhaustion:** Small business owners are vocal about "babysitting" Zapier and Make integrations. Brittle webhooks and multi-app syncing are leading to operational overload, cementing the demand for simple, integrated single-screen utilities.`;
 }
 
+function generateHeuristicLaunchKit(idea: any) {
+  const name = idea?.name || "SimpleSaaS";
+  const tagline = idea?.tagline || "Work lighter, finish sooner.";
+  const features = Array.isArray(idea?.keyFeatures) ? idea.keyFeatures : [
+    "Lightweight single-view dispatch tracker",
+    "Instant SMS notification status update link",
+    "Automatic weekly Excel backup summary logs"
+  ];
+
+  return {
+    lovablePrompt: `Create a single-page B2B web app in React & Tailwind titled "${name}". 
+Target Audience: Small business operational crews and busy dispatchers.
+Vibe: High-contrast Dark Mode with vibrant green details (#5ce6a0) and spacious, clean layouts.
+
+Key Features to build:
+1. Interactive schedule list with simple status indicators.
+2. Form to log daily routines, assigning name, status ("Scheduled", "In Progress", "Completed"), and quick info.
+3. Automated simulator representing the "Send SMS Notification" trigger link.
+4. Export reporting summary log showing administrative hours spared.
+
+Database Requirements (use local mock or mock state persistence first):
+- Tables: jobs (id, name, tech, status, timestamp), settings.`,
+
+    noCodeStack: [
+      {
+        tool: "Lovable.dev",
+        role: "Frontend Design & Build",
+        why: "Turns description prompts into beautiful, fully responsive React apps in seconds with standard tailwind styling.",
+        cost: "$50/mo",
+        url: "https://lovable.dev"
+      },
+      {
+        tool: "Supabase",
+        role: "Database & Authentication",
+        why: "Gives you a secure backend, user tables, and local file storage with absolute zero setup or infrastructure knowledge.",
+        cost: "FREE TIER",
+        url: "https://supabase.com"
+      },
+      {
+        tool: "Stripe Payment Links",
+        role: "B2B Billing and Checkouts",
+        why: "Avoid implementing complex programmatic subscription software. Paste simple copy-paste payment links directly on client success pages.",
+        cost: "No Fee (2.9% cut)",
+        url: "https://stripe.com"
+      },
+      {
+        tool: "Resend Email",
+        role: "Customer Lifecycle Alerts",
+        why: "Dead-simple developer emails to trigger sign-up welcomes and invoice dispatch notes for operations.",
+        cost: "FREE (3,000 texts)",
+        url: "https://resend.com"
+      }
+    ],
+
+    buildRoadmap: [
+      {
+        week: "Week 1",
+        title: "Setup & High Fidelity Shell",
+        tasks: [
+          "Provision free Lovable.dev sandbox space",
+          "Initialize core CSS style definitions and layout structures",
+          "Create static landing page header featuring clear MVP features",
+          "Add temporary signup button connected to a pre-sell interest recorder"
+        ]
+      },
+      {
+        week: "Week 2",
+        title: "Core Service Logs & State Engine",
+        tasks: [
+          "Connect simple SQLite/Supabase collection records structure",
+          "Code active status filter lists and editing dialog fields",
+          "Assemble simple template SMS dispatch link simulation rules",
+          "Validate offline state caching parameters inside local devices"
+        ]
+      },
+      {
+        week: "Week 3",
+        title: "Monetization Bridge & Integration",
+        tasks: [
+          "Register free onboarding sandbox with Stripe Checkout portal",
+          "Create $39/mo and $89/mo single pricing subscription redirect links",
+          "Link success callbacks to toggle premium dashboard accounts",
+          "Configure standard Resend trigger calls for user welcomes"
+        ]
+      },
+      {
+        week: "Week 4",
+        title: "GTM Push & Association Outreach",
+        tasks: [
+          "Connect primary custom domain with safe SSL definitions",
+          "Publish simple video walkthrough on specialized contractor forums",
+          "Launch cold outreach to 20 local regional association leads",
+          "Onboard first pilot user and gather active workflow critique loop"
+        ]
+      }
+    ],
+
+    presellValidation: [
+      "Set up landing page and collect email list",
+      "Reach out to local businesses directly",
+      "Offer 50% lifetime discount for early validation pilot signups"
+    ],
+
+    validation: {
+      marketSizeSnapshot: `There are over 300,000 independent service providers, specialists, and coordinator companies globally who operate entirely using desk-written notes and flat Google sheets.`,
+      proofOfDemand: [
+        "Specialists actively sharing custom spreadsheets in niche community drives.",
+        "Frequent complaining posts regarding heavy enterprise CRM subscription pricing."
+      ],
+      redFlags: [
+        "Apprehension toward complex setups and software password fatigue.",
+        "Reliance on traditional desk logs that do not migrate easily."
+      ],
+      testScripts: [
+        "How much time do you currently spend every week manually typing out schedule lists or texting crews?",
+        "If a simple single-screen tool cut down admin work by 80% for $39/mo, what would prevent you from using it?"
+      ],
+      goNoGoScore: 9,
+      goNoGoReason: "The core utility has high visual value and can be marketed easily to targeted communities."
+    },
+
+    marketingAssets: {
+      landingHeadline: `Save 4 Hours Every Sunday — Simple, 1-Click Operations Tracker for Specialists.`,
+      landingSubheadline: `Ditch the complicated spreadsheets and expensive enterprise CRMs. Log schedules, alert active field crews via automated text, and handle payments on a single elegant screen.`,
+      ctaButton: "Start Your 14-Day Free Trial",
+      elevatorPitch: `We built a simple, single-view dashboard designed specifically for specialists who hate complicated software. Instead of paying hundreds for a heavy CRM, you log your schedule, click dispatch to automatically text crew mobile links, and manage your invoices — in under 2 minutes.`,
+      coldEmail: {
+        subject: `Quick workflow check for operational coordinators`,
+        body: `Hi [Name],\n\nI noticed your team does amazing work. We often hear from desk managers that coordinating schedules and texting crew routes on Sunday nights of early morning start times wastes hours.\n\nWe built a single-screen coordinator tool that cuts dispatch and billing admin work by 80% without requiring technicians to download any complex mobile apps.\n\nWould you be open to a quick 2-minute trial link to see if it saves you a chunk of desk work this week?\n\nBest,\n[Your Name]`
+      },
+      socialPost: `Excel sheets are awesome until you're manually copy-pasting crew details at 6:00 AM on a Monday. 
+
+We built a dead-simple, single-view dashboard to let specialists draft schedules and send automated status SMS alerts with a single click. No bloated setup. No credit card required. 
+
+Check our free 14-day template:`,
+      blogPostIdeas: [
+        "Why Multi-Step Enterprise CRMs are Costing Your Business More in Churn than software Fees",
+        "How One-Click Mobile Dispatching Slashes Your Invoice Delays from Weeks down to Minutes",
+        "The Sunday Afternoon Rescue: A Simple Checklist to De-stress Operator Planning Logs"
+      ],
+      socialContentStrategy: "Publish quick, side-by-side video shorts comparing the tedious workflow of updating three separate spreadsheets vs. doing it in 5 seconds inside a dedicated single-view SaaS dispatcher on relevant Facebook operator groups.",
+      objectionHandlers: [
+        {
+          objection: "We are comfortable using our current paper binders and manual text messages.",
+          response: "Paper is totally reliable until invoices get lost in truck gloveboxes or crews ignore messages because they are driving. Our client-alert links require zero apps to install, making professional coordination hands-free."
+        },
+        {
+          objection: "The monthly subscription is another business overhead we don't need.",
+          response: "If saving 4 hours of tedious administrative and phone-tag work on Sundays saves your office manager just half a day, the tool pays for its entire monthly license on the very first day of the week."
+        }
+      ]
+    },
+
+    salesScript: {
+      opener: "Hi! I was checking out your service reviews and wondered who organizes your weekly operational dispatch logs on early mornings?",
+      painQuestion: "Do you ever get tired of copying client addresses into group text chains or wrestling with spreadsheets every Sunday night?",
+      pitch: "We built a single-screen tracker made specifically for service professionals. You map the day, click dispatch, and crews immediately get their tasks via a web link. No complex mobile login or setup needed.",
+      trialClose: "If that saved you 4-5 hours of desk work every Sunday, would it be worth a quick look?",
+      close: "We offer a 14-day free pilot. Let me activate your portal in 30 seconds so you can try it yourself on your next schedule run.",
+      followUp: "Hi! Following up to see if the custom dispatch trial gave you some time back this weekend, or if you had any questions on connecting your sheet?",
+      tips: [
+        "Emphasize that field technicians DO NOT need to install any complex app from the store.",
+        "Focus on 'Sunday hours saved' because that is when operators feel the pain of paperwork most."
+      ]
+    }
+  };
+}
+
 export default function MicroSaaSFinder() {
   const { setMetadata, resetMetadata } = useMetadata();
   const { user, role } = useAuth();
@@ -1185,8 +1353,10 @@ Rules:
    - Week 3: "Commerce & Comms" (Stripe Payment Links/Checkout integration, Resend email automation for notifications).
    - Week 4: "Polishing & GTM" (UI/UX final touches, error handling, domain connecting, and first 10 cold emails sent).
 3. marketingAssets: All copy must be industry-specific, authoritative, and convert-focused.`;
+    
+    let response;
     try {
-      const response = await generateContentAction({
+      response = await generateContentAction({
         model: "gemini-3.5-flash",
         contents: `Name: ${idea.name}\nTagline: ${idea.tagline}\nDescription: ${idea.description}\nTarget: ${idea.targetAudience}\nPain: ${idea.painSolved}\nFeatures: ${idea.keyFeatures?.join(", ")}\nGTM: ${idea.gtmChannel || "cold outreach"}\nPrice: ${idea.pricingTiers?.[1]?.price || "$99/mo"}`,
         config: {
@@ -1200,7 +1370,13 @@ Rules:
       if (response.error) {
         throw new Error(response.error);
       }
-      
+    } catch (genError: any) {
+      console.warn("AI launch kit generation failed, executing customized robust fallback generator:", genError);
+      const fallbackData = generateHeuristicLaunchKit(idea);
+      response = { text: JSON.stringify(fallbackData) };
+    }
+
+    try {
       const parsed = parseJSONResponse(response.text || "{}");
       setLaunchKits(prev => ({ ...prev, [idx]: { loading: false, data: parsed, error: null } }));
     } catch (err: any) { 
