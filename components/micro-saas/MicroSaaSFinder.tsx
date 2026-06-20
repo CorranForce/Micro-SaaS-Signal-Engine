@@ -1023,32 +1023,37 @@ SPECIAL INSTRUCTIONS FOR REFINED OUTPUT:
       // Step 1: Deep Live Search over Forums, Reddit & YouTube
       let searchContextText = "";
       let crawledSources: any[] = [];
-      try {
-        setLoadingMsg("Crawling Reddit threads & specialist B2B forums...");
-        setLoadingProgress(40);
-        const searchResponse = await generateContentAction({
-          model: "gemini-3.5-flash",
-          contents: redditText 
-            ? `Perform high-granularity online research for the niche: "${niche}". Focus on Reddit (site:reddit.com), YouTube (site:youtube.com), Quora, and customer help-desk forums. 
-Incorporate user frustrations described here: ${redditText.slice(0, 3000)}.
-Find recurring customer complaints, tool flaws, and manual workarounds. Discover real-world thread urls and titles if possible.`
-            : `Perform high-granularity online research for the niche: "${niche}". Focus on crawling site:reddit.com and industry forums for customer complaints, tool gaps, manual hacks or excel sheets that people use to survive.`,
-          config: {
-            tools: [{ googleSearch: {} }]
-          },
-          userKey: getGeminiKey()
-        });
+      const hasDetailedPastedResearch = redditText && redditText.trim().length > 200;
 
-        if (searchResponse.error) {
-          console.warn("Search-grounding phase returned warning: ", searchResponse.error);
-        } else if (searchResponse.text) {
-          searchContextText = searchResponse.text;
-          crawledSources = searchResponse.sources || [];
-          setResearchReport(searchResponse.text);
-          setCrawledSourcesState(searchResponse.sources || []);
+      if (hasDetailedPastedResearch) {
+        setLoadingMsg("Using provided deep-crawl social findings...");
+        setLoadingProgress(50);
+        searchContextText = redditText;
+        setResearchReport(redditText);
+      } else {
+        try {
+          setLoadingMsg("Crawling Reddit threads & specialist B2B forums...");
+          setLoadingProgress(40);
+          const searchResponse = await generateContentAction({
+            model: "gemini-3.5-flash",
+            contents: `Perform high-granularity online research for the niche: "${niche}". Focus on crawling site:reddit.com and industry forums for customer complaints, tool gaps, manual hacks or excel sheets that people use to survive.`,
+            config: {
+              tools: [{ googleSearch: {} }]
+            },
+            userKey: getGeminiKey()
+          });
+
+          if (searchResponse.error) {
+            console.warn("Search-grounding phase returned warning: ", searchResponse.error);
+          } else if (searchResponse.text) {
+            searchContextText = searchResponse.text;
+            crawledSources = searchResponse.sources || [];
+            setResearchReport(searchResponse.text);
+            setCrawledSourcesState(searchResponse.sources || []);
+          }
+        } catch (searchErr) {
+          console.warn("Pre-research web search step failed, proceeding with heuristic lookup.", searchErr);
         }
-      } catch (searchErr) {
-        console.warn("Pre-research web search step failed, proceeding with heuristic lookup.", searchErr);
       }
 
       // Step 2: Structured JSON generation utilizing the live crawled research findings

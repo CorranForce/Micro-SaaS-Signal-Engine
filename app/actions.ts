@@ -193,14 +193,20 @@ async function runWithRetry<T>(
     } catch (error: any) {
       const msg = error?.message || String(error || "");
       const lower = msg.toLowerCase();
-      const isRateLimit = lower.includes("429") || 
+      const isRetryable = lower.includes("429") || 
                           lower.includes("rate limit") || 
                           lower.includes("quota") || 
                           lower.includes("resource_exhausted") || 
-                          lower.includes("too many requests");
+                          lower.includes("too many requests") ||
+                          lower.includes("503") ||
+                          lower.includes("overloaded") ||
+                          lower.includes("service unavailable") ||
+                          lower.includes("transient") ||
+                          lower.includes("deadline exceeded") ||
+                          lower.includes("try again later");
       
-      if (isRateLimit && attempt < maxRetries) {
-        console.log(`[GEMINI API] Rate limit observed. Backoff retry attempt ${attempt} in ${delay}ms...`);
+      if (isRetryable && attempt < maxRetries) {
+        console.log(`[GEMINI API] Retryable transient error/rate limit observed. Backoff retry attempt ${attempt} in ${delay}ms...`);
         await new Promise((resolve) => setTimeout(resolve, delay));
         delay *= 2; // Exponential backoff
         continue;
@@ -473,6 +479,7 @@ export async function generateContentAction(options: {
       chunks
     };
   } catch (error: any) {
+    console.error("[GEMINI API ERROR IN ACTION]:", error);
     return { error: formatServerGeminiError(error) };
   }
 }
