@@ -1,6 +1,7 @@
 "use server";
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { ideaGenerationSchema, launchKitSchema, moreIdeasSchema } from "../lib/gemini-schemas";
 
 export async function checkDomainAction(domain: string, key?: string, secret?: string) {
   let apiKey = key || process.env.GODADDY_API_KEY;
@@ -182,8 +183,8 @@ function formatServerGeminiError(err: any): string {
 
 async function runWithRetry<T>(
   apiCall: () => Promise<T>,
-  maxRetries: number = 5,
-  initialDelayMs: number = 2000
+  maxRetries: number = 2,
+  initialDelayMs: number = 1000
 ): Promise<T> {
   let delay = initialDelayMs;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -416,6 +417,28 @@ export async function generateContentAction(options: {
     return { error: "Gemini API key is invalid or not configured. Please visit the Settings page (via the top-right button) to configure a valid API key." };
   }
 
+  let cleanConfig: any = undefined;
+  if (options.config) {
+    try {
+      // Deep clone to strip Next.js Server Action Proxy Wrapper & Metadata
+      cleanConfig = JSON.parse(JSON.stringify(options.config));
+    } catch (e) {
+      cleanConfig = { ...options.config };
+    }
+  }
+
+  // Resolve statically imported schemas by key name if passed as a string
+  if (cleanConfig && typeof cleanConfig.responseSchema === "string") {
+    const schemaKey = cleanConfig.responseSchema;
+    if (schemaKey === "ideaGenerationSchema") {
+      cleanConfig.responseSchema = ideaGenerationSchema;
+    } else if (schemaKey === "launchKitSchema") {
+      cleanConfig.responseSchema = launchKitSchema;
+    } else if (schemaKey === "moreIdeasSchema") {
+      cleanConfig.responseSchema = moreIdeasSchema;
+    }
+  }
+
   try {
     const ai = new GoogleGenAI({ 
       apiKey,
@@ -429,7 +452,7 @@ export async function generateContentAction(options: {
     const response = await runWithRetry(() => ai.models.generateContent({
       model: options.model,
       contents: options.contents,
-      config: options.config,
+      config: cleanConfig,
     }));
 
     const chunksRaw = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];

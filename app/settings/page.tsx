@@ -7,40 +7,42 @@ import toast from 'react-hot-toast';
 import Link from 'next/link';
 import { apiTracker } from '@/utils/apiTracker';
 
-const UserRoleManager = ({ supabaseUrl, supabaseKey }: { supabaseUrl: string, supabaseKey: string }) => {
+const UserRoleManager = ({ supabaseUrl, supabaseKey, userTable }: { supabaseUrl: string, supabaseKey: string, userTable: string }) => {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
 
   const fetchUsers = React.useCallback(async () => {
     if (!supabaseUrl || !supabaseKey) return;
     setLoading(true);
+    setSupabaseError(null);
     try {
       const { getSupabase } = await import('@/lib/supabase');
       const supabase = getSupabase(supabaseUrl, supabaseKey);
       if (supabase) {
-        const { data, error } = await supabase.from('users').select('*').order('updated_at', { ascending: false });
+        const { data, error } = await supabase.from(userTable).select('*').order('updated_at', { ascending: false });
         if (error) {
-          if (error.message?.includes('Could not find the table')) {
-            console.warn("Supabase warning: 'users' table not found. Please create it if you want to manage roles.");
+          if (error.message?.includes('Could not find the table') || error.code === '42P01') {
+            console.warn(`Supabase warning: '${userTable}' table not found. Please create it if you want to manage roles.`);
             setUsers([]);
             return;
           }
-          console.error("Supabase error:", error);
-          toast.error(`Supabase error: ${error.message || 'Unknown error'}`);
+          console.warn("Supabase error (non-fatal connection error, likely bad credentials/connection):", error);
+          setSupabaseError(error.message || 'Unknown Supabase connection error');
           return;
         }
         setUsers(data || []);
       }
     } catch (e: any) {
-      console.error("Failed to fetch users", e);
+      console.warn("Failed to fetch users (non-fatal, likely connection or credential error during reset/config)", e);
       const msg = e.message === "Failed to fetch" 
         ? "Network error: Could not connect to Supabase. Please check your Project URL and internet connection." 
         : e.message || 'Check console';
-      toast.error(`Failed to fetch users: ${msg}`);
+      setSupabaseError(msg);
     } finally {
       setLoading(false);
     }
-  }, [supabaseUrl, supabaseKey]);
+  }, [supabaseUrl, supabaseKey, userTable]);
 
   useEffect(() => {
     fetchUsers();
@@ -52,10 +54,10 @@ const UserRoleManager = ({ supabaseUrl, supabaseKey }: { supabaseUrl: string, su
       const { getSupabase } = await import('@/lib/supabase');
       const supabase = getSupabase(supabaseUrl, supabaseKey);
       if (supabase) {
-        const { error } = await supabase.from('users').update({ role: newRole }).eq('id', userId);
+        const { error } = await supabase.from(userTable).update({ role: newRole }).eq('id', userId);
         if (error) {
-          if (error.message?.includes('Could not find the table')) {
-            toast.error("The 'users' table does not exist in your Supabase database.");
+          if (error.message?.includes('Could not find the table') || error.code === '42P01') {
+            toast.error(`The '${userTable}' table does not exist in your Supabase database.`);
             return;
           }
           throw error;
@@ -64,7 +66,7 @@ const UserRoleManager = ({ supabaseUrl, supabaseKey }: { supabaseUrl: string, su
         fetchUsers();
       }
     } catch (e: any) {
-      console.error("Failed to update role", e);
+      console.warn("Failed to update role", e);
       toast.error("Failed to update role");
     }
   };
@@ -91,6 +93,19 @@ const UserRoleManager = ({ supabaseUrl, supabaseKey }: { supabaseUrl: string, su
           {loading ? "REFRESHING..." : "REFRESH"}
         </button>
       </div>
+
+      {supabaseError && (
+        <div className="bg-ms-red/10 border border-ms-red/25 p-4 mb-5 rounded-sm text-xs max-w-2xl">
+          <div className="flex items-center gap-2 text-ms-red font-bold">
+            <span>⚠️ Supabase Connection Error:</span>
+          </div>
+          <p className="text-ms-text text-[11px] mt-1 font-mono bg-ms-bg/50 p-2 border border-ms-border/30 rounded-sm">{supabaseError}</p>
+          <div className="text-[11px] mt-2 space-y-1 text-ms-text/80">
+            <p>💡 <strong>Note for Password Resets:</strong> If you recently updated your database password in the Supabase console, your database is restarting. It usually takes 1-2 minutes to be fully online.</p>
+            <p>Once active, please test your connection below or check if any custom schemas need updates.</p>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs text-ms-text">
@@ -171,6 +186,7 @@ export default function SettingsPage() {
   const [testingGemini, setTestingGemini] = useState(false);
   const [testingSupabase, setTestingSupabase] = useState(false);
   const [autoSyncProfiles, setAutoSyncProfiles] = useState(false);
+  const [supabaseUserTable, setSupabaseUserTable] = useState("microSaaS-Users");
   const [apiStats, setApiStats] = useState<any>(null);
 
   useEffect(() => {
@@ -195,6 +211,7 @@ export default function SettingsPage() {
     const localResendKey = localStorage.getItem("ms-resend-key") || "";
     const localGeminiKey = localStorage.getItem("ms-gemini-key") || "";
     const localAutoSync = localStorage.getItem("ms-auto-sync-supabase") === 'true';
+    const localUserTable = localStorage.getItem("ms-supabase-user-table") || "microSaaS-Users";
     
     setGoDaddyKey(localGoDaddyKey);
     setGoDaddySecret(localGoDaddySecret);
@@ -203,45 +220,62 @@ export default function SettingsPage() {
     setResendKey(localResendKey);
     setGeminiKey(localGeminiKey);
     setAutoSyncProfiles(localAutoSync);
+    setSupabaseUserTable(localUserTable);
 
     // Try to sync from Supabase
     if (localSupabaseUrl && localSupabaseKey) {
       import('@/lib/supabase').then(({ getSupabase }) => {
         const supabase = getSupabase(localSupabaseUrl, localSupabaseKey);
         if (supabase) {
-          supabase.from('app_settings').select('*').eq('id', 'global').single().then(({ data, error }) => {
-            if (!error && data) {
-              if (data.godaddy_key) {
-                setGoDaddyKey(data.godaddy_key);
-                localStorage.setItem("ms-godaddy-key", data.godaddy_key);
+          const fetchPromise = supabase.from('app_settings').select('*').eq('id', 'global').single();
+          const timeoutPromise = new Promise<{ data: null, error: Error }>((_, reject) => 
+            setTimeout(() => reject(new Error("Timeout")), 3000)
+          );
+
+          Promise.race([fetchPromise, timeoutPromise])
+            .then((res: any) => {
+              if (res && !res.error && res.data) {
+                const data = res.data;
+                if (data.godaddy_key) {
+                  setGoDaddyKey(data.godaddy_key);
+                  localStorage.setItem("ms-godaddy-key", data.godaddy_key);
+                }
+                if (data.godaddy_secret) {
+                  setGoDaddySecret(data.godaddy_secret);
+                  localStorage.setItem("ms-godaddy-secret", data.godaddy_secret);
+                }
+                if (data.supabase_url) {
+                  setSupabaseUrl(data.supabase_url);
+                  localStorage.setItem("ms-supabase-url", data.supabase_url);
+                }
+                if (data.supabase_key) {
+                  setSupabaseKey(data.supabase_key);
+                  localStorage.setItem("ms-supabase-key", data.supabase_key);
+                }
+                if (data.resend_key) {
+                  setResendKey(data.resend_key);
+                  localStorage.setItem("ms-resend-key", data.resend_key);
+                }
+                if (data.gemini_key) {
+                  setGeminiKey(data.gemini_key);
+                  localStorage.setItem("ms-gemini-key", data.gemini_key);
+                }
+                if (data.auto_sync_profiles !== null && data.auto_sync_profiles !== undefined) {
+                  setAutoSyncProfiles(data.auto_sync_profiles);
+                  localStorage.setItem("ms-auto-sync-supabase", String(data.auto_sync_profiles));
+                }
+                if (data.user_table_name) {
+                  setSupabaseUserTable(data.user_table_name);
+                  localStorage.setItem("ms-supabase-user-table", data.user_table_name);
+                }
               }
-              if (data.godaddy_secret) {
-                setGoDaddySecret(data.godaddy_secret);
-                localStorage.setItem("ms-godaddy-secret", data.godaddy_secret);
-              }
-              if (data.supabase_url) {
-                setSupabaseUrl(data.supabase_url);
-                localStorage.setItem("ms-supabase-url", data.supabase_url);
-              }
-              if (data.supabase_key) {
-                setSupabaseKey(data.supabase_key);
-                localStorage.setItem("ms-supabase-key", data.supabase_key);
-              }
-              if (data.resend_key) {
-                setResendKey(data.resend_key);
-                localStorage.setItem("ms-resend-key", data.resend_key);
-              }
-              if (data.gemini_key) {
-                setGeminiKey(data.gemini_key);
-                localStorage.setItem("ms-gemini-key", data.gemini_key);
-              }
-              if (data.auto_sync_profiles !== null && data.auto_sync_profiles !== undefined) {
-                setAutoSyncProfiles(data.auto_sync_profiles);
-                localStorage.setItem("ms-auto-sync-supabase", String(data.auto_sync_profiles));
-              }
-            }
-          });
+            })
+            .catch((err) => {
+              console.warn("Background config sync check from Supabase skipped or timed out:", err);
+            });
         }
+      }).catch((importErr) => {
+        console.warn("Failed to load getSupabase helper on mount:", importErr);
       });
     }
   }, []);
@@ -277,7 +311,7 @@ export default function SettingsPage() {
           }
         }
       } catch (e) {
-        console.error("Failed to save to Supabase", e);
+        console.warn("Failed to save to Supabase", e);
       }
     }
     
@@ -296,6 +330,7 @@ export default function SettingsPage() {
 
     localStorage.setItem("ms-supabase-url", supabaseUrl);
     localStorage.setItem("ms-supabase-key", supabaseKey);
+    localStorage.setItem("ms-supabase-user-table", supabaseUserTable);
     
     // Try to save to Supabase
     if (supabaseUrl && supabaseKey) {
@@ -307,7 +342,8 @@ export default function SettingsPage() {
             id: 'global',
             supabase_url: supabaseUrl,
             supabase_key: supabaseKey,
-            auto_sync_profiles: autoSyncProfiles
+            auto_sync_profiles: autoSyncProfiles,
+            user_table_name: supabaseUserTable
           };
           if (goDaddyKey) payload.godaddy_key = goDaddyKey;
           if (goDaddySecret) payload.godaddy_secret = goDaddySecret;
@@ -783,6 +819,19 @@ export default function SettingsPage() {
                 <p className="text-ms-yellow text-[10px] mt-1">Key should be a JWT starting with &quot;eyJ&quot;</p>
               )}
             </div>
+            <div>
+              <label className="block font-ms text-[10px] text-ms-green font-bold tracking-[1px] mb-1.5">USER PROFILES TABLE NAME</label>
+              <input 
+                type="text" 
+                value={supabaseUserTable} 
+                onChange={e => setSupabaseUserTable(e.target.value)}
+                className="w-full bg-ms-bg border border-ms-border text-ms-text px-3 py-2.5 text-xs outline-none focus:border-ms-green transition-colors"
+                placeholder="microSaaS-Users"
+              />
+              <p className="text-ms-text-muted text-[10px] mt-1">
+                Specify the table in your Supabase database storing profiles/roles. Default is <span className="text-ms-green">microSaaS-Users</span>. If you prefer standard naming, you can rebuild it as <span className="text-ms-green">users</span>.
+              </p>
+            </div>
             <div className="pt-2 flex flex-wrap gap-3 items-center">
               <button 
                 onClick={handleSaveSupabase}
@@ -806,6 +855,140 @@ export default function SettingsPage() {
                 />
                 <span className="text-xs text-ms-text font-bold uppercase tracking-wider">AUTO-SYNC PROFILES</span>
               </label>
+            </div>
+
+            {/* SQL Copy Help */}
+            <div className="mt-6 border-t border-ms-border/50 pt-5">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider mb-2">📋 Supabase Database SQL Setup (DDL)</h3>
+              <p className="text-ms-text-muted text-[11px] mb-3 leading-relaxed">
+                Copy and run this SQL script in your Supabase project (<strong>SQL Editor</strong> &gt; <strong>New Query</strong> &gt; <strong>Run</strong>) to instantly rebuild all tables (including <code>{supabaseUserTable}</code>) and bypass permissions/RLS limits:
+              </p>
+              <div className="relative">
+                <pre className="w-full bg-ms-bg text-ms-text text-[10px] p-3 border border-ms-border overflow-x-auto rounded-sm select-all font-mono leading-relaxed max-h-52 overflow-y-auto">
+{`-- 1. Create App Settings table
+CREATE TABLE IF NOT EXISTS public.app_settings (
+    id text primary key,
+    godaddy_key text,
+    godaddy_secret text,
+    supabase_url text,
+    supabase_key text,
+    auto_sync_profiles boolean,
+    user_table_name text
+);
+
+-- 2. Create User Profiles table (default name or customized name)
+CREATE TABLE IF NOT EXISTS public."${supabaseUserTable}" (
+    id text primary key,
+    email text unique,
+    display_name text,
+    photo_url text,
+    bio text,
+    role text default 'viewer',
+    updated_at text,
+    last_active text
+);
+
+-- 3. Create Launch Kits table
+CREATE TABLE IF NOT EXISTS public.launch_kits (
+    id bigint primary key generated always as identity,
+    idea jsonb,
+    kit jsonb,
+    roi jsonb,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 4. Create Todos table (for standard validation tests)
+CREATE TABLE IF NOT EXISTS public.todos (
+    id bigint primary key generated always as identity,
+    name text not null,
+    is_completed boolean default false,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 5. Enable and add permissive RLS policies
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."${supabaseUserTable}" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.launch_kits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.todos ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Permissive" ON public.app_settings;
+CREATE POLICY "Permissive" ON public.app_settings FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permissive" ON public."${supabaseUserTable}";
+CREATE POLICY "Permissive" ON public."${supabaseUserTable}" FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permissive" ON public.launch_kits;
+CREATE POLICY "Permissive" ON public.launch_kits FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permissive" ON public.todos;
+CREATE POLICY "Permissive" ON public.todos FOR ALL TO anon USING (true) WITH CHECK (true);`}
+                </pre>
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(`-- 1. Create App Settings table
+CREATE TABLE IF NOT EXISTS public.app_settings (
+    id text primary key,
+    godaddy_key text,
+    godaddy_secret text,
+    supabase_url text,
+    supabase_key text,
+    auto_sync_profiles boolean,
+    user_table_name text
+);
+
+-- 2. Create User Profiles table (default name or customized name)
+CREATE TABLE IF NOT EXISTS public."${supabaseUserTable}" (
+    id text primary key,
+    email text unique,
+    display_name text,
+    photo_url text,
+    bio text,
+    role text default 'viewer',
+    updated_at text,
+    last_active text
+);
+
+-- 3. Create Launch Kits table
+CREATE TABLE IF NOT EXISTS public.launch_kits (
+    id bigint primary key generated always as identity,
+    idea jsonb,
+    kit jsonb,
+    roi jsonb,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 4. Create Todos table (for standard validation tests)
+CREATE TABLE IF NOT EXISTS public.todos (
+    id bigint primary key generated always as identity,
+    name text not null,
+    is_completed boolean default false,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 5. Enable and add permissive RLS policies
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public."${supabaseUserTable}" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.launch_kits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.todos ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Permissive" ON public.app_settings;
+CREATE POLICY "Permissive" ON public.app_settings FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permissive" ON public."${supabaseUserTable}";
+CREATE POLICY "Permissive" ON public."${supabaseUserTable}" FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permissive" ON public.launch_kits;
+CREATE POLICY "Permissive" ON public.launch_kits FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permissive" ON public.todos;
+CREATE POLICY "Permissive" ON public.todos FOR ALL TO anon USING (true) WITH CHECK (true);`);
+                    toast.success(`SQL script for table [${supabaseUserTable}] copied to clipboard!`);
+                  }}
+                  className="absolute bottom-3 right-3 bg-ms-green border border-ms-bg text-ms-bg font-bold px-3 py-1.5 text-[10px] hover:bg-ms-green-dark hover:text-ms-green transition-colors"
+                >
+                  COPY SQL
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -843,7 +1026,7 @@ export default function SettingsPage() {
         </div>
 
         {/* User Role Management */}
-        <UserRoleManager supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} />
+        <UserRoleManager supabaseUrl={supabaseUrl} supabaseKey={supabaseKey} userTable={supabaseUserTable} />
 
       </div>
     </div>

@@ -17,7 +17,14 @@ export const getSupabase = (url: string, key: string) => {
     currentKey = key;
     return supabaseInstance;
   } catch (e) {
-    console.error("Failed to initialize Supabase client", e);
+    console.warn("Failed to initialize Supabase client", e);
     return null;
   }
+};
+
+export const getSupabaseUserTable = (): string => {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem("ms-supabase-user-table") || "microSaaS-Users";
+  }
+  return "microSaaS-Users";
 };

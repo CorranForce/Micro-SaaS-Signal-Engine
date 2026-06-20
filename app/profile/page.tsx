@@ -133,38 +133,41 @@ export default function ProfilePage() {
       );
       await Promise.race([setDoc(docRef, profileData, { merge: true }), timeoutPromise]);
 
-      // Sync to Supabase if configured
+      // Sync to Supabase if configured in the background so it doesn't block notifications if Supabase is offline or updating passwords
       const localSupabaseUrl = localStorage.getItem("ms-supabase-url");
       const localSupabaseKey = localStorage.getItem("ms-supabase-key");
       if (localSupabaseUrl && localSupabaseKey) {
-        try {
-          const { getSupabase } = await import('@/lib/supabase');
-          const supabase = getSupabase(localSupabaseUrl, localSupabaseKey);
-          if (supabase) {
-            const { error } = await supabase.from('users').upsert({
-              id: user.uid,
-              email: user.email,
-              display_name: displayName,
-              photo_url: photoURL,
-              bio,
-              role: userRole,
-              updated_at: profileData.updatedAt,
-              last_active: profileData.lastActive
-            });
-            if (error && error.message?.includes('Could not find the table')) {
-              console.warn("Supabase warning: 'users' table not found. Profile saved locally but not synced.");
-            } else if (error) {
-              console.error("Supabase sync error:", error);
+        (async () => {
+          try {
+            const { getSupabase, getSupabaseUserTable } = await import('@/lib/supabase');
+            const supabase = getSupabase(localSupabaseUrl, localSupabaseKey);
+            if (supabase) {
+              const targetTable = getSupabaseUserTable();
+              const { error } = await supabase.from(targetTable).upsert({
+                id: user.uid,
+                email: user.email,
+                display_name: displayName,
+                photo_url: photoURL,
+                bio,
+                role: userRole,
+                updated_at: profileData.updatedAt,
+                last_active: profileData.lastActive
+              });
+              if (error && error.message?.includes('Could not find the table')) {
+                console.warn(`Supabase warning: '${targetTable}' table not found. Profile saved locally but not synced.`);
+              } else if (error) {
+                console.warn("Supabase sync warning:", error);
+              }
             }
+          } catch (e) {
+            console.warn("Failed to sync profile to Supabase", e);
           }
-        } catch (e) {
-          console.error("Failed to sync profile to Supabase", e);
-        }
+        })();
       }
 
       toast.success("Profile saved successfully!");
     } catch (error: any) {
-      console.error(error);
+      console.warn("Failed to save profile:", error);
       toast.error(`Failed to save profile: ${error.message}`);
     } finally {
       setSaving(false);

@@ -1,196 +1,213 @@
+import { Type } from "@google/genai";
 
 export const ideaGenerationSchema = {
-  type: "OBJECT",
+  type: Type.OBJECT,
+  required: ["niche", "marketSummary", "targetAudiences", "topPainPoints", "saasIdeas", "verdict"],
   properties: {
-    niche: { type: "STRING" },
-    marketSummary: { type: "STRING" },
+    niche: { type: Type.STRING },
+    marketSummary: { type: Type.STRING },
     targetAudiences: {
-      type: "ARRAY",
+      type: Type.ARRAY,
       items: {
-        type: "OBJECT",
+        type: Type.OBJECT,
+        required: ["name", "description", "size", "willingnessToPay"],
         properties: {
-          name: { type: "STRING" },
-          description: { type: "STRING" },
-          size: { type: "STRING" },
-          willingnessToPay: { type: "STRING" }
+          name: { type: Type.STRING },
+          description: { type: Type.STRING },
+          size: { type: Type.STRING },
+          willingnessToPay: { type: Type.STRING }
         }
       }
     },
     topPainPoints: {
-      type: "ARRAY",
+      type: Type.ARRAY,
       items: {
-        type: "OBJECT",
+        type: Type.OBJECT,
+        required: ["pain", "severity", "audience", "currentWorkaround"],
         properties: {
-          pain: { type: "STRING" },
-          severity: { type: "STRING" },
-          audience: { type: "STRING" },
-          currentWorkaround: { type: "STRING" }
+          pain: { type: Type.STRING },
+          severity: { type: Type.STRING },
+          audience: { type: Type.STRING },
+          currentWorkaround: { type: Type.STRING }
         }
       }
     },
     saasIdeas: {
-      type: "ARRAY",
+      type: Type.ARRAY,
       items: {
-        type: "OBJECT",
+        type: Type.OBJECT,
+        required: [
+          "name", "tagline", "description", "painSolved", "targetAudience", 
+          "demandLevel", "competitionLevel", "competitionReason", 
+          "buildComplexity", "integrationComplexity", "churnRisk", "boringScore", 
+          "gtmChannel", "genesis", "marketAnalysis", "industryInsights", 
+          "competitorAnalysis", "marketValidation", "keyFeatures", "redditSignal", 
+          "pricingTiers", "roiEstimate"
+        ],
         properties: {
-          name: { type: "STRING" },
-          tagline: { type: "STRING", description: "A short, catchy phrase that summarizes the SaaS idea." },
-          description: { type: "STRING" },
-          painSolved: { type: "STRING" },
-          targetAudience: { type: "STRING" },
-          demandLevel: { type: "STRING" },
-          competitionLevel: { type: "STRING" },
-          competitionReason: { type: "STRING" },
-          buildComplexity: { type: "STRING" },
-          integrationComplexity: { type: "STRING" },
-          churnRisk: { type: "STRING" },
-          boringScore: { type: "NUMBER" },
-          gtmChannel: { type: "STRING", description: "MUST be a highly specific, actionable, and relevant go-to-market strategy. DO NOT use generic terms like 'Cold email' or 'SEO'. Provide a precise playbook (e.g., 'Scrape Apollo.io for Safety Managers at manufacturing plants with 50-200 employees, and send a 3-step cold email sequence offering a free OSHA compliance audit template')." },
-          genesis: { type: "STRING" },
-          marketAnalysis: { type: "STRING" },
+          name: { type: Type.STRING },
+          tagline: { type: Type.STRING, description: "A short, catchy phrase that summarizes the SaaS idea." },
+          description: { type: Type.STRING },
+          painSolved: { type: Type.STRING },
+          targetAudience: { type: Type.STRING },
+          demandLevel: { type: Type.STRING },
+          competitionLevel: { type: Type.STRING },
+          competitionReason: { type: Type.STRING },
+          buildComplexity: { type: Type.STRING },
+          integrationComplexity: { type: Type.STRING },
+          churnRisk: { type: Type.STRING },
+          boringScore: { type: Type.NUMBER },
+          gtmChannel: { type: Type.STRING, description: "MUST be a highly specific, actionable, and relevant go-to-market strategy. DO NOT use generic terms like 'Cold email' or 'SEO'. Provide a precise playbook (e.g., 'Scrape Apollo.io for Safety Managers at manufacturing plants with 50-200 employees, and send a 3-step cold email sequence offering a free OSHA compliance audit template')." },
+          genesis: { type: Type.STRING },
+          marketAnalysis: { type: Type.STRING },
           industryInsights: {
-            type: "OBJECT",
+            type: Type.OBJECT,
+            required: ["typicalChallenges", "softwareAdoptionHurdles"],
             properties: {
-              typicalChallenges: { type: "ARRAY", items: { type: "STRING" }, description: "Specific, non-obvious challenges typical to this legacy industry." },
-              softwareAdoptionHurdles: { type: "ARRAY", items: { type: "STRING" }, description: "Specific reasons why this industry typically struggles with or resists new software (e.g., 'reliance on paper-based carbon forms', 'non-technical field staff')." }
+              typicalChallenges: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Specific, non-obvious challenges typical to this legacy industry." },
+              softwareAdoptionHurdles: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Specific reasons why this industry typically struggles with or resists new software (e.g., 'reliance on paper-based carbon forms', 'non-technical field staff')." }
             }
           },
           competitorAnalysis: {
-            type: "OBJECT",
+            type: Type.OBJECT,
+            required: ["majorCompetitors", "competitorStrengths", "competitorWeaknesses", "uniqueSellingProposition"],
             properties: {
-              majorCompetitors: { type: "ARRAY", items: { type: "STRING" } },
-              competitorStrengths: { type: "STRING" },
-              competitorWeaknesses: { type: "STRING" },
-              uniqueSellingProposition: { type: "STRING" }
+              majorCompetitors: { type: Type.ARRAY, items: { type: Type.STRING } },
+              competitorStrengths: { type: Type.STRING },
+              competitorWeaknesses: { type: Type.STRING },
+              uniqueSellingProposition: { type: Type.STRING }
             }
           },
           marketValidation: {
-            type: "OBJECT",
+            type: Type.OBJECT,
+            required: ["indicators", "metrics", "earlyAdopterSignals", "goNoGoScore", "goNoGoReason"],
             properties: {
-              indicators: { type: "ARRAY", items: { type: "STRING" }, description: "Specific indicators of market validation, e.g., '50+ customer testimonials complaining about X', 'waitlist of 200 early adopter sign-ups'." },
-              metrics: { type: "STRING", description: "Concrete metrics showing demand." },
-              earlyAdopterSignals: { type: "STRING", description: "Concrete early signals applicable to the niche, e.g., 'forum discussions showing high interest in Y'." },
-              goNoGoScore: { type: "NUMBER", description: "Score from 1-10 based on validation details." },
-              goNoGoReason: { type: "STRING", description: "Reasoning for the go/no-go score based on the validation details." }
+              indicators: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Specific indicators of market validation, e.g., '50+ customer testimonials complaining about X', 'waitlist of 200 early adopter sign-ups'." },
+              metrics: { type: Type.STRING, description: "Concrete metrics showing demand." },
+              earlyAdopterSignals: { type: Type.STRING, description: "Concrete early signals applicable to the niche, e.g., 'forum discussions showing high interest in Y'." },
+              goNoGoScore: { type: Type.NUMBER, description: "Score from 1-10 based on validation details." },
+              goNoGoReason: { type: Type.STRING, description: "Reasoning for the go/no-go score based on the validation details." }
             }
           },
-          keyFeatures: { type: "ARRAY", items: { type: "STRING" } },
-          redditSignal: { type: "STRING" },
+          keyFeatures: { type: Type.ARRAY, items: { type: Type.STRING } },
+          redditSignal: { type: Type.STRING },
           pricingTiers: {
-            type: "ARRAY",
+            type: Type.ARRAY,
             items: {
-              type: "OBJECT",
+              type: Type.OBJECT,
+              required: ["name", "price", "description"],
               properties: {
-                name: { type: "STRING" },
-                price: { type: "STRING" },
-                description: { type: "STRING" }
+                name: { type: Type.STRING },
+                price: { type: Type.STRING },
+                description: { type: Type.STRING }
               }
             }
           },
           roiEstimate: {
-            type: "OBJECT",
+            type: Type.OBJECT,
+            required: ["buildCostUSD", "monthlyExpensesUSD", "realisticMRRMonth1USD", "roiMonth1Pct", "breakEvenMonths", "assumptions"],
             properties: {
-              buildCostUSD: { type: "STRING" },
-              monthlyExpensesUSD: { type: "STRING" },
-              realisticMRRMonth1USD: { type: "STRING" },
-              roiMonth1Pct: { type: "STRING" },
-              breakEvenMonths: { type: "STRING" },
-              assumptions: { type: "STRING" }
+              buildCostUSD: { type: Type.STRING },
+              monthlyExpensesUSD: { type: Type.STRING },
+              realisticMRRMonth1USD: { type: Type.STRING },
+              roiMonth1Pct: { type: Type.STRING },
+              breakEvenMonths: { type: Type.STRING },
+              assumptions: { type: Type.STRING }
             }
           }
         }
       }
     },
-    verdict: { type: "STRING" }
+    verdict: { type: Type.STRING }
   }
 };
 
 export const moreIdeasSchema = {
-  type: "OBJECT",
+  type: Type.OBJECT,
   properties: {
     saasIdeas: ideaGenerationSchema.properties.saasIdeas
   }
 };
 
 export const launchKitSchema = {
-  type: "OBJECT",
+  type: Type.OBJECT,
   properties: {
-    lovablePrompt: { type: "STRING" },
+    lovablePrompt: { type: Type.STRING },
     noCodeStack: {
-      type: "ARRAY",
+      type: Type.ARRAY,
       items: {
-        type: "OBJECT",
+        type: Type.OBJECT,
         properties: {
-          tool: { type: "STRING" },
-          role: { type: "STRING" },
-          why: { type: "STRING" },
-          cost: { type: "STRING" },
-          url: { type: "STRING" }
+          tool: { type: Type.STRING },
+          role: { type: Type.STRING },
+          why: { type: Type.STRING },
+          cost: { type: Type.STRING },
+          url: { type: Type.STRING }
         }
       }
     },
     buildRoadmap: {
-      type: "ARRAY",
+      type: Type.ARRAY,
       items: {
-        type: "OBJECT",
+        type: Type.OBJECT,
         properties: {
-          week: { type: "STRING" },
-          title: { type: "STRING" },
-          tasks: { type: "ARRAY", items: { type: "STRING" } }
+          week: { type: Type.STRING },
+          title: { type: Type.STRING },
+          tasks: { type: Type.ARRAY, items: { type: Type.STRING } }
         }
       }
     },
-    presellValidation: { type: "ARRAY", items: { type: "STRING" } },
+    presellValidation: { type: Type.ARRAY, items: { type: Type.STRING } },
     validation: {
-      type: "OBJECT",
+      type: Type.OBJECT,
       properties: {
-        marketSizeSnapshot: { type: "STRING" },
-        proofOfDemand: { type: "ARRAY", items: { type: "STRING" } },
-        redFlags: { type: "ARRAY", items: { type: "STRING" } },
-        testScripts: { type: "ARRAY", items: { type: "STRING" } },
-        goNoGoScore: { type: "NUMBER" },
-        goNoGoReason: { type: "STRING" }
+        marketSizeSnapshot: { type: Type.STRING },
+        proofOfDemand: { type: Type.ARRAY, items: { type: Type.STRING } },
+        redFlags: { type: Type.ARRAY, items: { type: Type.STRING } },
+        testScripts: { type: Type.ARRAY, items: { type: Type.STRING } },
+        goNoGoScore: { type: Type.NUMBER },
+        goNoGoReason: { type: Type.STRING }
       }
     },
     marketingAssets: {
-      type: "OBJECT",
+      type: Type.OBJECT,
       properties: {
-        landingHeadline: { type: "STRING" },
-        landingSubheadline: { type: "STRING" },
-        ctaButton: { type: "STRING" },
-        elevatorPitch: { type: "STRING" },
+        landingHeadline: { type: Type.STRING },
+        landingSubheadline: { type: Type.STRING },
+        ctaButton: { type: Type.STRING },
+        elevatorPitch: { type: Type.STRING },
         coldEmail: {
-          type: "OBJECT",
+          type: Type.OBJECT,
           properties: {
-            subject: { type: "STRING" },
-            body: { type: "STRING" }
+            subject: { type: Type.STRING },
+            body: { type: Type.STRING }
           }
         },
-        socialPost: { type: "STRING" },
-        blogPostIdeas: { type: "ARRAY", items: { type: "STRING" }, description: "3-5 catchy blog post titles that address the core pain point and attract the target audience." },
-        socialContentStrategy: { type: "STRING", description: "A brief strategy for social media content (e.g., 'Post daily tips for property managers on LinkedIn', 'Share customer horror stories in specialized FB groups')." },
+        socialPost: { type: Type.STRING },
+        blogPostIdeas: { type: Type.ARRAY, items: { type: Type.STRING }, description: "3-5 catchy blog post titles that address the core pain point and attract the target audience." },
+        socialContentStrategy: { type: Type.STRING, description: "A brief strategy for social media content (e.g., 'Post daily tips for property managers on LinkedIn', 'Share customer horror stories in specialized FB groups')." },
         objectionHandlers: {
-          type: "ARRAY",
+          type: Type.ARRAY,
           items: {
-            type: "OBJECT",
+            type: Type.OBJECT,
             properties: {
-              objection: { type: "STRING" },
-              response: { type: "STRING" }
+              objection: { type: Type.STRING },
+              response: { type: Type.STRING }
             }
           }
         }
       }
     },
     salesScript: {
-      type: "OBJECT",
+      type: Type.OBJECT,
       properties: {
-        opener: { type: "STRING" },
-        painQuestion: { type: "STRING" },
-        pitch: { type: "STRING" },
-        trialClose: { type: "STRING" },
-        close: { type: "STRING" },
-        followUp: { type: "STRING" },
-        tips: { type: "ARRAY", items: { type: "STRING" } }
+        opener: { type: Type.STRING },
+        painQuestion: { type: Type.STRING },
+        pitch: { type: Type.STRING },
+        trialClose: { type: Type.STRING },
+        close: { type: Type.STRING },
+        followUp: { type: Type.STRING },
+        tips: { type: Type.ARRAY, items: { type: Type.STRING } }
       }
     }
   }

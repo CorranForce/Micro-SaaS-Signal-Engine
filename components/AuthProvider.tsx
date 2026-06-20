@@ -108,31 +108,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const localSupabaseKey = localStorage.getItem("ms-supabase-key");
 
           if (autoSync && localSupabaseUrl && localSupabaseKey) {
-            try {
-              const { getSupabase } = await import('@/lib/supabase');
-              const supabase = getSupabase(localSupabaseUrl, localSupabaseKey);
-              if (supabase) {
-                const { error } = await supabase.from('users').upsert({
-                  id: user.uid,
-                  email: user.email,
-                  display_name: profileData.displayName || user.displayName,
-                  photo_url: profileData.photoURL || user.photoURL,
-                  bio: profileData.bio || '',
-                  role: user.email === 'corranforce@gmail.com' ? 'owner' : (profileData.role || 'viewer'),
-                  updated_at: profileData.updatedAt || new Date().toISOString(),
-                  last_active: profileData.lastActive || user.metadata.lastSignInTime || new Date().toISOString()
-                });
-                if (error && error.message?.includes('Could not find the table')) {
-                  console.warn("Auto-sync: 'users' table not found in Supabase.");
-                } else if (error) {
-                  console.warn("Auto-sync to Supabase warning:", error);
-                } else {
-                  console.log("Successfully auto-synced profile to Supabase");
+            // Run Supabase auto-sync in the background without awaiting it,
+            // so we don't freeze the main thread if the Supabase project is stuck or updating database passwords.
+            (async () => {
+              try {
+                const { getSupabase, getSupabaseUserTable } = await import('@/lib/supabase');
+                const supabase = getSupabase(localSupabaseUrl, localSupabaseKey);
+                if (supabase) {
+                  const targetTable = getSupabaseUserTable();
+                  const { error } = await supabase.from(targetTable).upsert({
+                    id: user.uid,
+                    email: user.email,
+                    display_name: profileData.displayName || user.displayName,
+                    photo_url: profileData.photoURL || user.photoURL,
+                    bio: profileData.bio || '',
+                    role: user.email === 'corranforce@gmail.com' ? 'owner' : (profileData.role || 'viewer'),
+                    updated_at: profileData.updatedAt || new Date().toISOString(),
+                    last_active: profileData.lastActive || user.metadata.lastSignInTime || new Date().toISOString()
+                  });
+                  if (error && error.message?.includes('Could not find the table')) {
+                    console.warn(`Auto-sync: '${targetTable}' table not found in Supabase.`);
+                  } else if (error) {
+                    console.warn("Auto-sync to Supabase warning:", error);
+                  } else {
+                    console.log(`Successfully auto-synced profile to Supabase [${targetTable}]`);
+                  }
                 }
+              } catch (syncErr) {
+                console.warn("Failed to execute Supabase auto-sync:", syncErr);
               }
-            } catch (syncErr) {
-              console.warn("Failed to execute Supabase auto-sync:", syncErr);
-            }
+            })();
           }
         } else {
           // If no document exists yet, default to viewer until created
@@ -146,13 +151,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }, (error) => {
         if (fallbackTimeout) clearTimeout(fallbackTimeout);
         if (!isMounted) return;
-        console.error("Error fetching user role:", error);
+        console.warn("Error fetching user role from Firestore:", error);
         setLoading(false);
       });
 
     } catch (e) {
       if (fallbackTimeout) clearTimeout(fallbackTimeout);
-      console.error("Failed to setup onSnapshot", e);
+      console.warn("Failed to setup onSnapshot in AuthProvider:", e);
       if (isMounted) setLoading(false);
     }
 

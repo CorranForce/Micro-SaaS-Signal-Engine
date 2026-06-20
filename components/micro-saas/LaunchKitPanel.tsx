@@ -78,7 +78,8 @@ export const LaunchKitPanel = ({ kit, idea, roi, onEmailClick }: any) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `launch-kit-${idea.name.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.${extension}`;
+    const safeName = String(idea?.name || "idea").replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    a.download = `launch-kit-${safeName}.${extension}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
