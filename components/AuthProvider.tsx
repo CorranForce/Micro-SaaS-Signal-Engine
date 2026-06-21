@@ -47,16 +47,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const docRef = doc(db, 'users', user.uid);
         const lastActiveTime = user.metadata.lastSignInTime || new Date().toISOString();
-        const docSnap = await getDoc(docRef);
         
-        if (docSnap.exists()) {
-          await setDoc(docRef, {
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Firestore activity sync timeout (using local cache)")), 2000)
+        );
+
+        const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]) as any;
+        
+        if (docSnap && typeof docSnap.exists === 'function' && docSnap.exists()) {
+          const updatePromise = setDoc(docRef, {
             lastActive: lastActiveTime,
             updatedAt: new Date().toISOString()
           }, { merge: true });
-        } else {
+          await Promise.race([updatePromise, timeoutPromise]);
+        } else if (docSnap) {
           // Default initial doc creation with 'viewer' role on first mount if none exists yet
-          await setDoc(docRef, {
+          const createPromise = setDoc(docRef, {
             uid: user.uid,
             email: user.email,
             displayName: user.displayName || '',
@@ -66,9 +72,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             updatedAt: new Date().toISOString(),
             lastActive: lastActiveTime
           });
+          await Promise.race([createPromise, timeoutPromise]);
         }
       } catch (err) {
-        console.error("Failed to sync lastActive to Firestore:", err);
+        console.warn("Could not sync lastActive to Firestore (operating in local/offline cache mode):", err);
       }
     };
     syncLastActive();

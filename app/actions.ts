@@ -479,7 +479,7 @@ export async function generateContentAction(options: {
       chunks
     };
   } catch (error: any) {
-    console.error("[GEMINI API ERROR IN ACTION]:", error);
+    console.warn("[GEMINI API CRITICAL WARNING]:", error?.message || error);
     return { error: formatServerGeminiError(error) };
   }
 }

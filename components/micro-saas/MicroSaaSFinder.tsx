@@ -34,7 +34,8 @@ import {
   Mail,
   ExternalLink,
   Clock,
-  ClipboardCheck
+  ClipboardCheck,
+  Bookmark
 } from "lucide-react";
 import { useMetadata } from "@/hooks/use-metadata";
 import { NICHE_CATEGORIES, DEMAND_CFG, COMP_CFG, CHURN_CFG, COMPLEX_CFG, toDomain, toDomainHyphen } from "@/lib/constants";
@@ -685,6 +686,9 @@ export default function MicroSaaSFinder() {
   const [supabaseKey, setSupabaseKey] = useState("");
   const [savedKits, setSavedKits] = useState<any[]>([]);
   const [loadingSavedKits, setLoadingSavedKits] = useState(false);
+  const [savedIdeas, setSavedIdeas] = useState<any[]>([]);
+  const [loadingSavedIdeas, setLoadingSavedIdeas] = useState(false);
+  const [savedTab, setSavedTab] = useState<"kits" | "ideas">("kits");
   const [domainStatus, setDomainStatus] = useState<Record<string, string>>({});
   const [userInterests, setUserInterests] = useState("");
   const [suggestedNiches, setSuggestedNiches] = useState<string[]>([]);
@@ -1312,6 +1316,152 @@ Example: ["HVAC Inventory Management", "Custom Cabinetry CRM", "Marine Logbook D
       // Give local success toast since we already backed it up in local storage successfully!
       setSavedKits(updatedLocalKits);
       toast.success(`Saved to local browser storage. (Supabase cloud sync warning: ${e.message || e})`, { id: loadingToast, duration: 5000 });
+    }
+  };
+
+  const isIdeaSaved = (name: string) => {
+    return savedIdeas.some(i => i.name === name);
+  };
+
+  const loadSavedIdeas = async () => {
+    let localIdeas: any[] = [];
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem("ms-local-saved-ideas");
+        if (stored) {
+          localIdeas = JSON.parse(stored);
+        }
+      } catch (err) {
+        console.warn("Failed to parse local saved ideas", err);
+      }
+    }
+
+    const { getSupabase } = await import('@/lib/supabase');
+    const supabase = getSupabase(supabaseUrl, supabaseKey);
+    if (!supabase) {
+      setSavedIdeas(localIdeas);
+      return;
+    }
+
+    setLoadingSavedIdeas(true);
+    try {
+      const { data, error } = await supabase.from('saved_ideas').select('*').order('created_at', { ascending: false });
+      if (error) {
+        if (error.message?.includes('Could not find the table') || error.code === '42P01') {
+          console.warn("Supabase warning: 'saved_ideas' table not found. Using local ideas instead.");
+          setSavedIdeas(localIdeas);
+          return;
+        }
+        throw error;
+      }
+
+      const remoteIdeas = data || [];
+      const mergedIdeas = [...remoteIdeas];
+
+      // Merge unique by name
+      localIdeas.forEach(li => {
+        if (li.name && !mergedIdeas.some(ri => ri.name === li.name)) {
+          mergedIdeas.push(li);
+        }
+      });
+
+      setSavedIdeas(mergedIdeas);
+    } catch (e) {
+      console.error("Failed to load saved ideas", e);
+      setSavedIdeas(localIdeas);
+    } finally {
+      setLoadingSavedIdeas(false);
+    }
+  };
+
+  const saveIdeaToSupabase = async (idea: any) => {
+    // 1. Always save to local storage first as local backup/fallback
+    let updatedLocalIdeas: any[] = [];
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem("ms-local-saved-ideas");
+        updatedLocalIdeas = stored ? JSON.parse(stored) : [];
+        if (!updatedLocalIdeas.some((k: any) => k.name === idea.name)) {
+          const newLocal = {
+            id: 'local-idea-' + Date.now(),
+            ...idea,
+            created_at: new Date().toISOString()
+          };
+          updatedLocalIdeas.unshift(newLocal);
+          localStorage.setItem("ms-local-saved-ideas", JSON.stringify(updatedLocalIdeas));
+        }
+      } catch (localErr) {
+        console.warn("Failed to backup idea to local storage", localErr);
+      }
+    }
+
+    const { getSupabase } = await import('@/lib/supabase');
+    const supabase = getSupabase(supabaseUrl, supabaseKey);
+    if (!supabase) {
+      setSavedIdeas(updatedLocalIdeas);
+      toast.success(`Niche Idea '${idea.name}' saved to local browser history! (Configure Supabase in Settings for cloud backup)`, {
+        icon: '💾'
+      });
+      return;
+    }
+
+    const loadingToast = toast.loading(`Syncing idea '${idea.name}' to Supabase...`);
+    try {
+      // Check for duplicates
+      const isDuplicateLocal = savedIdeas.some(k => k.name === idea.name);
+      if (isDuplicateLocal) {
+        toast(`The idea '${idea.name}' is already saved.`, { icon: 'ℹ️', id: loadingToast });
+        return;
+      }
+
+      // Check DB to be safe
+      const { data: existing, error: checkError } = await supabase
+        .from('saved_ideas')
+        .select('id, name')
+        .limit(100);
+        
+      if (!checkError && existing) {
+        const isDuplicateDb = existing.some(k => k.name === idea.name);
+        if (isDuplicateDb) {
+          toast(`The idea '${idea.name}' is already saved in the database.`, { icon: 'ℹ️', id: loadingToast });
+          return;
+        }
+      }
+
+      const { error } = await supabase.from('saved_ideas').insert([{
+        name: idea.name,
+        tagline: idea.tagline || "",
+        boringScore: idea.boringScore || 0,
+        demandLevel: idea.demandLevel || "Medium",
+        competitionLevel: idea.competitionLevel || "Medium",
+        churnRisk: idea.churnRisk || "Medium",
+        buildComplexity: idea.buildComplexity || "Moderate",
+        integrationComplexity: idea.integrationComplexity || "Moderate",
+        painSolved: idea.painSolved || "",
+        mechanic: idea.mechanic || "",
+        acquisitionChannel: idea.acquisitionChannel || "",
+        pricingStrategy: idea.pricingStrategy || "",
+        mvpFeatures: idea.mvpFeatures || [],
+        expansionFeatures: idea.expansionFeatures || [],
+        roiEstimate: idea.roiEstimate || {}
+      }]);
+
+      if (error) {
+        if (error.message?.includes('Could not find the table') || error.code === '42P01') {
+          // Graceful fallback to localStorage
+          setSavedIdeas(updatedLocalIdeas);
+          toast.success(`Niche Idea '${idea.name}' saved to local memory! Rebuilding the 'saved_ideas' table in your Supabase SQL editor is recommended for persistent cloud backup.`, { id: loadingToast, duration: 6000 });
+          return;
+        }
+        throw error;
+      }
+      
+      toast.success(`Niche Idea '${idea.name}' saved and synced to database successfully!`, { id: loadingToast, icon: '🎉' });
+      loadSavedIdeas();
+    } catch (e: any) {
+      console.error("Failed to save idea", e);
+      setSavedIdeas(updatedLocalIdeas);
+      toast.success(`Niche Idea '${idea.name}' saved to local browser storage. (Database sync warning: ${e.message || e})`, { id: loadingToast, duration: 5000 });
     }
   };
 
@@ -2618,7 +2768,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                         <div className="text-ms-red font-ms text-[12px]">✕ Error: {aiMarketValidation[ideaIdx].error}</div>
                       )}
                       {aiMarketValidation[ideaIdx].data && (
-                        <div className="font-ms text-[12.5px] text-ms-text leading-[1.6] prose prose-invert prose-sm max-h-[350px] overflow-y-auto pr-2 scrollbar-hide">
+                        <div className="font-ms text-[12.5px] text-ms-text leading-[1.6] prose prose-invert prose-sm max-w-none max-h-[350px] overflow-y-auto pr-2 scrollbar-hide">
                           <ReactMarkdown>{aiMarketValidation[ideaIdx].data}</ReactMarkdown>
                         </div>
                       )}
@@ -2639,7 +2789,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                         <div className="text-ms-red font-ms text-[12px]">✕ Error: {deepResearch[ideaIdx].error}</div>
                       )}
                       {deepResearch[ideaIdx].data && (
-                        <div className="font-ms text-[12.5px] text-ms-text leading-[1.6] prose prose-invert prose-sm max-h-[350px] overflow-y-auto pr-2 scrollbar-hide">
+                        <div className="font-ms text-[12.5px] text-ms-text leading-[1.6] prose prose-invert prose-sm max-w-none max-h-[350px] overflow-y-auto pr-2 scrollbar-hide">
                           <ReactMarkdown>{deepResearch[ideaIdx].data}</ReactMarkdown>
                           {deepResearch[ideaIdx].chunks?.length > 0 && (
                             <div className="mt-4 pt-3 border-t border-ms-border">
@@ -2857,7 +3007,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
             label="Saved Kits" 
             isOpen={sidebarOpen} 
             active={view === "saved"}
-            onClick={() => { setView("saved"); loadSavedKits(); }}
+            onClick={() => { setView("saved"); loadSavedKits(); loadSavedIdeas(); }}
           />
 
           <div className="h-4" />
@@ -3600,6 +3750,22 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                                 <Rocket className="w-3 h-3 animate-pulse" />
                                 <span>LAUNCH WIZARD</span>
                               </button>
+                              <button
+                                suppressHydrationWarning
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  saveIdeaToSupabase(idea);
+                                }}
+                                className={`cursor-pointer font-ms text-[10px] font-bold px-2.5 py-1.5 flex items-center gap-1 transition-all rounded border ${
+                                  isIdeaSaved(idea.name)
+                                    ? "bg-ms-green/20 text-ms-green border-ms-green"
+                                    : "bg-transparent text-ms-text-muted hover:text-ms-green border-ms-border hover:border-ms-green/45"
+                                }`}
+                                title={isIdeaSaved(idea.name) ? "Idea Saved" : "Save Niche Idea to Database"}
+                              >
+                                <Bookmark className="w-3 h-3" strokeWidth={2.5} />
+                                <span>{isIdeaSaved(idea.name) ? "SAVED" : "SAVE IDEA"}</span>
+                              </button>
                               <div className={`font-ms text-[13px] ${isOpen ? "text-ms-green" : "text-ms-text-muted"}`}>
                                 {isOpen ? "▲" : "▼"}
                               </div>
@@ -4149,51 +4315,159 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
         {view === "saved" && (
           <div>
             <div className="mb-[22px]">
-              <div className="font-ms text-[10px] text-ms-green tracking-[2px] mb-1.5 font-bold">SUPABASE INTEGRATION</div>
-              <h2 className="font-ms text-[20px] m-0 mb-1.5 text-white font-bold">Saved Launch Kits</h2>
-              <p className="font-ms text-[11px] text-ms-text-muted leading-[1.5] m-0">Your previously generated launch kits stored in Supabase.</p>
+              <div className="font-ms text-[10px] text-ms-green tracking-[2px] mb-1.5 font-bold">DATABASE BACKUP</div>
+              <h2 className="font-ms text-[20px] m-0 mb-1.5 text-white font-bold">Saved Items</h2>
+              <p className="font-ms text-[11px] text-ms-text-muted leading-[1.5] m-0">Your bookmarked niche ideas and generated launch kits.</p>
+            </div>
+
+            {/* Tab Switches */}
+            <div className="flex gap-4 mb-6 border-b border-ms-border">
+              <button 
+                onClick={() => setSavedTab("kits")} 
+                className={`font-ms text-[13px] font-bold pb-2.5 px-0.5 cursor-pointer transition-colors relative flex items-center gap-2 ${
+                  savedTab === "kits" ? "text-ms-green" : "text-ms-text-muted hover:text-white"
+                }`}
+              >
+                <span>Launch Kits ({savedKits.length})</span>
+                {savedTab === "kits" && (
+                  <motion.div layoutId="savedTabUnderline" className="absolute bottom-[-1px] left-0 right-0 h-0.5 bg-ms-green" />
+                )}
+              </button>
+              <button 
+                onClick={() => setSavedTab("ideas")} 
+                className={`font-ms text-[13px] font-bold pb-2.5 px-0.5 cursor-pointer transition-colors relative flex items-center gap-2 ${
+                  savedTab === "ideas" ? "text-ms-green" : "text-ms-text-muted hover:text-white"
+                }`}
+              >
+                <span>Niche Ideas ({savedIdeas.length})</span>
+                {savedTab === "ideas" && (
+                  <motion.div layoutId="savedTabUnderline" className="absolute bottom-[-1px] left-0 right-0 h-0.5 bg-ms-green" />
+                )}
+              </button>
             </div>
             
-            {loadingSavedKits ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="bg-ms-panel border border-ms-border p-4 animate-pulse">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <div className="h-4 w-48 bg-ms-border rounded mb-2"></div>
-                        <div className="h-3 w-64 bg-ms-border/50 rounded"></div>
+            {savedTab === "kits" ? (
+              loadingSavedKits ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="bg-ms-panel border border-ms-border p-4 animate-pulse">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <div className="h-4 w-48 bg-ms-border rounded mb-2"></div>
+                          <div className="h-3 w-64 bg-ms-border/50 rounded"></div>
+                        </div>
+                        <div className="h-3 w-20 bg-ms-border/50 rounded"></div>
                       </div>
-                      <div className="h-3 w-20 bg-ms-border/50 rounded"></div>
+                      <div className="h-8 w-32 bg-ms-green/20 border border-ms-green/30 rounded"></div>
                     </div>
-                    <div className="h-8 w-32 bg-ms-green/20 border border-ms-green/30 rounded"></div>
-                  </div>
-                ))}
-              </div>
-            ) : savedKits.length === 0 ? (
-              <div className="bg-ms-panel border border-ms-border p-5 text-center font-ms text-ms-text-muted text-[13px]">
-                No saved kits found. Make sure your Supabase URL and Key are configured in settings.
-              </div>
+                  ))}
+                </div>
+              ) : savedKits.length === 0 ? (
+                <div className="bg-ms-panel border border-ms-border p-5 text-center font-ms text-ms-text-muted text-[13px]">
+                  No saved kits found. Click 'SAVE TO SUPABASE' inside any launch kit to archive it.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {savedKits.map((kitItem: any, idx: number) => (
+                    <div key={kitItem.id || idx} className="bg-ms-panel border border-ms-border p-4">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <div className="font-ms text-[14px] text-white font-bold mb-1">{kitItem.idea?.name || "Unknown Idea"}</div>
+                          <div className="font-ms text-[11px] text-ms-text-muted">{kitItem.idea?.tagline || ""}</div>
+                        </div>
+                        <div className="font-ms text-[10px] text-ms-text-muted">
+                          {kitItem.created_at ? new Date(kitItem.created_at).toLocaleDateString() : ""}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button suppressHydrationWarning onClick={() => setEmailModal({ idea: kitItem.idea, kit: kitItem.kit, roi: kitItem.roi })} className="font-ms bg-ms-green-dark border border-ms-green text-ms-green px-3 py-1.5 text-[11px] cursor-pointer">
+                          ✉ View & Send Email
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
             ) : (
-              <div className="space-y-4">
-                {savedKits.map((kitItem: any, idx: number) => (
-                  <div key={kitItem.id || idx} className="bg-ms-panel border border-ms-border p-4">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <div className="font-ms text-[14px] text-white font-bold mb-1">{kitItem.idea?.name || "Unknown Idea"}</div>
-                        <div className="font-ms text-[11px] text-ms-text-muted">{kitItem.idea?.tagline || ""}</div>
-                      </div>
-                      <div className="font-ms text-[10px] text-ms-text-muted">
-                        {kitItem.created_at ? new Date(kitItem.created_at).toLocaleDateString() : ""}
-                      </div>
+              loadingSavedIdeas ? (
+                <div className="space-y-4">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="bg-ms-panel border border-ms-border p-4 animate-pulse">
+                      <div className="h-4 w-48 bg-ms-border rounded mb-2"></div>
+                      <div className="h-3 w-64 bg-ms-border/50 rounded mb-4"></div>
+                      <div className="h-10 w-full bg-ms-border/25 rounded"></div>
                     </div>
-                    <div className="flex gap-2">
-                      <button suppressHydrationWarning onClick={() => setEmailModal({ idea: kitItem.idea, kit: kitItem.kit, roi: kitItem.roi })} className="font-ms bg-ms-green-dark border border-ms-green text-ms-green px-3 py-1.5 text-[11px] cursor-pointer">
-                        ✉ View & Send Email
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : savedIdeas.length === 0 ? (
+                <div className="bg-ms-panel border border-ms-border p-5 text-center font-ms text-ms-text-muted text-[13px]">
+                  No saved niche ideas found. Click 'SAVE IDEA' on any idea in your results to archive it here.
+                </div>
+              ) : (
+                <div className="space-y-4 font-ms">
+                  {savedIdeas.map((idea: any, idx: number) => {
+                    const compLevel = (idea.competitionLevel || "").toLowerCase();
+                    const d = DEMAND_CFG[(idea.demandLevel || "").toLowerCase()] || DEMAND_CFG.medium;
+                    const c = COMP_CFG[compLevel] || COMP_CFG.medium;
+                    const churn = CHURN_CFG[(idea.churnRisk || "").toLowerCase()] || CHURN_CFG.medium;
+                    return (
+                      <div key={idea.id || idx} className="bg-ms-panel border border-ms-border p-4.5">
+                        <div className="flex justify-between items-start mb-3 gap-2.5">
+                          <div>
+                            <div className="font-ms text-[15px] text-white font-bold mb-1">{idea.name}</div>
+                            <div className="font-ms text-[11px] text-ms-text-muted leading-[1.4] mb-3">{idea.tagline}</div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <BoringScore score={idea.boringScore} />
+                              <div className="text-[10px] px-2 py-0.5 bg-ms-panel-light border border-ms-border" style={{ color: d.color, borderColor: `${d.color}25` }}>Demand: {d.label.replace(/ DEMAND|DEMAND/, '')}</div>
+                              <div className="text-[10px] px-2 py-0.5 bg-ms-panel-light border border-ms-border" style={{ color: c.color, borderColor: `${c.color}25` }}>Comp: {c.label.replace(/ COMP/, '')}</div>
+                              <div className="text-[10px] px-2 py-0.5 bg-ms-panel-light border border-ms-border" style={{ color: churn.color, borderColor: `${churn.color}25` }}>Churn: {churn.label.replace(/ CHURN|🔒 |⚠ /g, '')}</div>
+                            </div>
+                          </div>
+                          <div className="text-right flex flex-col items-end gap-1 shrink-0">
+                            <span className="text-[10px] text-ms-text-muted">
+                              {idea.created_at ? new Date(idea.created_at).toLocaleDateString() : ""}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setView("niche");
+                                setResult({ saasIdeas: [idea] });
+                                setExpandedIdea(0);
+                                setTimeout(() => {
+                                  const resultsEl = document.getElementById("signal-engine-results");
+                                  if (resultsEl) {
+                                    resultsEl.scrollIntoView({ behavior: 'smooth' });
+                                  } else {
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                  }
+                                }, 100);
+                              }}
+                              className="mt-2 text-[10px] font-bold bg-ms-green/12 border border-ms-green/40 text-ms-green px-2.5 py-1 hover:bg-ms-green hover:text-ms-bg cursor-pointer transition-all rounded shrink-0"
+                            >
+                              ⚡ VIEW & LAUNCH WIZARD
+                            </button>
+                          </div>
+                        </div>
+                        {(idea.painSolved || idea.mechanic) && (
+                          <div className="border-t border-ms-border/40 pt-3 mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
+                            {idea.painSolved && (
+                              <div>
+                                <span className="text-ms-green font-bold block mb-0.5">🔥 CORE PAIN POINT</span>
+                                <span className="text-ms-text leading-[1.4]">{idea.painSolved}</span>
+                              </div>
+                            )}
+                            {idea.mechanic && (
+                              <div>
+                                <span className="text-ms-yellow font-bold block mb-0.5">🛠️ MVP MECHANIC</span>
+                                <span className="text-ms-text leading-[1.4]">{idea.mechanic}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
             )}
           </div>
         )}

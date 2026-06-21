@@ -6,7 +6,222 @@ import { PreSellChecklist } from "./PreSellChecklist";
 import { compareCompetitorsAction } from "@/app/actions";
 import { apiTracker } from "@/utils/apiTracker";
 
-export const LaunchKitPanel = ({ kit, idea, roi, onEmailClick }: any) => {
+function getCompleteLaunchKit(rawKit: any, idea: any) {
+  const name = idea?.name || "SimpleSaaS";
+  const tagline = idea?.tagline || "Work lighter, finish sooner.";
+  const features = Array.isArray(idea?.keyFeatures) ? idea.keyFeatures : [
+    "Lightweight single-view dispatch tracker",
+    "Instant mobile notification status link",
+    "Automatic weekly backup logs"
+  ];
+  const targetAudience = idea?.targetAudience || "legacy industry professionals";
+  const painSolved = idea?.painSolved || "tedious manual administrative tasks";
+
+  const defaultPrompt = `Create a single-page B2B web app in React & Tailwind titled "${name}". 
+Target Audience: ${targetAudience}.
+Vibe: High-contrast professional theme, responsive layout, clean borders, and generous negative space.
+
+Key Features to build:
+${features.map((f: string, idx: number) => `${idx + 1}. ${f}`).join("\n")}
+4. Interactive mock/simulator representing administrative optimization and automated links.
+5. Export reporting summary showing administrative time spared.
+
+Database Requirements (use local mock or mock state persistence first):
+- Tables: jobs/records, client_settings.`;
+
+  const defaultNoCodeStack = [
+    {
+      tool: "Lovable.dev",
+      role: "Frontend Design & Build",
+      why: `Turns description prompts into beautiful, fully responsive React apps in seconds with standard tailwind styling tailored for ${targetAudience}.`,
+      cost: "$50/mo",
+      url: "https://lovable.dev"
+    },
+    {
+      tool: "Supabase",
+      role: "Database & Authentication",
+      why: "Gives you a secure backend, user tables, and local file storage with absolute zero setup or infrastructure knowledge.",
+      cost: "FREE TIER",
+      url: "https://supabase.com"
+    },
+    {
+      tool: "Stripe Payment Links",
+      role: "B2B Billing and Checkouts",
+      why: "Avoid implementing complex programmatic subscription software. Simple copy-paste payment links directly on client success pages.",
+      cost: "No Fee (2.9% cut)",
+      url: "https://stripe.com"
+    },
+    {
+      tool: "Resend",
+      role: "Customer Lifecycle alerts",
+      why: "Dead-simple developer emails to trigger sign-up welcomes and custom notifications.",
+      cost: "FREE (3,000 texts)",
+      url: "https://resend.com"
+    }
+  ];
+
+  const defaultBuildRoadmap = [
+    {
+      week: "Week 1",
+      title: "Foundations & High Fidelity Shell",
+      tasks: [
+        "Provision free Lovable.dev sandbox space, color styling",
+        "Initialize core visual layout, dark sidebar panel state",
+        "Create landing page hero and value props addressing: " + painSolved,
+        "Add pre-sell billing callbacks or user email lead registration"
+      ]
+    },
+    {
+      week: "Week 2",
+      title: "Core Service Logs & State Engine",
+      tasks: [
+        "Connect simple collection record tables (e.g. Supabase, SQLite)",
+        "Code active status checklist grids and custom input drawers",
+        "Build prototype simulator of " + (features[1] || "communications triggers"),
+        "Validate offline cache storage parameters inside local client devices"
+      ]
+    },
+    {
+      week: "Week 3",
+      title: "Monetization Bridge & Integration",
+      tasks: [
+        "Hook up $49/mo single-price subscription redirect checkout page",
+        "Create Stripe Customer Portal to let users cancel easily self-serve",
+        "Add secure access role restrictions to keep customer logs completely separate",
+        "Verify Resend notification templates for welcome signups"
+      ]
+    },
+    {
+      week: "Week 4",
+      title: "Polishing & GTM Push",
+      tasks: [
+        "Configure standard custom domains with secure SSL",
+        "Publish high-quality video demo in specialized community directories",
+        "Reach out to first 20 pilot targeted leads with high personalization",
+        "Establish first loop feedback review to improve usability metrics"
+      ]
+    }
+  ];
+
+  const defaultValidation = {
+    marketSizeSnapshot: `There are over 250,000 active service operators, coordinators, and specialty offices globally who handle daily operations via paper logs, manual texts, and flat offline files.`,
+    proofOfDemand: [
+      `Active operator forums complaining about "software administrative fatigue" and unneeded ERP subscription overhead.`,
+      `Teams manually typing, texting, or writing tasks by hand daily.`
+    ],
+    redFlags: [
+      "Operators can be highly busy and resistant to downloading heavy native app store files.",
+      "Requires clean web link access that loads instantly on any mobile device."
+    ],
+    testScripts: [
+      `How much administrative time do you spend every week manually updating schedules or texting crews?`,
+      `If a single-view dispatcher trimmed that work down to 2 minutes for $49/mo, would you trial it next Sunday?`
+    ],
+    goNoGoScore: 9,
+    goNoGoReason: "High target urgency, high financial value per administrative hour saved, and direct sales channel feasibility."
+  };
+
+  const defaultMarketing = {
+    landingHeadline: `Save 4 Hours Every Week — Simple, 1-Click Operations Hub for ${name || "Specialists"}.`,
+    landingSubheadline: `Ditch the complicated spreadsheets and oversized enterprise CRMs. Log schedules, alert active crews via automated text, and handle payments on a single elegant screen.`,
+    ctaButton: "Start Your 14-Day Free Trial",
+    elevatorPitch: `We built a dead-simple, single-view dashboard designed specifically for specialists who hate complicated software. Instead of paying hundreds for a heavy CRM, you log your schedule, click dispatch to automatically text crew mobile links, and manage your invoice tracking — in under 2 minutes.`,
+    coldEmail: {
+      subject: `Quick workflow dispatch check for operational teams`,
+      body: `Hi [Name],\n\nI noticed your team does amazing work. We often hear from operational managers that coordinating lists, checking parts inventory, and texting field crews route updates every morning wastes hours of back-office time.\n\nWe built a single-screen coordinator tool that cuts dispatch and billing admin work by 80% without requiring technicians to download any complex mobile apps.\n\nWould you be open to a quick 2-minute trial link to see if it saves you a chunk of desk work this week?\n\nBest,\n[Your Name]`
+    },
+    socialPost: `Excel sheets are awesome until you're manually copy-pasting active details at 6:00 AM on a Monday.\n\nWe built a dead-simple, single-view dashboard to let specialists draft schedules and send automated status SMS alerts with a single click. No bloated setup. No credit card required.`,
+    socialContentStrategy: "Publish quick, side-by-side comparison shorts: updating three separate spreadsheets vs doing it in 5 seconds on a custom one-screen dashboard. Target niche operator groups on Facebook and LinkedIn.",
+    blogPostIdeas: [
+      "Why Multi-Step Enterprise CRMs are Costing Your Business More in Churn than software Fees",
+      "How One-Click Mobile Dispatching Slashes Your Invoice Delays from Weeks down to Minutes",
+      "The Sunday Afternoon Rescue: A Simple Checklist to De-stress Operator Planning Logs"
+    ],
+    objectionHandlers: [
+      {
+        objection: "We are comfortable using our current paper binders and manual text messages.",
+        response: "Paper is totally reliable until invoices get lost in truck gloveboxes or crews ignore messages because they are driving. Our client-alert links require zero apps to install, making professional coordination hands-free."
+      },
+      {
+        objection: "The monthly subscription is another business overhead we don't need.",
+        response: "If saving 4 hours of tedious administrative and phone-tag work on Sundays saves your office manager just half a day, the tool pays for its entire monthly license on the very first day of the week."
+      }
+    ]
+  };
+
+  const defaultSales = {
+    opener: `Hi! I was checking out your spectacular customer reviews and wondered who organizes your weekly operational logs?`,
+    painQuestion: `Do you ever get tired of copying client locations into group messaging apps or wrestling with spreadsheets every morning?`,
+    pitch: `Our tool ${name} is a single-screen dashboard. You map the day, click dispatch, and team members instantly get their tasks via a web link. No complex mobile login or setup needed.`,
+    trialClose: `If that saved you 4-5 hours of desk work every Sunday, would it be worth a quick look?`,
+    close: `We offer a 14-day free pilot. Let me activate your portal in 30 seconds so you can try it yourself on your next schedule run.`,
+    followUp: `Hi! Following up to see if the custom dispatch trial gave you some time back this weekend, or if you had any questions on connecting your sheet?`,
+    tips: [
+      "Emphasize that field technicians DO NOT need to install any complex app from the store.",
+      "Focus on 'Sunday hours saved' because that is when operators feel the pain of paperwork most."
+    ]
+  };
+
+  const merged = rawKit ? { ...rawKit } : {};
+  if (!merged.lovablePrompt) merged.lovablePrompt = defaultPrompt;
+  if (!Array.isArray(merged.noCodeStack) || merged.noCodeStack.length === 0) merged.noCodeStack = defaultNoCodeStack;
+  if (!Array.isArray(merged.buildRoadmap) || merged.buildRoadmap.length === 0) merged.buildRoadmap = defaultBuildRoadmap;
+  if (!Array.isArray(merged.presellValidation) || merged.presellValidation.length === 0) merged.presellValidation = defaultValidation.testScripts;
+
+  if (!merged.validation) {
+    merged.validation = defaultValidation;
+  } else {
+    merged.validation = {
+      marketSizeSnapshot: merged.validation.marketSizeSnapshot || defaultValidation.marketSizeSnapshot,
+      proofOfDemand: Array.isArray(merged.validation.proofOfDemand) && merged.validation.proofOfDemand.length > 0 ? merged.validation.proofOfDemand : defaultValidation.proofOfDemand,
+      redFlags: Array.isArray(merged.validation.redFlags) && merged.validation.redFlags.length > 0 ? merged.validation.redFlags : defaultValidation.redFlags,
+      testScripts: Array.isArray(merged.validation.testScripts) && merged.validation.testScripts.length > 0 ? merged.validation.testScripts : defaultValidation.testScripts,
+      goNoGoScore: merged.validation.goNoGoScore || defaultValidation.goNoGoScore,
+      goNoGoReason: merged.validation.goNoGoReason || defaultValidation.goNoGoReason,
+    };
+  }
+
+  if (!merged.marketingAssets) {
+    merged.marketingAssets = defaultMarketing;
+  } else {
+    merged.marketingAssets = {
+      landingHeadline: merged.marketingAssets.landingHeadline || defaultMarketing.landingHeadline,
+      landingSubheadline: merged.marketingAssets.landingSubheadline || defaultMarketing.landingSubheadline,
+      ctaButton: merged.marketingAssets.ctaButton || defaultMarketing.ctaButton,
+      elevatorPitch: merged.marketingAssets.elevatorPitch || defaultMarketing.elevatorPitch,
+      coldEmail: merged.marketingAssets.coldEmail && merged.marketingAssets.coldEmail.body ? merged.marketingAssets.coldEmail : defaultMarketing.coldEmail,
+      socialPost: merged.marketingAssets.socialPost || defaultMarketing.socialPost,
+      socialContentStrategy: merged.marketingAssets.socialContentStrategy || defaultMarketing.socialContentStrategy,
+      blogPostIdeas: Array.isArray(merged.marketingAssets.blogPostIdeas) && merged.marketingAssets.blogPostIdeas.length > 0 ? merged.marketingAssets.blogPostIdeas : defaultMarketing.blogPostIdeas,
+      objectionHandlers: Array.isArray(merged.marketingAssets.objectionHandlers) && merged.marketingAssets.objectionHandlers.length > 0 ? merged.marketingAssets.objectionHandlers : defaultMarketing.objectionHandlers,
+    };
+    if (merged.marketingAssets.coldEmail && !merged.marketingAssets.coldEmail.subject) {
+      merged.marketingAssets.coldEmail.subject = defaultMarketing.coldEmail.subject;
+    }
+    if (merged.marketingAssets.coldEmail && !merged.marketingAssets.coldEmail.body) {
+      merged.marketingAssets.coldEmail.body = defaultMarketing.coldEmail.body;
+    }
+  }
+
+  if (!merged.salesScript) {
+    merged.salesScript = defaultSales;
+  } else {
+    merged.salesScript = {
+      opener: merged.salesScript.opener || defaultSales.opener,
+      painQuestion: merged.salesScript.painQuestion || defaultSales.painQuestion,
+      pitch: merged.salesScript.pitch || defaultSales.pitch,
+      trialClose: merged.salesScript.trialClose || defaultSales.trialClose,
+      close: merged.salesScript.close || defaultSales.close,
+      followUp: merged.salesScript.followUp || defaultSales.followUp,
+      tips: Array.isArray(merged.salesScript.tips) && merged.salesScript.tips.length > 0 ? merged.salesScript.tips : defaultSales.tips,
+    };
+  }
+
+  return merged;
+}
+
+export const LaunchKitPanel = ({ kit: rawKit, idea, roi, onEmailClick }: any) => {
+  const kit = getCompleteLaunchKit(rawKit, idea);
   const [tab, setTab] = useState("build");
   const [showExport, setShowExport] = useState(false);
   const [competitors, setCompetitors] = useState<any[] | null>(null);
