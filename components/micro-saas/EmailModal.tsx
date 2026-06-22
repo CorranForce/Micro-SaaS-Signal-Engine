@@ -7,7 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { auth } from "@/lib/firebase";
 import { sendEmailVerification } from "firebase/auth";
 
-export const EmailModal = ({ idea, kit, roi, prefillEmail = "", hasServerResend = false, localResendKey = "", onClose }: any) => {
+export const EmailModal = ({ idea, kit, roi, validationBrief = "", siftingLog = "", prefillEmail = "", hasServerResend = false, localResendKey = "", onClose }: any) => {
   const { user } = useAuth();
   const [email, setEmail] = useState(prefillEmail);
   const [sending, setSending] = useState(false);
@@ -23,8 +23,8 @@ export const EmailModal = ({ idea, kit, roi, prefillEmail = "", hasServerResend 
     }
   }, [user?.email, email]);
 
-  const htmlBody = buildEmailHtml(idea, kit, roi);
-  const plainBody = buildPlainBody(idea, kit, roi);
+  const htmlBody = buildEmailHtml(idea, kit, roi, validationBrief, siftingLog);
+  const plainBody = buildPlainBody(idea, kit, roi, validationBrief, siftingLog);
   const subject = `🚀 Launch Kit: ${idea.name} — Micro-SaaS Blueprint`;
 
   const canUseResend = hasServerResend;

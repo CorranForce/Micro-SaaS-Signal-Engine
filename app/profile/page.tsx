@@ -128,10 +128,13 @@ export default function ProfilePage() {
         lastActive: user.metadata.lastSignInTime || new Date().toISOString()
       };
 
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Firestore save timeout. Your data may not have been saved remotely.")), 5000)
+      const timeoutPromise = new Promise((resolve) => 
+        setTimeout(() => resolve("timeout"), 5000)
       );
-      await Promise.race([setDoc(docRef, profileData, { merge: true }), timeoutPromise]);
+      const result = await Promise.race([setDoc(docRef, profileData, { merge: true }), timeoutPromise]);
+      if (result === "timeout") {
+        toast.error("Cloud save timeout. Profile saved locally.");
+      }
 
       // Sync to Supabase if configured in the background so it doesn't block notifications if Supabase is offline or updating passwords
       const localSupabaseUrl = localStorage.getItem("ms-supabase-url");

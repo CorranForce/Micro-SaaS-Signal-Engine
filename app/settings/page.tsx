@@ -897,7 +897,30 @@ CREATE TABLE IF NOT EXISTS public.launch_kits (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 4. Create Todos table (for standard validation tests)
+-- 4. Create Saved Ideas table
+CREATE TABLE IF NOT EXISTS public.saved_ideas (
+    id bigint primary key generated always as identity,
+    name text unique not null,
+    tagline text,
+    "boringScore" integer,
+    "demandLevel" text,
+    "competitionLevel" text,
+    "churnRisk" text,
+    "buildComplexity" text,
+    "integrationComplexity" text,
+    "painSolved" text,
+    "mechanic" text,
+    "acquisitionChannel" text,
+    "pricingStrategy" text,
+    "mvpFeatures" jsonb,
+    "expansionFeatures" jsonb,
+    "roiEstimate" jsonb,
+    full_idea jsonb, -- Backwards-compatible rich JSON backup
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+-- If table already exists, run: ALTER TABLE public.saved_ideas ADD COLUMN IF NOT EXISTS full_idea jsonb;
+
+-- 5. Create Todos table (for standard validation tests)
 CREATE TABLE IF NOT EXISTS public.todos (
     id bigint primary key generated always as identity,
     name text not null,
@@ -905,10 +928,11 @@ CREATE TABLE IF NOT EXISTS public.todos (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 5. Enable and add permissive RLS policies
+-- 6. Enable and add permissive RLS policies
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."${supabaseUserTable}" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.launch_kits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.saved_ideas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.todos ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Permissive" ON public.app_settings;
@@ -919,6 +943,9 @@ CREATE POLICY "Permissive" ON public."${supabaseUserTable}" FOR ALL TO anon USIN
 
 DROP POLICY IF EXISTS "Permissive" ON public.launch_kits;
 CREATE POLICY "Permissive" ON public.launch_kits FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permissive" ON public.saved_ideas;
+CREATE POLICY "Permissive" ON public.saved_ideas FOR ALL TO anon USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Permissive" ON public.todos;
 CREATE POLICY "Permissive" ON public.todos FOR ALL TO anon USING (true) WITH CHECK (true);`}
@@ -957,7 +984,30 @@ CREATE TABLE IF NOT EXISTS public.launch_kits (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 4. Create Todos table (for standard validation tests)
+-- 4. Create Saved Ideas table
+CREATE TABLE IF NOT EXISTS public.saved_ideas (
+    id bigint primary key generated always as identity,
+    name text unique not null,
+    tagline text,
+    "boringScore" integer,
+    "demandLevel" text,
+    "competitionLevel" text,
+    "churnRisk" text,
+    "buildComplexity" text,
+    "integrationComplexity" text,
+    "painSolved" text,
+    "mechanic" text,
+    "acquisitionChannel" text,
+    "pricingStrategy" text,
+    "mvpFeatures" jsonb,
+    "expansionFeatures" jsonb,
+    "roiEstimate" jsonb,
+    full_idea jsonb, -- Backwards-compatible rich JSON backup
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+-- If table already exists, run: ALTER TABLE public.saved_ideas ADD COLUMN IF NOT EXISTS full_idea jsonb;
+
+-- 5. Create Todos table (for standard validation tests)
 CREATE TABLE IF NOT EXISTS public.todos (
     id bigint primary key generated always as identity,
     name text not null,
@@ -965,10 +1015,11 @@ CREATE TABLE IF NOT EXISTS public.todos (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 5. Enable and add permissive RLS policies
+-- 6. Enable and add permissive RLS policies
 ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."${supabaseUserTable}" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.launch_kits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.saved_ideas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.todos ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Permissive" ON public.app_settings;
@@ -979,6 +1030,9 @@ CREATE POLICY "Permissive" ON public."${supabaseUserTable}" FOR ALL TO anon USIN
 
 DROP POLICY IF EXISTS "Permissive" ON public.launch_kits;
 CREATE POLICY "Permissive" ON public.launch_kits FOR ALL TO anon USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permissive" ON public.saved_ideas;
+CREATE POLICY "Permissive" ON public.saved_ideas FOR ALL TO anon USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Permissive" ON public.todos;
 CREATE POLICY "Permissive" ON public.todos FOR ALL TO anon USING (true) WITH CHECK (true);`);

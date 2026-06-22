@@ -48,11 +48,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const docRef = doc(db, 'users', user.uid);
         const lastActiveTime = user.metadata.lastSignInTime || new Date().toISOString();
         
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Firestore activity sync timeout (using local cache)")), 2000)
+        const timeoutPromise = new Promise((resolve) => 
+          setTimeout(() => resolve("timeout"), 2000)
         );
 
         const docSnap = await Promise.race([getDoc(docRef), timeoutPromise]) as any;
+        
+        if (docSnap === "timeout") {
+          return;
+        }
         
         if (docSnap && typeof docSnap.exists === 'function' && docSnap.exists()) {
           const updatePromise = setDoc(docRef, {
@@ -75,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await Promise.race([createPromise, timeoutPromise]);
         }
       } catch (err) {
-        console.warn("Could not sync lastActive to Firestore (operating in local/offline cache mode):", err);
+        // Silently catch firestore offline errors
       }
     };
     syncLastActive();

@@ -1,4 +1,31 @@
-export const buildEmailHtml = (idea: any, kit: any, roi: any) => {
+const formatMarkdownToHtml = (md: string) => {
+  if (!md) return "";
+  let html = md
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  
+  // Format headings: ### Heading
+  html = html.replace(/^### (.*?)$/gm, '<h4 style="margin:14px 0 6px;color:#111;font-size:14px;font-family:Verdana,sans-serif">$1</h4>');
+  html = html.replace(/^## (.*?)$/gm, '<h3 style="margin:18px 0 8px;color:#111;font-size:15px;font-family:Verdana,sans-serif;border-bottom:1px solid #eee;padding-bottom:4px">$1</h3>');
+  html = html.replace(/^# (.*?)$/gm, '<h2 style="margin:22px 0 10px;color:#111;font-size:16px;font-family:Verdana,sans-serif">$1</h2>');
+  
+  // Bold: **text**
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Bullet points: - item or * item
+  html = html.replace(/^[-\*] (.*?)$/gm, '<div style="display:flex;gap:8px;margin-bottom:4px;font-family:Verdana,sans-serif;font-size:12px;color:#333"><span style="color:#1a7a4a;font-weight:bold">•</span><span>$1</span></div>');
+  
+  // Inline code: `code`
+  html = html.replace(/`(.*?)`/g, '<code style="background:#f5f5f5;padding:2px 4px;font-family:monospace;font-size:11px;border-radius:2px">$1</code>');
+  
+  // Replace remaining newlines with <br />
+  html = html.replace(/\n/g, "<br />");
+  
+  return html;
+};
+
+export const buildEmailHtml = (idea: any, kit: any, roi: any, validationBrief?: string, siftingLog?: string) => {
   const G="#1a7a4a", dark="#1a2e1a", bg="#f8f9fa";
   const section = (title: string, body: string, color=G) =>
     `<div style="margin:0 0 22px;background:#fff;border-radius:6px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08)">
@@ -133,17 +160,118 @@ export const buildEmailHtml = (idea: any, kit: any, roi: any) => {
     h+=section("📞 Sales Script",sH);
   }
 
+  // AI Validation Brief inclusion
+  if (validationBrief) {
+    h += section("🤖 AI Market Validation Brief", formatMarkdownToHtml(validationBrief), "#ffc857");
+  } else {
+    const valPrompt = `Perform a comprehensive market validation for the following B2B micro-SaaS idea:
+Name: ${idea.name}
+Description: ${idea.description}
+Pain Solved: ${idea.painSolved || "N/A"}
+Target Audience: ${idea.targetAudience || "N/A"}
+
+Use Google Search to find and incorporate actual customer data, discussions, and video feedback using Google Search, Reddit, and YouTube:
+1. Reddit threads and communities (site:reddit.com) discussing this pain point, manual workarounds, or software recommendations.
+2. YouTube videos, guides, software walkthroughs, or review channels (site:youtube.com) discussing this challenge, demonstrating existing bad solutions, or suggesting tools.
+3. Industry analysis and general Google Search results about the depth of this issue in the legacy line represented.
+4. Competitor analysis (who is already doing this, what are their weaknesses).
+
+Based on your findings, provide:
+- A summary of Google Search findings.
+- An analysis of Reddit community posts and discussions.
+- Insights from relevant YouTube videos, software walkthroughs, and tutorial comments.
+- A brief competitor analysis.
+- A 'go/no-go' validation score (1-10).
+- A brief reasoning for the score.
+
+Format the output nicely in Markdown.`;
+
+    h += section("🤖 AI Market Validation Prompt (Not Yet Conducted)", 
+      `<p style="margin:0 0 10px;font-size:12px;color:#666;font-style:italic">The AI Validation Brief has not yet been generated in-session. Put this prompt directly into ChatGPT, Gemini, or Claude to complete the validation:</p>
+       <div style="background:#f9f9f9;border-left:3px solid #ffc857;padding:12px;font-family:monospace;font-size:11px;color:#444;line-height:1.6;white-space:pre-wrap">${valPrompt}</div>`, 
+      "#ffc857"
+    );
+  }
+
+  // Live Target Sifting Log inclusion
+  if (siftingLog) {
+    h += section("🔍 Live Target Sifting Log", formatMarkdownToHtml(siftingLog), "#1a7a4a");
+  } else {
+    const siftPrompt = `Perform deep marketing research using Google Search, Reddit, and YouTube for people complaining about this pain point: "${idea.painSolved || idea.description}" or asking for an app that does "${idea.description}".
+
+You MUST use the Search tool to query and discover source material from:
+- Reddit (site:reddit.com): Learn what users complain about, their frustration level, and their current manual hacks.
+- YouTube (site:youtube.com): Find software reviews, workflows, tutorial videos, or videos describing the industry process and users' friction.
+- General Web Search results: Identify the standard solutions, tools, or lack thereof.
+
+Provide a beautifully formatted Markdown summary of the search results, explicitly categorizing your insights into "Google Search Insights", "Reddit Feedback Logs", and "YouTube Review & Workflow Trends". Prioritize and highlight specific examples of actual customer complaints, software gaps, and validation signs found online. Do not output raw JSON or unformatted text.`;
+
+    h += section("🔍 Live Sifting Prompt (Not Yet Conducted)", 
+      `<p style="margin:0 0 10px;font-size:12px;color:#666;font-style:italic">The Live Target Sifting Log has not yet been generated in-session. Put this prompt directly into ChatGPT, Gemini, or Claude to complete the web signal sifting:</p>
+       <div style="background:#f9f9f9;border-left:3px solid #1a7a4a;padding:12px;font-family:monospace;font-size:11px;color:#444;line-height:1.6;white-space:pre-wrap">${siftPrompt}</div>`, 
+      "#1a7a4a"
+    );
+  }
+
   h+=`<div style="text-align:center;padding:18px;color:#aaa;font-size:11px;font-family:Verdana,sans-serif;border-top:1px solid #eee;margin-top:6px">Generated by <strong>Micro-SaaS Signal Engine v5.1 · Maker Edition</strong></div></div></body></html>`;
   return h;
 };
 
-export const buildPlainBody = (idea: any, kit: any, roi: any) => {
+export const buildPlainBody = (idea: any, kit: any, roi: any, validationBrief?: string, siftingLog?: string) => {
   const lines=[`LAUNCH KIT: ${idea.name}`,"=".repeat(55),"",`Pain Solved: ${idea.painSolved||""}`,`Target: ${idea.targetAudience||""}`,`GTM: ${idea.gtmChannel||""}`,
     "","─── ROI ───",`Build Cost: ${roi.buildCostUSD||"—"}`,`Monthly Ops: ${roi.monthlyExpensesUSD||"—"}`,`MRR Month 1: ${roi.realisticMRRMonth1USD||"—"}`,`ROI Month 1: ${roi.roiMonth1Pct||"—"}`,`Break-even: ${roi.breakEvenMonths?roi.breakEvenMonths+" months":"—"}`,""];
   if(Array.isArray(idea.pricingTiers) && idea.pricingTiers.length){lines.push("─── PRICING ───");idea.pricingTiers.forEach((t: any)=>{
     if (typeof t === 'string') lines.push(t);
     else lines.push(`${t.name}: ${t.price} — ${t.description}`);
   });lines.push("");}
+
+  if (validationBrief) {
+    lines.push("─── AI MARKET VALIDATION BRIEF ───");
+    lines.push(validationBrief);
+    lines.push("");
+  } else {
+    lines.push("─── AI MARKET VALIDATION PROMPT (NOT YET CONDUCTED) ───");
+    lines.push(`Perform a comprehensive market validation for the following B2B micro-SaaS idea:
+Name: ${idea.name}
+Description: ${idea.description}
+Pain Solved: ${idea.painSolved || "N/A"}
+Target Audience: ${idea.targetAudience || "N/A"}
+
+Use Google Search to find and incorporate actual customer data, discussions, and video feedback using Google Search, Reddit, and YouTube:
+1. Reddit threads and communities (site:reddit.com) discussing this pain point, manual workarounds, or software recommendations.
+2. YouTube videos, guides, software walkthroughs, or review channels (site:youtube.com) discussing this challenge, demonstrating existing bad solutions, or suggesting tools.
+3. Industry analysis and general Google Search results about the depth of this issue in the legacy line represented.
+4. Competitor analysis (who is already doing this, what are their weaknesses).
+
+Based on your findings, provide:
+- A summary of Google Search findings.
+- An analysis of Reddit community posts and discussions.
+- Insights from relevant YouTube videos, software walkthroughs, and tutorial comments.
+- A brief competitor analysis.
+- A 'go/no-go' validation score (1-10).
+- A brief reasoning for the score.
+
+Format the output nicely in Markdown.`);
+    lines.push("");
+  }
+
+  if (siftingLog) {
+    lines.push("─── LIVE TARGET SIFTING LOG ───");
+    lines.push(siftingLog);
+    lines.push("");
+  } else {
+    lines.push("─── LIVE SIFTING PROMPT (NOT YET CONDUCTED) ───");
+    lines.push(`Perform deep marketing research using Google Search, Reddit, and YouTube for people complaining about this pain point: "${idea.painSolved || idea.description}" or asking for an app that does "${idea.description}".
+
+You MUST use the Search tool to query and discover source material from:
+- Reddit (site:reddit.com): Learn what users complain about, their frustration level, and their current manual hacks.
+- YouTube (site:youtube.com): Find software reviews, workflows, tutorial videos, or videos describing the industry process and users' friction.
+- General Web Search results: Identify the standard solutions, tools, or lack thereof.
+
+Provide a beautifully formatted Markdown summary of the search results, explicitly categorizing your insights into "Google Search Insights", "Reddit Feedback Logs", and "YouTube Review & Workflow Trends". Prioritize and highlight specific examples of actual customer complaints, software gaps, and validation signs found online. Do not output raw JSON or unformatted text.`);
+    lines.push("");
+  }
+
   if(!kit) return lines.join("\n");
   if(kit.lovablePrompt){lines.push("─── LOVABLE.DEV STARTER PROMPT ───");lines.push(kit.lovablePrompt);lines.push("");}
   if(Array.isArray(kit.buildRoadmap) && kit.buildRoadmap.length){lines.push("─── BUILD ROADMAP ───");kit.buildRoadmap.forEach((w: any, idx: number)=>{

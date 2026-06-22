@@ -700,6 +700,7 @@ export default function MicroSaaSFinder() {
   const [deepResearch, setDeepResearch] = useState<Record<number, any>>({});
   const [emailModal, setEmailModal] = useState<any>(null);
   const [emailSentFor, setEmailSentFor] = useState<Record<number, string>>({});
+  const [autoEmailedIndices, setAutoEmailedIndices] = useState<Record<number, boolean>>({});
   const [serverConfig, setServerConfig] = useState({ hasGoDaddy: false, hasResend: false });
   const [theme, setTheme] = useState("dark");
   const [localResendKey, setLocalResendKey] = useState("");
@@ -820,6 +821,58 @@ export default function MicroSaaSFinder() {
       return [...prev, index];
     });
   };
+
+  // Automatically send an email to the profile email address when both AI Validation Brief and Live Sifting Log are ready
+  useEffect(() => {
+    if (!user?.email) return;
+    const targetEmail = user.email;
+    
+    // Check all indices in active state
+    const indices = Object.keys({ ...aiMarketValidation, ...deepResearch }).map(Number);
+    
+    indices.forEach(idx => {
+      const brief = aiMarketValidation[idx]?.data;
+      const sift = deepResearch[idx]?.data;
+      
+      if (brief && sift && !autoEmailedIndices[idx]) {
+        // Find matching idea
+        const idea = result?.saasIdeas?.[idx] || savedIdeas?.[idx];
+        if (!idea) return;
+        
+        // Mark as emailed immediately to prevent multiple triggered sends
+        setAutoEmailedIndices(prev => ({ ...prev, [idx]: true }));
+        
+        const sendReports = async () => {
+          const toastId = toast.loading(`Sending your AI Validation & Sifting Reports for "${idea.name}"...`);
+          try {
+            const { buildEmailHtml } = await import("@/lib/email-builder");
+            const kit = launchKits[idx]?.data || null;
+            const roi = idea.roiEstimate || {};
+            const htmlBody = buildEmailHtml(idea, kit, roi, brief, sift);
+            
+            const res = await sendEmailAction(
+              targetEmail,
+              `🔥 Deep Validation & Sifting Log: ${idea.name}`,
+              htmlBody,
+              localResendKey
+            );
+            
+            if (res.error) {
+              toast.error(`Automated report send failed: ${res.error}`, { id: toastId });
+            } else {
+              toast.success(`Reports sent to your profile email (${targetEmail})!`, { id: toastId });
+              // Mark sending as permanently done for this index in the UI sent logs too
+              setEmailSentFor(prev => ({ ...prev, [idx]: targetEmail }));
+            }
+          } catch (err: any) {
+            toast.error(`Error sending automated reports: ${err.message || err}`, { id: toastId });
+          }
+        };
+        
+        sendReports();
+      }
+    });
+  }, [aiMarketValidation, deepResearch, user?.email, result?.saasIdeas, savedIdeas, launchKits, autoEmailedIndices, localResendKey]);
 
   useEffect(() => {
     console.log("MicroSaaSFinder useEffect running");
@@ -1339,7 +1392,15 @@ Example: ["HVAC Inventory Management", "Custom Cabinetry CRM", "Marine Logbook D
     const { getSupabase } = await import('@/lib/supabase');
     const supabase = getSupabase(supabaseUrl, supabaseKey);
     if (!supabase) {
-      setSavedIdeas(localIdeas);
+      // Apply local fallback normalizing to ensure no missing key fields
+      const normalizedLocal = localIdeas.map(li => {
+        const item = { ...li };
+        if (!item.keyFeatures && Array.isArray(item.mvpFeatures)) {
+          item.keyFeatures = item.mvpFeatures.map((f: any) => typeof f === 'object' ? (f.feature || f.name || JSON.stringify(f)) : f);
+        }
+        return item;
+      });
+      setSavedIdeas(normalizedLocal);
       return;
     }
 
@@ -1356,12 +1417,54 @@ Example: ["HVAC Inventory Management", "Custom Cabinetry CRM", "Marine Logbook D
       }
 
       const remoteIdeas = data || [];
-      const mergedIdeas = [...remoteIdeas];
+      const decodedRemoteIdeas = remoteIdeas.map((row: any) => {
+        let parsed = { ...row };
+        if (row.full_idea) {
+          try {
+            const unpacked = typeof row.full_idea === 'string' ? JSON.parse(row.full_idea) : row.full_idea;
+            parsed = {
+              ...unpacked,
+              id: row.id,
+              created_at: row.created_at
+            };
+          } catch (unpErr) {
+            console.warn("Failed to unpack full_idea JSON", unpErr);
+          }
+        }
+        
+        // Deep Polyfill to prevent "undefined" or "N/A" keys
+        if (!parsed.description) {
+          parsed.description = parsed.tagline || `A micro-SaaS focused on solving ${parsed.painSolved || parsed.name}.`;
+        }
+        if (!parsed.targetAudience) {
+          parsed.targetAudience = parsed.mechanic || "Target Audience Group";
+        }
+        if (!parsed.keyFeatures || !Array.isArray(parsed.keyFeatures) || parsed.keyFeatures.length === 0) {
+          if (Array.isArray(parsed.mvpFeatures)) {
+            parsed.keyFeatures = parsed.mvpFeatures.map((f: any) => typeof f === 'object' ? (f.feature || f.name || JSON.stringify(f)) : f);
+          } else {
+            parsed.keyFeatures = ["MVP Dashboard & Admin Portal", "Automated Workflows"];
+          }
+        }
+        if (!parsed.pricingTiers || !Array.isArray(parsed.pricingTiers) || parsed.pricingTiers.length === 0) {
+          parsed.pricingTiers = [
+            { name: "Starter", price: parsed.pricingStrategy || "$49/mo", description: "Core features to get started." },
+            { name: "Professional", price: parsed.pricingStrategy ? `${parsed.pricingStrategy.replace(/\d+/, (m: string) => String(Number(m) * 2))}` : "$99/mo", description: "Advanced automation and support." }
+          ];
+        }
+        return parsed;
+      });
+
+      const mergedIdeas = [...decodedRemoteIdeas];
 
       // Merge unique by name
       localIdeas.forEach(li => {
         if (li.name && !mergedIdeas.some(ri => ri.name === li.name)) {
-          mergedIdeas.push(li);
+          const normalizedLi = { ...li };
+          if (!normalizedLi.keyFeatures && Array.isArray(normalizedLi.mvpFeatures)) {
+            normalizedLi.keyFeatures = normalizedLi.mvpFeatures.map((f: any) => typeof f === 'object' ? (f.feature || f.name || JSON.stringify(f)) : f);
+          }
+          mergedIdeas.push(normalizedLi);
         }
       });
 
@@ -1428,7 +1531,7 @@ Example: ["HVAC Inventory Management", "Custom Cabinetry CRM", "Marine Logbook D
         }
       }
 
-      const { error } = await supabase.from('saved_ideas').insert([{
+      const insertData: any = {
         name: idea.name,
         tagline: idea.tagline || "",
         boringScore: idea.boringScore || 0,
@@ -1443,8 +1546,18 @@ Example: ["HVAC Inventory Management", "Custom Cabinetry CRM", "Marine Logbook D
         pricingStrategy: idea.pricingStrategy || "",
         mvpFeatures: idea.mvpFeatures || [],
         expansionFeatures: idea.expansionFeatures || [],
-        roiEstimate: idea.roiEstimate || {}
-      }]);
+        roiEstimate: idea.roiEstimate || {},
+        full_idea: idea
+      };
+
+      let { error } = await supabase.from('saved_ideas').insert([insertData]);
+
+      if (error && (error.message?.includes('column "full_idea" does not exist') || error.code === '42703')) {
+        console.warn("Supabase: 'full_idea' column not found in 'saved_ideas'. Retrying insertion without full_idea column...");
+        const { full_idea, ...fallbackData } = insertData;
+        const retryResult = await supabase.from('saved_ideas').insert([fallbackData]);
+        error = retryResult.error;
+      }
 
       if (error) {
         if (error.message?.includes('Could not find the table') || error.code === '42P01') {
@@ -1508,7 +1621,7 @@ Rules:
     try {
       response = await generateContentAction({
         model: "gemini-3.5-flash",
-        contents: `Name: ${idea.name}\nTagline: ${idea.tagline}\nDescription: ${idea.description}\nTarget: ${idea.targetAudience}\nPain: ${idea.painSolved}\nFeatures: ${idea.keyFeatures?.join(", ")}\nGTM: ${idea.gtmChannel || "cold outreach"}\nPrice: ${idea.pricingTiers?.[1]?.price || "$99/mo"}`,
+        contents: `Name: ${idea.name}\nTagline: ${idea.tagline}\nDescription: ${idea.description}\nTarget: ${idea.targetAudience}\nPain: ${idea.painSolved}\nFeatures: ${idea.keyFeatures?.join(", ") || idea.mvpFeatures?.map((f:any) => f.feature || f).join(", ") || "N/A"}\nGTM: ${idea.gtmChannel || "cold outreach"}\nPrice: ${idea.pricingTiers?.[1]?.price || idea.pricingStrategy || "$99/mo"}`,
         config: {
           systemInstruction: sp,
           responseMimeType: "application/json",
@@ -2866,7 +2979,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
               <div className="bg-ms-panel border border-ms-border p-5">
                 <SL>Minimum Viable Product Architecture</SL>
                 <div className="flex flex-wrap gap-2 mt-3">
-                  {activeWizardIdea.keyFeatures?.map((f: any, fIdx: number) => {
+                  {(activeWizardIdea.keyFeatures || activeWizardIdea.mvpFeatures)?.map((f: any, fIdx: number) => {
                     const label = typeof f === "string" ? f : f?.name || f?.feature;
                     return (
                       <span key={fIdx} className="font-ms bg-transparent border border-ms-green text-ms-green px-3 py-1 text-[11px] rounded-sm">
@@ -2926,7 +3039,13 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                       kit={kit.data} 
                       idea={activeWizardIdea} 
                       roi={activeWizardIdea.roiEstimate} 
-                      onEmailClick={() => setEmailModal({ idea: activeWizardIdea, kit: kit.data, roi: activeWizardIdea.roiEstimate })} 
+                      onEmailClick={() => setEmailModal({ 
+                        idea: activeWizardIdea, 
+                        kit: kit.data, 
+                        roi: activeWizardIdea.roiEstimate,
+                        validationBrief: aiMarketValidation[ideaIdx]?.data || undefined,
+                        siftingLog: deepResearch[ideaIdx]?.data || undefined
+                      })} 
                     />
                   </div>
                 )}
@@ -3064,7 +3183,18 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto overflow-x-hidden relative">
-        {emailModal && <EmailModal idea={emailModal.idea} kit={emailModal.kit} roi={emailModal.roi || {}} hasServerResend={serverConfig.hasResend || !!localResendKey} localResendKey={localResendKey} onClose={() => setEmailModal(null)} />}
+        {emailModal && (
+          <EmailModal 
+            idea={emailModal.idea} 
+            kit={emailModal.kit} 
+            roi={emailModal.roi || {}} 
+            validationBrief={emailModal.validationBrief}
+            siftingLog={emailModal.siftingLog}
+            hasServerResend={serverConfig.hasResend || !!localResendKey} 
+            localResendKey={localResendKey} 
+            onClose={() => setEmailModal(null)} 
+          />
+        )}
 
         {showCompareModal && (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-ms-bg/95 backdrop-blur-sm overflow-y-auto">
@@ -3124,7 +3254,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                         <div className="pt-4 border-t border-ms-border/50 flex-1">
                           <div className="font-ms text-[10px] text-ms-green font-bold tracking-[1px] mb-3">KEY MVP FEATURES</div>
                           <ul className="list-disc pl-4 m-0 font-ms text-[12px] text-ms-text-light flex flex-col gap-2">
-                            {Array.isArray(idea.keyFeatures) ? idea.keyFeatures.map((kf: any, j: number) => {
+                            {Array.isArray(idea.keyFeatures || idea.mvpFeatures) ? (idea.keyFeatures || idea.mvpFeatures).map((kf: any, j: number) => {
                                const label = typeof kf === 'string' ? kf : kf?.name || kf?.feature || JSON.stringify(kf);
                                return <li key={j} className="leading-[1.5] marker:text-ms-green/50">{label}</li>;
                             }) : <span className="text-ms-text-muted italic">No key features identified.</span>}
@@ -4172,10 +4302,10 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                             </div>}
 
                             {/* Features */}
-                            {Array.isArray(idea.keyFeatures) && idea.keyFeatures.length > 0 && <div className="mb-3.5">
+                            {Array.isArray(idea.keyFeatures || idea.mvpFeatures) && (idea.keyFeatures || idea.mvpFeatures).length > 0 && <div className="mb-3.5">
                               <SL>Key Features to Build</SL>
                               <div className="flex gap-2 flex-wrap">
-                                {idea.keyFeatures.map((f: any, j: number) => {
+                                {(idea.keyFeatures || idea.mvpFeatures).map((f: any, j: number) => {
                                   const label = typeof f === 'string' ? f : f?.name || f?.feature || JSON.stringify(f);
                                   return <span key={j} className="font-ms bg-ms-panel-light border border-ms-border text-ms-green px-[13px] py-1 text-[11px]">› {label}</span>;
                                 })}
@@ -4240,7 +4370,18 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                                       <button suppressHydrationWarning onClick={e => { e.stopPropagation(); generateLaunchKit(idea, i); }} className="font-ms bg-transparent border border-ms-border text-ms-text-muted px-2.5 py-1 text-[10px] cursor-pointer">↻ Regenerate</button>
                                     </div>
                                   </div>
-                                  <LaunchKitPanel kit={kit.data} idea={idea} roi={roi} onEmailClick={() => setEmailModal({ idea, kit: kit.data, roi })} />
+                                  <LaunchKitPanel 
+                                    kit={kit.data} 
+                                    idea={idea} 
+                                    roi={roi} 
+                                    onEmailClick={() => setEmailModal({ 
+                                      idea, 
+                                      kit: kit.data, 
+                                      roi,
+                                      validationBrief: aiMarketValidation[i]?.data || undefined,
+                                      siftingLog: deepResearch[i]?.data || undefined
+                                    })} 
+                                  />
                                 </div>
                               )}
                             </div>
@@ -4364,7 +4505,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                 </div>
               ) : savedKits.length === 0 ? (
                 <div className="bg-ms-panel border border-ms-border p-5 text-center font-ms text-ms-text-muted text-[13px]">
-                  No saved kits found. Click 'SAVE TO SUPABASE' inside any launch kit to archive it.
+                  No saved kits found. Click &apos;SAVE TO SUPABASE&apos; inside any launch kit to archive it.
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -4380,7 +4521,18 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button suppressHydrationWarning onClick={() => setEmailModal({ idea: kitItem.idea, kit: kitItem.kit, roi: kitItem.roi })} className="font-ms bg-ms-green-dark border border-ms-green text-ms-green px-3 py-1.5 text-[11px] cursor-pointer">
+                        <button suppressHydrationWarning onClick={() => {
+                          const ideaIndexInSaved = savedIdeas.findIndex(k => k.name === kitItem.idea?.name);
+                          const valB = ideaIndexInSaved !== -1 ? (aiMarketValidation[ideaIndexInSaved]?.data || undefined) : undefined;
+                          const siftL = ideaIndexInSaved !== -1 ? (deepResearch[ideaIndexInSaved]?.data || undefined) : undefined;
+                          setEmailModal({ 
+                            idea: kitItem.idea, 
+                            kit: kitItem.kit, 
+                            roi: kitItem.roi,
+                            validationBrief: valB,
+                            siftingLog: siftL
+                          });
+                        }} className="font-ms bg-ms-green-dark border border-ms-green text-ms-green px-3 py-1.5 text-[11px] cursor-pointer">
                           ✉ View & Send Email
                         </button>
                       </div>
@@ -4401,7 +4553,7 @@ Provide a beautifully formatted Markdown summary of the search results, explicit
                 </div>
               ) : savedIdeas.length === 0 ? (
                 <div className="bg-ms-panel border border-ms-border p-5 text-center font-ms text-ms-text-muted text-[13px]">
-                  No saved niche ideas found. Click 'SAVE IDEA' on any idea in your results to archive it here.
+                  No saved niche ideas found. Click &apos;SAVE IDEA&apos; on any idea in your results to archive it here.
                 </div>
               ) : (
                 <div className="space-y-4 font-ms">
