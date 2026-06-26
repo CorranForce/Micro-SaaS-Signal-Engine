@@ -1,487 +1,579 @@
 "use server";
 
-import { GoogleGenAI, Type } from "@google/genai";
-import { ideaGenerationSchema, launchKitSchema, moreIdeasSchema } from "../lib/gemini-schemas";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
-export async function checkDomainAction(domain: string, key?: string, secret?: string) {
-  let apiKey = key || process.env.GODADDY_API_KEY;
-  let apiSecret = secret || process.env.GODADDY_API_SECRET;
-  if (apiKey === "MY_GODADDY_API_KEY") apiKey = "";
-  if (apiSecret === "MY_GODADDY_API_SECRET") apiSecret = "";
+let aiClient: GoogleGenAI | null = null;
 
-  if (!apiKey || !apiSecret) {
-    return { error: "GoDaddy API credentials are required. Please check your API Key and Secret in Settings." };
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const res = await fetch(`https://api.godaddy.com/v1/domains/available?domain=${encodeURIComponent(domain)}`, {
-      headers: {
-        "Authorization": `sso-key ${apiKey}:${apiSecret}`,
-        "Accept": "application/json"
-      },
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      let errorMessage = e.message || `HTTP ${res.status}`;
-      if (res.status === 401) errorMessage = "Unauthorized: Check your GoDaddy API Key and Secret. They might be invalid or expired.";
-      if (res.status === 403) errorMessage = "Forbidden: Your GoDaddy API Key does not have permission. Ensure you are using production keys and check IP allowlists.";
-      if (res.status === 429) errorMessage = "Rate Limited: GoDaddy API rate limit exceeded. Please try again later.";
-      return { error: errorMessage };
+function getAIClient(): GoogleGenAI {
+  if (!aiClient) {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      throw new Error(
+        "GEMINI_API_KEY is not configured. Please add your Gemini API Key in the Settings > Secrets panel of AI Studio.",
+      );
     }
+    aiClient = new GoogleGenAI({
+      apiKey: key,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return aiClient;
+}
 
-    return await res.json();
+export async function searchSaaSIdeas(niche: string, context: string) {
+  try {
+    const ai = getAIClient();
+
+    const prompt = `You are Signal Engine — an elite B2B micro-SaaS researcher. Your specialty is finding "boring", unglamorous, highly underserved B2B opportunities in legacy offline industries (e.g., HVAC, construction, pest control, local logistics, veterinary clinics, waste management, dry cleaning). These businesses have low competition, high willingness to pay, and very low churn.
+
+User inputs:
+- Focus Niche/Industry: ${niche || "Any Legacy B2B Industry"}
+- Additional Context/Interests: ${context || "None provided"}
+
+Generate EXACTLY 3 unique B2B micro-SaaS opportunities targeting this niche.
+
+Return ONLY a valid JSON object matching the requested schema. Ensure the ideas are realistic, solve deep workflow pains (administrative, reporting, billing, or scheduling friction), and provide an calculated Return on Investment (ROI) matrix assuming standard AI app builder setup (e.g. build costs: $50-150 for simple, $150-300 for moderate, $300-600 for complex; monthly operations: $50-120). Also, suggest 3 highly professional, brand-new available dotcom domains with likelihood scores.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            saasIdeas: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  tagline: { type: Type.STRING },
+                  problem: { type: Type.STRING },
+                  solution: { type: Type.STRING },
+                  targetAudience: { type: Type.STRING },
+                  painSolved: { type: Type.STRING },
+                  competitors: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
+                  gtmChannel: { type: Type.STRING },
+                  buildComplexity: {
+                    type: Type.STRING,
+                    enum: ["simple", "moderate", "complex"],
+                  },
+                  integrationComplexity: {
+                    type: Type.STRING,
+                    enum: ["simple", "moderate", "complex"],
+                  },
+                  roi: {
+                    type: Type.OBJECT,
+                    properties: {
+                      buildCostUSD: { type: Type.STRING },
+                      monthlyExpensesUSD: { type: Type.STRING },
+                      realisticMRRMonth1USD: { type: Type.STRING },
+                      breakEvenMonths: { type: Type.INTEGER },
+                      roiMonth1Pct: { type: Type.STRING },
+                      assumptions: { type: Type.STRING },
+                    },
+                    required: [
+                      "buildCostUSD",
+                      "monthlyExpensesUSD",
+                      "realisticMRRMonth1USD",
+                      "breakEvenMonths",
+                      "roiMonth1Pct",
+                      "assumptions",
+                    ],
+                  },
+                  domains: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        domain: { type: Type.STRING },
+                        likelihood: {
+                          type: Type.STRING,
+                          enum: ["High", "Medium", "Low"],
+                        },
+                        reason: { type: Type.STRING },
+                      },
+                      required: ["domain", "likelihood", "reason"],
+                    },
+                  },
+                },
+                required: [
+                  "name",
+                  "tagline",
+                  "problem",
+                  "solution",
+                  "targetAudience",
+                  "painSolved",
+                  "competitors",
+                  "gtmChannel",
+                  "buildComplexity",
+                  "integrationComplexity",
+                  "roi",
+                  "domains",
+                ],
+              },
+            },
+          },
+          required: ["saasIdeas"],
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("No response received from Gemini API");
+    }
+    return JSON.parse(text);
   } catch (error: any) {
-    return { error: `Network error: ${error.message || 'Failed to fetch'}` };
+    console.error("Error in searchSaaSIdeas Server Action:", error);
+    throw new Error(
+      error.message ||
+        "Failed to search SaaS ideas. Please verify your GEMINI_API_KEY.",
+    );
   }
 }
 
-export async function testGoDaddyAction(key?: string, secret?: string) {
-  let apiKey = key || process.env.GODADDY_API_KEY;
-  let apiSecret = secret || process.env.GODADDY_API_SECRET;
-  if (apiKey === "MY_GODADDY_API_KEY") apiKey = "";
-  if (apiSecret === "MY_GODADDY_API_SECRET") apiSecret = "";
-
-  if (!apiKey || !apiSecret) {
-    return { error: "GoDaddy API credentials are required. Please check your API Key and Secret in Settings." };
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
+export async function generateLaunchKit(idea: {
+  name: string;
+  tagline: string;
+  problem: string;
+  solution: string;
+  targetAudience: string;
+  painSolved: string;
+}) {
   try {
-    const res = await fetch(`https://api.godaddy.com/v1/domains/available?domain=example.guru`, {
-      headers: {
-        "Authorization": `sso-key ${apiKey}:${apiSecret}`,
-        "Accept": "application/json"
-      },
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
+    const ai = getAIClient();
 
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      let errorMessage = e.message || `HTTP ${res.status}`;
-      if (res.status === 401) errorMessage = "Unauthorized: Check your GoDaddy API Key and Secret. They might be invalid or expired.";
-      if (res.status === 403) errorMessage = "Forbidden: Your GoDaddy API Key does not have permission. Ensure you are using production keys and check IP allowlists.";
-      if (res.status === 429) errorMessage = "Rate Limited: GoDaddy API rate limit exceeded. Please try again later.";
-      return { error: errorMessage };
+    // --- Types & Schema additions for generateLaunchKit ---
+    // Ensure databaseRequirements is updated to include sqlSchema
+    const prompt = `You are Signal Engine — an expert at turning B2B micro-SaaS ideas into full production-ready launch kits.
+Create a comprehensive Launch Kit for the following idea:
+- Name: "${idea.name}"
+- Tagline: "${idea.tagline}"
+- Problem: "${idea.problem}"
+- Solution: "${idea.solution}"
+- Target Customer: "${idea.targetAudience}"
+- Pain Solved: "${idea.painSolved}"
+
+Generate a detailed payload matching the JSON schema.
+Ensure:
+1. lovablePrompt is a complete, production-ready, highly specific Vibe-Coding Prompt (for app builders like Lovable.dev) detailing:
+   - Dynamic configurations for the tech stack: React, Tailwind CSS, Lucide Icons, Supabase (auth/database), Stripe (pricing tiers/checkout), and Resend (transactional notification emails).
+   - Core functional screens (dashboard, settings, active workspace, invoice/records, static high-fidelity landing).
+   - Strict database table/schema guidelines.
+2. buildRoadmap has a detailed 4-week task-by-task execution plan.
+3. noCodeStack maps actual modern SaaS builders (Stripe, Supabase, Resend, etc.) with estimated costs.
+4. marketingAssets contains customized landing headlines, social copy, blog ideas, and cold outreach emails.
+5. salesScript provides highly structured questions, objections, and pitch structures to close the target audience.
+6. databaseRequirements outlines actual database schema tables with field types, descriptions, AND a complete valid PostgreSQL / Supabase SQL schema script in 'sqlSchema' that creates all these tables, relationships, and relevant indexes with comments.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            lovablePrompt: { type: Type.STRING },
+            buildRoadmap: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  week: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  tasks: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+                required: ["week", "title", "tasks"],
+              },
+            },
+            noCodeStack: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  tool: { type: Type.STRING },
+                  role: { type: Type.STRING },
+                  why: { type: Type.STRING },
+                  cost: { type: Type.STRING },
+                },
+                required: ["tool", "role", "why", "cost"],
+              },
+            },
+            marketingAssets: {
+              type: Type.OBJECT,
+              properties: {
+                landingHeadline: { type: Type.STRING },
+                landingSubheadline: { type: Type.STRING },
+                ctaButton: { type: Type.STRING },
+                elevatorPitch: { type: Type.STRING },
+                coldEmail: {
+                  type: Type.OBJECT,
+                  properties: {
+                    subject: { type: Type.STRING },
+                    body: { type: Type.STRING },
+                  },
+                  required: ["subject", "body"],
+                },
+                socialPost: { type: Type.STRING },
+                socialContentStrategy: { type: Type.STRING },
+                blogPostIdeas: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+              },
+              required: [
+                "landingHeadline",
+                "landingSubheadline",
+                "ctaButton",
+                "elevatorPitch",
+                "coldEmail",
+                "socialPost",
+                "socialContentStrategy",
+                "blogPostIdeas",
+              ],
+            },
+            salesScript: {
+              type: Type.OBJECT,
+              properties: {
+                introduction: { type: Type.STRING },
+                discoveryQuestions: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                pitchValueProps: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                objectionHandling: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                callToAction: { type: Type.STRING },
+              },
+              required: [
+                "introduction",
+                "discoveryQuestions",
+                "pitchValueProps",
+                "objectionHandling",
+                "callToAction",
+              ],
+            },
+            databaseRequirements: {
+              type: Type.OBJECT,
+              properties: {
+                schemaDescription: { type: Type.STRING },
+                sqlSchema: { type: Type.STRING },
+                tables: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      fields: {
+                        type: Type.ARRAY,
+                        items: { type: Type.STRING },
+                      },
+                      purpose: { type: Type.STRING },
+                    },
+                    required: ["name", "fields", "purpose"],
+                  },
+                },
+              },
+              required: ["schemaDescription", "sqlSchema", "tables"],
+            },
+          },
+          required: [
+            "lovablePrompt",
+            "buildRoadmap",
+            "noCodeStack",
+            "marketingAssets",
+            "salesScript",
+            "databaseRequirements",
+          ],
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("No response received from Gemini API");
+    }
+    return JSON.parse(text);
+  } catch (error: any) {
+    console.error("Error in generateLaunchKit Server Action:", error);
+    throw new Error(error.message || "Failed to generate Launch Kit.");
+  }
+}
+
+export async function getLatestNewsForNiche(niche: string) {
+  try {
+    const ai = getAIClient();
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: `Find the 3 most recent, relevant news headlines or business trends in the "${niche}" industry. Return a clean JSON array with title, source, and an approximate date.`,
+      tools: [{ googleSearch: {} }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              title: { type: Type.STRING },
+              source: { type: Type.STRING },
+              date: { type: Type.STRING },
+            },
+            required: ["title", "source", "date"],
+          },
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      return [];
+    }
+    return JSON.parse(text);
+  } catch (error: any) {
+    console.error("Error fetching news:", error);
+    return [];
+  }
+}
+
+// --- AUTHENTICATION & API SETTINGS ACTIONS ---
+
+import {
+  getSettings,
+  saveSettings,
+  getUsers,
+  saveUsers,
+  ApiSettings,
+} from "./db";
+import crypto from "crypto";
+import { cookies } from "next/headers";
+
+function hashPassword(password: string): string {
+  return crypto.createHash("sha256").update(password).digest("hex");
+}
+
+export async function loginUser(email: string, password: string) {
+  try {
+    const users = getUsers();
+    const user = users.find(
+      (u: any) => u.email.toLowerCase() === email.toLowerCase(),
+    );
+    if (!user) {
+      throw new Error(
+        "No user found with this email. You can register a new account.",
+      );
+    }
+    const pwdHash = hashPassword(password);
+    if (user.passwordHash !== pwdHash) {
+      throw new Error("Incorrect password.");
     }
 
+    const cookieStore = await cookies();
+    cookieStore.set("session_user", user.email, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 60 * 24 * 7, // 1 week
+      path: "/",
+    });
+
+    return { success: true, email: user.email };
+  } catch (error: any) {
+    throw new Error(error.message || "Failed to log in.");
+  }
+}
+
+export async function registerUser(email: string, password: string) {
+  try {
+    if (!email || !password) {
+      throw new Error("Email and password are required.");
+    }
+    if (password.length < 6) {
+      throw new Error("Password must be at least 6 characters long.");
+    }
+    const users = getUsers();
+    const exists = users.some(
+      (u: any) => u.email.toLowerCase() === email.toLowerCase(),
+    );
+    if (exists) {
+      throw new Error("An account with this email already exists.");
+    }
+
+    const newUser = {
+      email: email.toLowerCase(),
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString(),
+    };
+
+    users.push(newUser);
+    saveUsers(users);
+
+    const cookieStore = await cookies();
+    cookieStore.set("session_user", newUser.email, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 60 * 60 * 24 * 7,
+      path: "/",
+    });
+
+    return { success: true, email: newUser.email };
+  } catch (error: any) {
+    throw new Error(error.message || "Failed to register.");
+  }
+}
+
+export async function logoutUser() {
+  try {
+    const cookieStore = await cookies();
+    cookieStore.delete("session_user");
     return { success: true };
   } catch (error: any) {
-    return { error: `Network error: ${error.message || 'Failed to fetch'}` };
+    throw new Error(error.message || "Failed to log out.");
   }
 }
 
-export async function checkConfigAction() {
-  const hasGoDaddy = !!(
-    process.env.GODADDY_API_KEY && 
-    process.env.GODADDY_API_KEY !== "MY_GODADDY_API_KEY" && 
-    process.env.GODADDY_API_SECRET && 
-    process.env.GODADDY_API_SECRET !== "MY_GODADDY_API_SECRET"
-  );
-  const hasResend = !!(
-    process.env.RESEND_API_KEY && 
-    process.env.RESEND_API_KEY !== "MY_RESEND_API_KEY"
-  );
-  return {
-    hasGoDaddy,
-    hasResend
-  };
-}
-
-export async function sendEmailAction(toEmail: string, subject: string, html: string, key?: string) {
-  let apiKey = key || process.env.RESEND_API_KEY;
-  if (apiKey === "MY_RESEND_API_KEY") {
-    apiKey = "";
-  }
-
-  if (!apiKey) {
-    return { error: "Resend API key is required. Please check your API Key in Settings." };
-  }
-
+export async function getSessionUser() {
   try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from: "Launch Kit <onboarding@resend.dev>",
-        to: [toEmail],
-        subject,
-        html
-      }),
-    });
+    const cookieStore = await cookies();
+    const sessionCookie = cookieStore.get("session_user");
+    return sessionCookie ? sessionCookie.value : null;
+  } catch (e) {
+    return null;
+  }
+}
 
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      let errorMessage = e.message || `HTTP ${res.status}`;
-      if (res.status === 401) errorMessage = "Unauthorized: Check your Resend API Key. It might be invalid or expired.";
-      if (res.status === 403) errorMessage = "Forbidden: Verify your domain with Resend, or ensure you are sending to an allowed email address if using a sandbox domain.";
-      if (res.status === 429) errorMessage = "Rate Limited: Resend API rate limit exceeded. Please try again later.";
-      return { error: errorMessage };
+export async function loadApiSettings(email: string) {
+  try {
+    if (!email || email.toLowerCase() !== "corranforce@gmail.com") {
+      throw new Error(
+        "Access Denied: Only corranforce@gmail.com can manage API settings.",
+      );
     }
-
-    return await res.json();
+    return getSettings();
   } catch (error: any) {
-    return { error: `Network error: ${error.message || 'Failed to fetch'}` };
+    throw new Error(error.message || "Failed to load API settings.");
   }
 }
 
-
-function isValidGeminiKey(key?: any): key is string {
-  if (!key || typeof key !== 'string') return false;
-  const trimmed = key.trim();
-  if (!trimmed) return false;
-  const lower = trimmed.toLowerCase();
-  if (lower === 'undefined' || lower === 'null' || lower === 'my_gemini_api_key' || lower.includes('your_api_key')) return false;
-  if (trimmed.startsWith('MY_') || trimmed.includes('INSERT_') || trimmed.includes('YOUR_')) return false;
-  return trimmed.length >= 10;
-}
-
-function formatServerGeminiError(err: any): string {
-  let msg = err?.message || String(err || "Unknown API Error");
-  if (typeof msg === 'object') {
-    try {
-      msg = JSON.stringify(msg);
-    } catch {
-      msg = "Unknown API Error";
-    }
-  }
-  const lower = msg.toLowerCase();
-  
-  // Specific checks for API key errors:
-  if (
-    lower.includes("api key not valid") || 
-    lower.includes("api_key_invalid") || 
-    lower.includes("key is invalid") ||
-    lower.includes("api key invalid") ||
-    lower.includes("invalid api key") ||
-    lower.includes("unauthorized") ||
-    lower.includes("forbidden") ||
-    (lower.includes("api key") && lower.includes("invalid"))
-  ) {
-    return "The Gemini API connection could not be established. This is typically due to an invalid or unconfigured API key. Please visit the Settings page (via the gear icon) to enter a valid Gemini API key starting with 'AIza'.";
-  }
-  
-  if (lower.includes("429") || lower.includes("rate limit") || lower.includes("quota") || lower.includes("resource_exhausted")) {
-    return "API Rate Limit or Quota Exceeded. Please try again after a few moments or use your own custom API key in Settings.";
-  }
-  
-  return msg;
-}
-
-async function runWithRetry<T>(
-  apiCall: () => Promise<T>,
-  maxRetries: number = 4,
-  initialDelayMs: number = 2000
-): Promise<T> {
-  let delay = initialDelayMs;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await apiCall();
-    } catch (error: any) {
-      const msg = error?.message || String(error || "");
-      const lower = msg.toLowerCase();
-      const isRetryable = lower.includes("429") || 
-                          lower.includes("rate limit") || 
-                          lower.includes("quota") || 
-                          lower.includes("resource_exhausted") || 
-                          lower.includes("too many requests") ||
-                          lower.includes("503") ||
-                          lower.includes("overloaded") ||
-                          lower.includes("service unavailable") ||
-                          lower.includes("transient") ||
-                          lower.includes("deadline exceeded") ||
-                          lower.includes("try again later");
-      
-      if (isRetryable && attempt < maxRetries) {
-        console.log(`[GEMINI API] Retryable transient error/rate limit observed. Backoff retry attempt ${attempt} in ${delay}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        delay *= 2; // Exponential backoff
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw new Error("API transaction exhausted retry limits");
-}
-
-export async function searchLeadsWithGroundingAction(service: string, city: string, userKey?: string) {
-  let apiKey = "";
-  if (isValidGeminiKey(userKey)) {
-    apiKey = userKey;
-  } else if (isValidGeminiKey(process.env.GEMINI_API_KEY)) {
-    apiKey = process.env.GEMINI_API_KEY;
-  } else if (isValidGeminiKey(process.env.NEXT_PUBLIC_GEMINI_API_KEY)) {
-    apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-  }
-
-  if (!apiKey) {
-    return { error: "Gemini API key is invalid or not configured. Please go to the Settings page and configure a valid Gemini API Key starting with 'AIza'." };
-  }
-
+export async function updateApiSettings(email: string, settings: ApiSettings) {
   try {
-    const ai = new GoogleGenAI({ 
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
-
-    const prompt = `Find 6-10 real active businesses/service providers matching: "${service}" in city/region: "${city}".
-For each business, identify their exact name, website domain/URL, phone number, physical address/location, and a 1-sentence description.
-Use Google Search grounding to find real, currently operating local businesses. Do not invent any names or sites.
-
-Return the response as a JSON object with a single property 'leads', which is an array of objects matching this TypeScript type:
-{
-  leads: Array<{
-    name: string;
-    website: string;
-    phone: string;
-    address: string;
-    description: string;
-  }>
-}`;
-
-    const response = await runWithRetry(() => ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ["leads"],
-          properties: {
-            leads: {
-              type: Type.ARRAY,
-              description: "List of real local business leads found",
-              items: {
-                type: Type.OBJECT,
-                required: ["name", "website", "phone", "address", "description"],
-                properties: {
-                  name: { type: Type.STRING },
-                  website: { type: Type.STRING },
-                  phone: { type: Type.STRING },
-                  address: { type: Type.STRING },
-                  description: { type: Type.STRING }
-                }
-              }
-            }
-          }
-        }
-      },
-    }));
-
-    const text = response.text;
-    if (!text) {
-      throw new Error("No response text returned from Gemini model.");
+    if (!email || email.toLowerCase() !== "corranforce@gmail.com") {
+      throw new Error(
+        "Access Denied: Only corranforce@gmail.com can manage API settings.",
+      );
     }
-
-    const parsed = JSON.parse(text.trim());
-    
-    // Extract grounding chunks as source references
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = groundingChunks.map((chunk: any) => ({
-      title: chunk.web?.title || "Web Search Result",
-      uri: chunk.web?.uri || ""
-    })).filter((src: any) => src.uri);
-
-    return { leads: parsed.leads || [], sources };
+    saveSettings(settings);
+    return { success: true };
   } catch (error: any) {
-    return { error: formatServerGeminiError(error) };
+    throw new Error(error.message || "Failed to update API settings.");
   }
 }
 
-export async function compareCompetitorsAction(niche: string, userKey?: string) {
-  let apiKey = "";
-  if (isValidGeminiKey(userKey)) {
-    apiKey = userKey;
-  } else if (isValidGeminiKey(process.env.GEMINI_API_KEY)) {
-    apiKey = process.env.GEMINI_API_KEY;
-  } else if (isValidGeminiKey(process.env.NEXT_PUBLIC_GEMINI_API_KEY)) {
-    apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-  }
-
-  if (!apiKey) {
-    return { error: "Gemini API key is invalid or not configured. Please go to the Settings page and configure a valid Gemini API Key starting with 'AIza'." };
-  }
-
+export async function chatWithAgent(
+  history: { role: "user" | "model"; parts: [{ text: string }] }[],
+  message: string,
+  taskType: "complex" | "general" | "fast" = "general",
+) {
   try {
-    const ai = new GoogleGenAI({ 
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
+    const ai = getAIClient();
 
-    const prompt = `Perform research on 3 to 4 real-world competitors or similar services for the following micro-SaaS niche/idea: "${niche}".
-Find real competitors operating in this area. For each competitor, identify:
-1. Name of competitor
-2. Target Customer / Audience
-3. Key Features / Unique services they offer
-4. Competitor Strengths
-5. Competitor Weaknesses / Chinks in Armor (why a custom tailored boring micro-SaaS can win)
-6. Real Website reference URL / Domain
-
-Use Google Search grounding to look up real active companies, tools, platforms, or systems. Do not invent names or URLs.
-
-Return the response as a JSON object with a single property 'competitors', which is an array of objects matching this TypeScript type:
-{
-  competitors: Array<{
-    name: string;
-    targetAudience: string;
-    keyFeatures: string;
-    strengths: string;
-    weaknesses: string;
-    website: string;
-  }>
-}`;
-
-    const response = await runWithRetry(() => ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          required: ["competitors"],
-          properties: {
-            competitors: {
-              type: Type.ARRAY,
-              description: "List of real industry competitors found via search grounding",
-              items: {
-                type: Type.OBJECT,
-                required: ["name", "targetAudience", "keyFeatures", "strengths", "weaknesses", "website"],
-                properties: {
-                  name: { type: Type.STRING },
-                  targetAudience: { type: Type.STRING },
-                  keyFeatures: { type: Type.STRING },
-                  strengths: { type: Type.STRING },
-                  weaknesses: { type: Type.STRING },
-                  website: { type: Type.STRING }
-                }
-              }
-            }
-          }
-        }
-      },
-    }));
-
-    const text = response.text;
-    if (!text) {
-      throw new Error("No response text returned from Gemini model.");
-    }
-
-    const parsed = JSON.parse(text.trim());
-    
-    // Extract grounding chunks as source references
-    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = groundingChunks.map((chunk: any) => ({
-      title: chunk.web?.title || "Web Search Result",
-      uri: chunk.web?.uri || ""
-    })).filter((src: any) => src.uri);
-
-    return { competitors: parsed.competitors || [], sources };
-  } catch (error: any) {
-    return { error: formatServerGeminiError(error) };
-  }
-}
-
-export async function generateContentAction(options: {
-  model: string;
-  contents: string;
-  config?: any;
-  userKey?: string;
-}) {
-  let apiKey = "";
-  if (isValidGeminiKey(options.userKey)) {
-    apiKey = options.userKey;
-  } else if (isValidGeminiKey(process.env.GEMINI_API_KEY)) {
-    apiKey = process.env.GEMINI_API_KEY;
-  } else if (isValidGeminiKey(process.env.NEXT_PUBLIC_GEMINI_API_KEY)) {
-    apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-  }
-
-  if (!apiKey) {
-    return { error: "Gemini API key is invalid or not configured. Please visit the Settings page (via the top-right button) to configure a valid API key." };
-  }
-
-  let cleanConfig: any = undefined;
-  if (options.config) {
-    try {
-      // Deep clone to strip Next.js Server Action Proxy Wrapper & Metadata
-      cleanConfig = JSON.parse(JSON.stringify(options.config));
-    } catch (e) {
-      cleanConfig = { ...options.config };
-    }
-  }
-
-  // Resolve statically imported schemas by key name if passed as a string
-  if (cleanConfig && typeof cleanConfig.responseSchema === "string") {
-    const schemaKey = cleanConfig.responseSchema;
-    if (schemaKey === "ideaGenerationSchema") {
-      cleanConfig.responseSchema = ideaGenerationSchema;
-    } else if (schemaKey === "launchKitSchema") {
-      cleanConfig.responseSchema = launchKitSchema;
-    } else if (schemaKey === "moreIdeasSchema") {
-      cleanConfig.responseSchema = moreIdeasSchema;
-    }
-  }
-
-  try {
-    const ai = new GoogleGenAI({ 
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
-
-    const response = await runWithRetry(() => ai.models.generateContent({
-      model: options.model,
-      contents: options.contents,
-      config: cleanConfig,
-    }));
-
-    const chunksRaw = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const chunks = chunksRaw.map((chunk: any) => ({
-      web: {
-        title: chunk.web?.title || "Web Search Result",
-        uri: chunk.web?.uri || ""
-      }
-    }));
-    const sources = chunks.map((chunk: any) => ({
-      title: chunk.web?.title,
-      uri: chunk.web?.uri
-    })).filter((src: any) => src.uri);
-
-    return { 
-      text: response.text || "", 
-      sources,
-      chunks
+    let model = "gemini-3.5-flash";
+    let config: any = {
+      systemInstruction:
+        "You are an expert SaaS advisor and micro-SaaS ideation assistant. You help users refine their startup ideas, understand market dynamics, and build production-ready launch kits.",
     };
+
+    if (taskType === "complex") {
+      model = "gemini-3.1-pro-preview";
+      config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+    } else if (taskType === "fast") {
+      model = "gemini-3.1-flash-lite";
+    }
+
+    const contents = [...history, { role: "user", parts: [{ text: message }] }];
+
+    const response = await ai.models.generateContent({
+      model,
+      contents,
+      config,
+    });
+
+    return response.text;
   } catch (error: any) {
-    console.warn("[GEMINI API CRITICAL WARNING]:", error?.message || error);
-    return { error: formatServerGeminiError(error) };
+    console.error("Error in chatWithAgent Server Action:", error);
+    throw new Error(error.message || "Failed to generate chat response.");
   }
 }
 
+export async function getRealtimeSuggestions(
+  niche: string,
+  currentText: string,
+) {
+  try {
+    const ai = getAIClient();
 
+    const prompt = `You are an expert niche micro-SaaS keyword and strategy analyzer.
+Selected Industry/Niche: "${niche}"
+Current user input for additional context/constraints: "${currentText || ""}"
+
+We want to help the user discover high-profit B2B opportunities in this industry.
+Please generate:
+1. 4 high-profit, high-value keywords or industry-specific focus areas (e.g., "dispatch optimization", "compliance reporting", "contract-to-cash", "offline sync") related to ${niche}. These keywords are high-profit because B2B clients are willing to pay thousands of dollars monthly to solve them.
+2. 3 short, concrete suggestions/prompts that user can add to their inputs (e.g., "focus on QuickBooks integration", "automated invoicing for field staff", "IoT tracking for heavy equipment"). Keep them under 6 words each.
+
+Return ONLY a JSON object with this exact structure:
+{
+  "keywords": ["keyword1", "keyword2", "keyword3", "keyword4"],
+  "suggestions": ["suggestion1", "suggestion2", "suggestion3"]
+}`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            keywords: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description:
+                "4 highly valuable keywords that denote high-profit SaaS features or workflows in this niche.",
+            },
+            suggestions: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description:
+                "3 highly relevant feature ideas or prompt enhancements related to the user input and niche.",
+            },
+          },
+          required: ["keywords", "suggestions"],
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      return { keywords: [], suggestions: [] };
+    }
+    return JSON.parse(text);
+  } catch (error) {
+    console.error("Error in getRealtimeSuggestions:", error);
+    return { keywords: [], suggestions: [] };
+  }
+}

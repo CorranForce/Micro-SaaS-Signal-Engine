@@ -1,66 +1,36 @@
-@import "tailwindcss";
-@plugin "@tailwindcss/typography";
-
-:root {
-  --color-ms-bg: #050805;
-  --color-ms-panel: #0a100a;
-  --color-ms-panel-light: #111c11;
-  --color-ms-border: #223822;
-  --color-ms-border-light: #335033;
-  --color-ms-green: #4ade80;
-  --color-ms-green-dark: #064e3b;
-  --color-ms-yellow: #facc15;
-  --color-ms-yellow-dark: #422006;
-  --color-ms-red: #f87171;
-  --color-ms-red-dark: #450a0a;
-  --color-ms-text: #e8f0e8;
-  --color-ms-text-muted: #9ab09a;
-  --color-ms-text-light: #c2d1c2;
-  --color-ms-white: #ffffff;
-}
-
-:root.light {
-  --color-ms-bg: #f0fdf4;
-  --color-ms-panel: #ffffff;
-  --color-ms-panel-light: #f8fafc;
-  --color-ms-border: #bbf7d0;
-  --color-ms-border-light: #86efac;
-  --color-ms-green: #166534;
-  --color-ms-green-dark: #dcfce7;
-  --color-ms-yellow: #854d0e;
-  --color-ms-yellow-dark: #fef08a;
-  --color-ms-red: #991b1b;
-  --color-ms-red-dark: #fee2e2;
-  --color-ms-text: #14532d;
-  --color-ms-text-muted: #166534;
-  --color-ms-text-light: #15803d;
-  --color-ms-white: #000000;
-}
-
-@theme {
-  --color-ms-bg: var(--color-ms-bg);
-  --color-ms-panel: var(--color-ms-panel);
-  --color-ms-panel-light: var(--color-ms-panel-light);
-  --color-ms-border: var(--color-ms-border);
-  --color-ms-border-light: var(--color-ms-border-light);
-  --color-ms-green: var(--color-ms-green);
-  --color-ms-green-dark: var(--color-ms-green-dark);
-  --color-ms-yellow: var(--color-ms-yellow);
-  --color-ms-yellow-dark: var(--color-ms-yellow-dark);
-  --color-ms-red: var(--color-ms-red);
-  --color-ms-red-dark: var(--color-ms-red-dark);
-  --color-ms-text: var(--color-ms-text);
-  --color-ms-text-muted: var(--color-ms-text-muted);
-  --color-ms-text-light: var(--color-ms-text-light);
-  --color-ms-white: var(--color-ms-white);
-  --font-ms: Verdana, Geneva, Tahoma, sans-serif;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 body {
-  background-color: var(--color-ms-bg);
-  color: var(--color-ms-text);
-  font-family: var(--font-ms);
+  background-color: #0a0c10;
+  color: #f3f4f6;
+  font-family: 'Inter', sans-serif;
   margin: 0;
   padding: 0;
-  transition: background-color 0.3s ease, color 0.3s ease;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar for modern terminal aesthetic */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0c10;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f2937;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #374151;
+}
+
+/* Custom Glow Effects */
+.green-glow {
+  box-shadow: 0 0 15px rgba(0, 240, 118, 0.15);
+}
+.yellow-glow {
+  box-shadow: 0 0 15px rgba(255, 179, 0, 0.15);
 }
