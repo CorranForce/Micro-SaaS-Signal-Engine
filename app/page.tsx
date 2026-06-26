@@ -35,6 +35,7 @@ import {
   X,
   Send,
   Bot,
+  ChevronUp,
 } from "lucide-react";
 import {
   searchSaaSIdeas,
@@ -47,6 +48,9 @@ import {
   updateApiSettings,
   chatWithAgent,
   getRealtimeSuggestions,
+  sendLaunchKitEmail,
+  addToSupabaseAction,
+  checkDomainAvailabilityAction,
 } from "./actions";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import {
@@ -120,6 +124,17 @@ interface LaunchKit {
     objectionHandling: string[];
     callToAction: string;
   };
+  pricingTiers?: {
+    name: string;
+    price: string;
+    features: string[];
+  }[];
+  marketValidation?: {
+    goNoGoScore: string;
+    proofOfDemand: string;
+    redFlags: string[];
+  };
+  preSellChecklist?: string[];
   databaseRequirements: {
     schemaDescription: string;
     sqlSchema?: string;
@@ -204,6 +219,54 @@ const LEGACY_NICHES = [
     name: "Self Storage Facilities",
     icon: "📦",
     desc: "Locker rental automation, gate integrations, and automated delinquent tenant notifications.",
+  },
+  {
+    id: "property-management",
+    name: "Property Management & HOAs",
+    icon: "🏘️",
+    desc: "Maintenance request ticketing, violation tracking, and community amenity booking.",
+  },
+  {
+    id: "cnc-manufacturing",
+    name: "CNC & Custom Manufacturing",
+    icon: "⚙️",
+    desc: "Machine uptime monitoring, raw material inventory tracking, and custom quoting.",
+  },
+  {
+    id: "auto-repair",
+    name: "Auto Repair & Body Shops",
+    icon: "🚗",
+    desc: "Diagnostic code logging, parts ordering workflows, and mechanic bay scheduling.",
+  },
+  {
+    id: "fitness-studios",
+    name: "Boutique Fitness Studios",
+    icon: "🧘‍♀️",
+    desc: "Class capacity management, instructor substitutions, and recurring membership billing.",
+  },
+  {
+    id: "food-distributors",
+    name: "Specialty Food Distributors",
+    icon: "🥖",
+    desc: "Perishable inventory tracking, delivery route optimization, and wholesale ordering.",
+  },
+  {
+    id: "childcare",
+    name: "Childcare & Daycares",
+    icon: "🧸",
+    desc: "Daily activity reporting, meal tracking, and secure parent check-in/out.",
+  },
+  {
+    id: "physical-therapy",
+    name: "Physical Therapy Clinics",
+    icon: "🏃‍♂️",
+    desc: "Home exercise program generation, progress notes, and insurance pre-authorization.",
+  },
+  {
+    id: "niche-agriculture",
+    name: "Niche Agriculture (Orchards/Greenhouses)",
+    icon: "🌱",
+    desc: "Harvest yield tracking, micro-climate monitoring logs, and seasonal labor scheduling.",
   },
 ];
 
@@ -827,6 +890,11 @@ export default function MicroSaaSSignalEngine() {
   >([]);
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
+  // Track email dispatch status for launch kits
+  const [emailStatus, setEmailStatus] = useState<
+    Record<number, { success: boolean; message: string } | null>
+  >({});
+
   // Real-time suggestions state
   const [realtimeKeywords, setRealtimeKeywords] = useState<string[]>([]);
   const [realtimeSuggestions, setRealtimeSuggestions] = useState<string[]>([]);
@@ -864,11 +932,43 @@ export default function MicroSaaSSignalEngine() {
   }, [selectedNiche, customNiche, additionalContext]);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
+  const pageTopRef = useRef<HTMLDivElement>(null);
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Card-specific actions loading state
+  const [isEmailingCard, setIsEmailingCard] = useState<Record<number, boolean>>({});
+  const [emailCardStatus, setEmailCardStatus] = useState<
+    Record<number, { success: boolean; message: string } | null>
+  >({});
+  const [isSavingToSupabase, setIsSavingToSupabase] = useState<Record<number, boolean>>({});
+  const [supabaseCardStatus, setSupabaseCardStatus] = useState<
+    Record<number, { success: boolean; message: string; sql?: string } | null>
+  >({});
+  
+  // Domain checking states
+  const [domainCheckStatus, setDomainCheckStatus] = useState<
+    Record<string, { checking?: boolean; available?: boolean; error?: string; price?: number }>
+  >({});
+
+  // Expanded cards state
+  const [expandedIdeas, setExpandedIdeas] = useState<Record<number, boolean>>({});
+
+  // Active workspace actions loading state
+  const [isEmailingActive, setIsEmailingActive] = useState<boolean>(false);
+  const [activeEmailStatus, setActiveEmailStatus] = useState<{ success: boolean; message: string } | null>(
+    null,
+  );
+  const [isSavingActiveToSupabase, setIsSavingActiveToSupabase] = useState<boolean>(false);
+  const [activeSupabaseStatus, setActiveSupabaseStatus] = useState<{
+    success: boolean;
+    message: string;
+    sql?: string;
+  } | null>(null);
 
   // Authentication states
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState<boolean>(false);
   const [isAuthRegister, setIsAuthRegister] = useState<boolean>(false);
   const [authEmail, setAuthEmail] = useState<string>("");
   const [authPassword, setAuthPassword] = useState<string>("");
@@ -883,6 +983,7 @@ export default function MicroSaaSSignalEngine() {
     resendApiKey: "",
     godaddyApiKey: "",
     godaddyApiSecret: "",
+    compactMode: false,
   });
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(false);
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
@@ -1071,11 +1172,9 @@ export default function MicroSaaSSignalEngine() {
     localStorage.setItem("saved_micro_saas", JSON.stringify(newSaved));
   };
 
-  // Log scrolling
+  // Log scrolling removed because we prepend logs
   useEffect(() => {
-    if (terminalEndRef.current) {
-      terminalEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
+    // No-op
   }, [terminalLogs]);
 
   // Handle PDF Export
@@ -1266,7 +1365,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
     let currentLogIndex = 0;
     const interval = setInterval(() => {
       if (currentLogIndex < mockLogs.length) {
-        setTerminalLogs((prev) => [...prev, mockLogs[currentLogIndex]]);
+        setTerminalLogs((prev) => [mockLogs[currentLogIndex], ...prev]);
         setScanProgress(
           Math.floor(((currentLogIndex + 1) / mockLogs.length) * 100),
         );
@@ -1292,8 +1391,8 @@ ${kit.marketingAssets.coldEmail.body}</div>
       if (data && data.saasIdeas) {
         setGeneratedIdeas(data.saasIdeas);
         setTerminalLogs((prev) => [
-          ...prev,
           `[SUCCESS] 3 Premium B2B blueprints successfully loaded and validated! 🎉`,
+          ...prev,
         ]);
       } else {
         throw new Error("Invalid output received. Please try again.");
@@ -1304,12 +1403,239 @@ ${kit.marketingAssets.coldEmail.body}</div>
         err.message || "An error occurred during SaaS idea generation.",
       );
       setTerminalLogs((prev) => [
-        ...prev,
         `[ERROR] Scrape failed: ${err.message || "Unknown error"}`,
+        ...prev,
       ]);
     } finally {
       setIsScanning(false);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (pageTopRef.current) {
+        pageTopRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
+    }
+  };
+
+  const handleEmailCard = async (idea: SaasIdea, index: number) => {
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    setIsEmailingCard((prev) => ({ ...prev, [index]: true }));
+    setEmailCardStatus((prev) => ({ ...prev, [index]: null }));
+
+    try {
+      const kitData = launchKits[index]?.data || null;
+      const res = await sendLaunchKitEmail(currentUser, idea, kitData);
+
+      if (res.success) {
+        setEmailCardStatus((prev) => ({
+          ...prev,
+          [index]: { success: true, message: `Sent blueprint email to ${currentUser}! 📬` },
+        }));
+      } else {
+        if (res.reason && res.reason.includes("RESEND_API_KEY")) {
+          setEmailCardStatus((prev) => ({
+            ...prev,
+            [index]: {
+              success: false,
+              message: `Resend API Key is missing. Configure RESEND_API_KEY in the Secrets section.`,
+            },
+          }));
+        } else {
+          setEmailCardStatus((prev) => ({
+            ...prev,
+            [index]: { success: false, message: res.error || "Failed to send email." },
+          }));
+        }
+      }
+    } catch (err: any) {
+      setEmailCardStatus((prev) => ({
+        ...prev,
+        [index]: { success: false, message: err.message || "Failed to dispatch email." },
+      }));
+    } finally {
+      setIsEmailingCard((prev) => ({ ...prev, [index]: false }));
+    }
+  };
+
+  const handleSupabaseCard = async (idea: SaasIdea, index: number) => {
+    setIsSavingToSupabase((prev) => ({ ...prev, [index]: true }));
+    setSupabaseCardStatus((prev) => ({ ...prev, [index]: null }));
+
+    try {
+      const kitData = launchKits[index]?.data || null;
+      const res = await addToSupabaseAction(idea, kitData);
+
+      if (res.success) {
+        setSupabaseCardStatus((prev) => ({
+          ...prev,
+          [index]: {
+            success: true,
+            message: "Blueprint pushed to Supabase table 'saved_ideas'! 🚀",
+          },
+        }));
+      } else {
+        if (res.reason === "SUPABASE_CONFIG_MISSING") {
+          setSupabaseCardStatus((prev) => ({
+            ...prev,
+            [index]: {
+              success: false,
+              message: "Supabase config missing! Save your URL/Key under Settings first.",
+            },
+          }));
+        } else if (res.reason === "TABLE_NOT_FOUND") {
+          setSupabaseCardStatus((prev) => ({
+            ...prev,
+            [index]: {
+              success: false,
+              message:
+                res.error || "Table 'saved_ideas' not found (or schema cache needs reload). Click copy below to see the required SQL schema.",
+              sql: res.sql,
+            },
+          }));
+        } else {
+          setSupabaseCardStatus((prev) => ({
+            ...prev,
+            [index]: { success: false, message: res.error || "Failed to save to Supabase." },
+          }));
+        }
+      }
+    } catch (err: any) {
+      setSupabaseCardStatus((prev) => ({
+        ...prev,
+        [index]: { success: false, message: err.message || "Failed to save to Supabase." },
+      }));
+    } finally {
+      setIsSavingToSupabase((prev) => ({ ...prev, [index]: false }));
+    }
+  };
+
+  const handleCheckDomain = async (domain: string) => {
+    if (domainCheckStatus[domain]?.checking) return;
+    
+    setDomainCheckStatus(prev => ({ ...prev, [domain]: { checking: true } }));
+    
+    try {
+      const res = await checkDomainAvailabilityAction(domain);
+      if (res.success) {
+        setDomainCheckStatus(prev => ({
+          ...prev,
+          [domain]: {
+            checking: false,
+            available: res.available,
+            price: res.price
+          }
+        }));
+      } else {
+        setDomainCheckStatus(prev => ({
+          ...prev,
+          [domain]: {
+            checking: false,
+            error: res.error
+          }
+        }));
+      }
+    } catch (err: any) {
+      setDomainCheckStatus(prev => ({
+        ...prev,
+        [domain]: {
+          checking: false,
+          error: err.message || "Failed to check domain."
+        }
+      }));
+    }
+  };
+
+  const handleEmailActive = async () => {
+    if (activeIdeaIndex === null) return;
+    const idea = generatedIdeas[activeIdeaIndex];
+    if (!idea) return;
+
+    if (!currentUser) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    setIsEmailingActive(true);
+    setActiveEmailStatus(null);
+
+    try {
+      const kitData = launchKits[activeIdeaIndex]?.data || null;
+      const res = await sendLaunchKitEmail(currentUser, idea, kitData);
+
+      if (res.success) {
+        setActiveEmailStatus({
+          success: true,
+          message: `Launch Kit successfully emailed to ${currentUser}! 📬`,
+        });
+      } else {
+        if (res.reason && res.reason.includes("RESEND_API_KEY")) {
+          setActiveEmailStatus({
+            success: false,
+            message: "Resend API Key is missing. Configure RESEND_API_KEY in the Secrets section.",
+          });
+        } else {
+          setActiveEmailStatus({
+            success: false,
+            message: res.error || "Failed to send email.",
+          });
+        }
+      }
+    } catch (err: any) {
+      setActiveEmailStatus({
+        success: false,
+        message: err.message || "Failed to dispatch email.",
+      });
+    } finally {
+      setIsEmailingActive(false);
+    }
+  };
+
+  const handleSupabaseActive = async () => {
+    if (activeIdeaIndex === null) return;
+    const idea = generatedIdeas[activeIdeaIndex];
+    if (!idea) return;
+
+    setIsSavingActiveToSupabase(true);
+    setActiveSupabaseStatus(null);
+
+    try {
+      const kitData = launchKits[activeIdeaIndex]?.data || null;
+      const res = await addToSupabaseAction(idea, kitData);
+
+      if (res.success) {
+        setActiveSupabaseStatus({
+          success: true,
+          message: "Launch Kit successfully pushed to Supabase table 'saved_ideas'! 🚀",
+        });
+      } else {
+        if (res.reason === "SUPABASE_CONFIG_MISSING") {
+          setActiveSupabaseStatus({
+            success: false,
+            message: "Supabase config missing! Enter your credentials under the Settings tab first.",
+          });
+        } else if (res.reason === "TABLE_NOT_FOUND") {
+          setActiveSupabaseStatus({
+            success: false,
+            message: res.error || "Table 'saved_ideas' not found (or schema cache needs reload).",
+            sql: res.sql,
+          });
+        } else {
+          setActiveSupabaseStatus({
+            success: false,
+            message: res.error || "Failed to save to Supabase.",
+          });
+        }
+      }
+    } catch (err: any) {
+      setActiveSupabaseStatus({
+        success: false,
+        message: err.message || "Failed to save to Supabase.",
+      });
+    } finally {
+      setIsSavingActiveToSupabase(false);
     }
   };
 
@@ -1318,6 +1644,10 @@ ${kit.marketingAssets.coldEmail.body}</div>
     setLaunchKits((prev) => ({
       ...prev,
       [index]: { loading: true, data: null, error: null },
+    }));
+    setEmailStatus((prev) => ({
+      ...prev,
+      [index]: null,
     }));
     setActiveIdeaIndex(index);
     setKitTab("prompt");
@@ -1328,6 +1658,64 @@ ${kit.marketingAssets.coldEmail.body}</div>
         ...prev,
         [index]: { loading: false, data: data, error: null },
       }));
+
+      // Trigger automatic email dispatch if user is logged in
+      if (currentUser) {
+        setEmailStatus((prev) => ({
+          ...prev,
+          [index]: {
+            success: true,
+            message: `Dispatching Launch Kit email to ${currentUser}...`,
+          },
+        }));
+        try {
+          const emailRes = await sendLaunchKitEmail(currentUser, idea, data);
+          if (emailRes.success) {
+            setEmailStatus((prev) => ({
+              ...prev,
+              [index]: {
+                success: true,
+                message: `Launch Kit successfully emailed to ${currentUser}! 📬`,
+              },
+            }));
+          } else {
+            if (emailRes.reason && emailRes.reason.includes("RESEND_API_KEY")) {
+              setEmailStatus((prev) => ({
+                ...prev,
+                [index]: {
+                  success: false,
+                  message: `Launch Kit ready! (Configure RESEND_API_KEY in secrets to receive emails) ⚙️`,
+                },
+              }));
+            } else {
+              setEmailStatus((prev) => ({
+                ...prev,
+                [index]: {
+                  success: false,
+                  message: `Could not email kit: ${emailRes.error || "Unknown delivery error"}`,
+                },
+              }));
+            }
+          }
+        } catch (emailErr: any) {
+          console.error("Error sending Launch Kit email:", emailErr);
+          setEmailStatus((prev) => ({
+            ...prev,
+            [index]: {
+              success: false,
+              message: `Failed to dispatch email: ${emailErr.message || "Unknown error"}`,
+            },
+          }));
+        }
+      } else {
+        setEmailStatus((prev) => ({
+          ...prev,
+          [index]: {
+            success: false,
+            message: `Log in to automatically receive this Launch Kit by email.`,
+          },
+        }));
+      }
     } catch (err: any) {
       console.error(err);
       setLaunchKits((prev) => ({
@@ -1372,10 +1760,10 @@ ${kit.marketingAssets.coldEmail.body}</div>
   }
 
   return (
-    <div className="min-h-screen bg-ms-bg text-ms-text font-sans">
+    <div ref={pageTopRef} className="min-h-screen bg-ms-bg text-ms-text font-sans">
       {/* Visual Ambient Grid Header */}
       <header className="border-b border-ms-border bg-ms-bg/80 backdrop-blur-md sticky top-0 z-40 px-4 py-3.5">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="w-full flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3 w-full md:w-auto">
             <div className="w-10 h-10 bg-ms-green-dark border border-ms-green rounded flex items-center justify-center font-ms text-ms-green text-xl font-bold green-glow shrink-0">
               🛠️
@@ -1492,7 +1880,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="w-full px-4 py-8">
         {activeTab === "find" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             {/* LEFT COLUMN: Input form & Scanner terminal */}
@@ -1750,7 +2138,6 @@ ${kit.marketingAssets.coldEmail.body}</div>
                       return <TypewriterLog key={i} text={log} color={color} />;
                     })
                   )}
-                  <div ref={terminalEndRef} />
                 </div>
 
                 {isScanning && (
@@ -1839,46 +2226,101 @@ ${kit.marketingAssets.coldEmail.body}</div>
                       return (
                         <div
                           key={index}
-                          className={`bg-ms-card border rounded-lg p-5 flex flex-col md:flex-row justify-between gap-6 transition-all relative ${
+                          className={`bg-ms-card border rounded-lg flex flex-col transition-all relative ${
+                            apiSettings.compactMode ? "p-3 pb-6" : "p-5 pb-8"
+                          } ${
                             activeIdeaIndex === index
                               ? "border-ms-green green-glow"
                               : "border-ms-border hover:border-ms-border-active"
                           }`}
                         >
-                          <div className="flex-1">
-                            <div className="flex justify-between items-start gap-2 mb-2">
-                              <span className="text-xs text-ms-green bg-ms-green-dark border border-ms-green/30 px-2 py-0.5 rounded font-ms font-bold uppercase">
+                          <div className={`flex flex-col md:flex-row justify-between ${apiSettings.compactMode ? "gap-4" : "gap-6"}`}>
+                            <div className="flex-1">
+                              <div className="flex justify-between items-center gap-2 mb-2">
+                              <span className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/30 px-2 py-0.5 rounded font-ms font-bold uppercase`}>
                                 {idea.buildComplexity} BUILD
                               </span>
-                              <button
-                                onClick={() =>
-                                  toggleSaveIdea(
-                                    idea,
-                                    launchKits[index]?.data || null,
-                                  )
-                                }
-                                className="text-ms-text-muted hover:text-ms-yellow transition-colors md:hidden"
-                              >
-                                <Bookmark
-                                  className={`w-4 h-4 ${isSaved(idea.name) ? "fill-ms-yellow text-ms-yellow" : ""}`}
-                                />
-                              </button>
+                              <div className="flex items-center gap-2.5 md:hidden">
+                                <button
+                                  onClick={() => handleEmailCard(idea, index)}
+                                  disabled={isEmailingCard[index]}
+                                  className="text-ms-text-muted hover:text-ms-green disabled:opacity-50 transition-colors p-1"
+                                  title="Email Idea"
+                                >
+                                  {isEmailingCard[index] ? (
+                                    <div className="w-3.5 h-3.5 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                  ) : (
+                                    <Mail className="w-4 h-4" />
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => handleSupabaseCard(idea, index)}
+                                  disabled={isSavingToSupabase[index]}
+                                  className="text-ms-text-muted hover:text-cyan-400 disabled:opacity-50 transition-colors p-1"
+                                  title="Push to Supabase"
+                                >
+                                  {isSavingToSupabase[index] ? (
+                                    <div className="w-3.5 h-3.5 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                  ) : (
+                                    <Database className="w-4 h-4" />
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    toggleSaveIdea(
+                                      idea,
+                                      launchKits[index]?.data || null,
+                                    )
+                                  }
+                                  className="text-ms-text-muted hover:text-ms-yellow transition-colors p-1"
+                                >
+                                  <Bookmark
+                                    className={`w-4 h-4 ${isSaved(idea.name) ? "fill-ms-yellow text-ms-yellow" : ""}`}
+                                  />
+                                </button>
+                              </div>
                             </div>
 
-                            <h3 className="text-base font-bold text-white mb-1 leading-tight">
+                            <h3 className={`${apiSettings.compactMode ? "text-sm" : "text-base"} font-bold text-white mb-1 leading-tight`}>
                               {idea.name}
                             </h3>
-                            <p className="text-xs text-ms-yellow italic mb-3">
+                            <p className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-yellow italic mb-2`}>
                               &ldquo;{idea.tagline}&rdquo;
                             </p>
 
-                            <p className="text-xs text-ms-text-muted leading-relaxed mb-4">
+                            <p className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-text-muted leading-relaxed mb-3`}>
                               {idea.solution}
                             </p>
                           </div>
 
                           <div className="md:w-80 flex flex-col justify-between border-t md:border-t-0 md:border-l border-ms-border pt-3 md:pt-0 md:pl-6 space-y-3">
-                            <div className="hidden md:flex justify-end mb-2">
+                            <div className="hidden md:flex items-center gap-3.5 justify-end mb-1">
+                              <button
+                                onClick={() => handleEmailCard(idea, index)}
+                                disabled={isEmailingCard[index]}
+                                className="text-ms-text-muted hover:text-ms-green disabled:opacity-50 transition-colors flex items-center gap-1.5 text-[10px] font-ms font-bold uppercase"
+                              >
+                                {isEmailingCard[index] ? (
+                                  <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                ) : (
+                                  <Mail className="w-3.5 h-3.5" />
+                                )}
+                                Email
+                              </button>
+
+                              <button
+                                onClick={() => handleSupabaseCard(idea, index)}
+                                disabled={isSavingToSupabase[index]}
+                                className="text-ms-text-muted hover:text-cyan-400 disabled:opacity-50 transition-colors flex items-center gap-1.5 text-[10px] font-ms font-bold uppercase"
+                              >
+                                {isSavingToSupabase[index] ? (
+                                  <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                ) : (
+                                  <Database className="w-3.5 h-3.5" />
+                                )}
+                                Supabase
+                              </button>
+
                               <button
                                 onClick={() =>
                                   toggleSaveIdea(
@@ -1947,6 +2389,109 @@ ${kit.marketingAssets.coldEmail.body}</div>
                               </div>
                             </div>
 
+                            {/* Domain Checker */}
+                            {idea.domains && idea.domains.length > 0 && (
+                              <div className="bg-ms-bg/50 p-2.5 rounded border border-ms-border">
+                                <div className="text-[10px] text-ms-text-muted font-ms font-bold tracking-wider uppercase mb-2">
+                                  Available Domains
+                                </div>
+                                <div className="space-y-1.5">
+                                  {idea.domains.map((dom, domIdx) => {
+                                    const status = domainCheckStatus[dom.domain];
+                                    return (
+                                      <div key={domIdx} className="flex items-center justify-between gap-2 text-xs">
+                                        <div className="font-mono text-white truncate flex-1">
+                                          {dom.domain}
+                                        </div>
+                                        {status ? (
+                                          <div className="flex items-center gap-1.5">
+                                            {status.checking ? (
+                                              <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                            ) : status.available ? (
+                                              <span className="text-[10px] font-ms font-bold text-ms-green uppercase">
+                                                Avail {status.price ? `($${status.price / 1000000})` : ""}
+                                              </span>
+                                            ) : (
+                                              <span className="text-[10px] font-ms font-bold text-ms-yellow uppercase" title={status.error || "Taken"}>
+                                                Taken
+                                              </span>
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleCheckDomain(dom.domain)}
+                                            className="text-[10px] font-ms font-bold text-cyan-400 hover:text-cyan-300 uppercase px-2 py-0.5 border border-cyan-500/30 rounded transition-colors"
+                                          >
+                                            Check
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Card Level Action Status Messages */}
+                            {(emailCardStatus[index] || supabaseCardStatus[index]) && (
+                              <div className="space-y-1.5 mt-1">
+                                {emailCardStatus[index] && (
+                                  <div
+                                    className={`p-2 rounded border text-[10px] font-ms flex items-center justify-between gap-1.5 ${
+                                      emailCardStatus[index]?.success
+                                        ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
+                                        : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
+                                    }`}
+                                  >
+                                    <span className="truncate">{emailCardStatus[index]?.message}</span>
+                                    <button
+                                      onClick={() => setEmailCardStatus(prev => ({ ...prev, [index]: null }))}
+                                      className="text-[9px] opacity-60 hover:opacity-100 font-bold"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                )}
+                                {supabaseCardStatus[index] && (
+                                  <div
+                                    className={`p-2 rounded border text-[10px] font-ms space-y-1.5 ${
+                                      supabaseCardStatus[index]?.success
+                                        ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
+                                        : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-1.5">
+                                      <span className="truncate flex-1">{supabaseCardStatus[index]?.message}</span>
+                                      <button
+                                        onClick={() => setSupabaseCardStatus(prev => ({ ...prev, [index]: null }))}
+                                        className="text-[9px] opacity-60 hover:opacity-100 font-bold self-start mt-0.5"
+                                      >
+                                        ✕
+                                      </button>
+                                    </div>
+                                    {supabaseCardStatus[index]?.sql && (
+                                      <div className="space-y-1 pt-1 border-t border-ms-border/30">
+                                        <textarea
+                                          readOnly
+                                          value={supabaseCardStatus[index]?.sql}
+                                          className="w-full h-24 font-mono text-[9px] bg-black/60 text-ms-green border border-ms-border/40 rounded p-1.5 focus:outline-none select-all"
+                                        />
+                                        <button
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(supabaseCardStatus[index]?.sql || "");
+                                            alert("SQL schema copied!");
+                                          }}
+                                          className="px-2 py-0.5 bg-ms-border/60 hover:bg-ms-border text-[9px] rounded text-white font-ms transition-all"
+                                        >
+                                          Copy SQL
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             <button
                               onClick={() => handleGenerateKit(idea, index)}
                               disabled={isKitLoading}
@@ -1973,6 +2518,185 @@ ${kit.marketingAssets.coldEmail.body}</div>
                               )}
                             </button>
                           </div>
+                          </div>
+
+                          {expandedIdeas[index] && (
+                            <div className={`${apiSettings.compactMode ? "mt-4 pt-4 space-y-4" : "mt-6 pt-6 space-y-6"} border-t border-ms-border`}>
+                              <div className={`grid grid-cols-1 md:grid-cols-2 ${apiSettings.compactMode ? "gap-4" : "gap-6"}`}>
+                                <div>
+                                  <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">PAIN SOLVED</h4>
+                                  <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">{idea.painSolved}</p>
+                                </div>
+                                <div>
+                                  <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">TARGET CUSTOMER</h4>
+                                  <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">{idea.targetAudience}</p>
+                                </div>
+                              </div>
+                              
+                              <div>
+                                <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">GTM CHANNEL</h4>
+                                <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">{idea.gtmChannel}</p>
+                              </div>
+
+                              {isKitLoaded && (
+                                <>
+                                  {launchKits[index]?.data?.pricingTiers && (
+                                    <div>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">PRICING TIERS</h4>
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        {launchKits[index]?.data?.pricingTiers?.map((tier, tIdx) => (
+                                          <div key={tIdx} className="bg-ms-bg p-3 rounded border border-ms-border">
+                                            <div className="font-bold text-white text-sm">{tier.name}</div>
+                                            <div className="text-ms-green font-mono text-xs my-1">{tier.price}</div>
+                                            <ul className="text-xs text-ms-text-muted space-y-1 mt-2 list-disc list-inside">
+                                              {tier.features.map((f, fIdx) => <li key={fIdx}>{f}</li>)}
+                                            </ul>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {launchKits[index]?.data?.noCodeStack && (
+                                    <div>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">NO-CODE STACK</h4>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                        {launchKits[index]?.data?.noCodeStack.map((stack, sIdx) => (
+                                          <div key={sIdx} className="bg-ms-bg p-3 rounded border border-ms-border">
+                                            <div className="font-bold text-white text-xs">{stack.tool}</div>
+                                            <div className="text-ms-text-muted text-[10px] uppercase mb-1">{stack.role}</div>
+                                            <div className="text-ms-text-muted text-xs leading-relaxed">{stack.why}</div>
+                                            <div className="text-ms-yellow font-mono text-[10px] mt-2 border-t border-ms-border pt-1">Est. {stack.cost}</div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {launchKits[index]?.data?.buildRoadmap && (
+                                    <div>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">4-WEEK BUILD ROADMAP</h4>
+                                      <div className="space-y-2">
+                                        {launchKits[index]?.data?.buildRoadmap.map((wk, wIdx) => (
+                                          <div key={wIdx} className="bg-ms-bg p-3 rounded border border-ms-border flex flex-col md:flex-row gap-4">
+                                            <div className="w-24 shrink-0">
+                                              <span className="text-xs font-bold text-ms-yellow uppercase">{wk.week}</span>
+                                            </div>
+                                            <div>
+                                              <div className="text-xs font-bold text-white mb-1">{wk.title}</div>
+                                              <ul className="text-[10px] text-ms-text-muted space-y-0.5 list-disc list-inside">
+                                                {wk.tasks.map((task, tIdx) => <li key={tIdx}>{task}</li>)}
+                                              </ul>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {launchKits[index]?.data?.marketValidation && (
+                                    <div>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">MARKET VALIDATION</h4>
+                                      <div className="bg-ms-bg p-3 rounded border border-ms-border space-y-3">
+                                        <div className="flex items-center gap-3">
+                                          <span className="text-xs font-bold text-ms-text-muted uppercase">GO/NO-GO SCORE:</span>
+                                          <span className="text-sm font-bold text-ms-green bg-ms-green-dark/30 border border-ms-green/40 px-2 rounded">
+                                            {launchKits[index]?.data?.marketValidation?.goNoGoScore}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          <span className="text-xs font-bold text-ms-text-muted uppercase block mb-1">PROOF OF DEMAND:</span>
+                                          <span className="text-xs text-white leading-relaxed">{launchKits[index]?.data?.marketValidation?.proofOfDemand}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-xs font-bold text-ms-text-muted uppercase block mb-1">RED FLAGS:</span>
+                                          <ul className="text-xs text-ms-yellow list-disc list-inside">
+                                            {launchKits[index]?.data?.marketValidation?.redFlags.map((flag, fIdx) => <li key={fIdx}>{flag}</li>)}
+                                          </ul>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
+                                  {launchKits[index]?.data?.preSellChecklist && (
+                                    <div>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">PRE-SELL VALIDATION CHECKLIST</h4>
+                                      <div className="bg-ms-bg p-3 rounded border border-ms-border">
+                                        <ul className="text-xs text-white space-y-2">
+                                          {launchKits[index]?.data?.preSellChecklist?.map((chk, cIdx) => (
+                                            <li key={cIdx} className="flex gap-2">
+                                              <span className="text-ms-green mt-0.5">☐</span>
+                                              <span>{chk}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {launchKits[index]?.data?.marketingAssets && (
+                                    <div>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">MARKETING ASSETS</h4>
+                                      <div className="bg-ms-bg p-4 rounded border border-ms-border space-y-4">
+                                        <div>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Landing Page Copy</h5>
+                                          <p className="text-xs font-bold text-white mb-0.5">{launchKits[index]?.data?.marketingAssets.landingHeadline}</p>
+                                          <p className="text-xs text-ms-text-muted mb-1">{launchKits[index]?.data?.marketingAssets.landingSubheadline}</p>
+                                          <span className="text-[10px] bg-ms-green-dark border border-ms-green/30 text-ms-green px-2 py-0.5 rounded uppercase font-bold">{launchKits[index]?.data?.marketingAssets.ctaButton}</span>
+                                        </div>
+                                        <div className="border-t border-ms-border pt-3">
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Cold Email</h5>
+                                          <p className="text-xs font-bold text-white mb-0.5">Subject: {launchKits[index]?.data?.marketingAssets.coldEmail.subject}</p>
+                                          <p className="text-[10px] text-ms-text-muted leading-relaxed font-mono whitespace-pre-wrap">{launchKits[index]?.data?.marketingAssets.coldEmail.body}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {launchKits[index]?.data?.salesScript && (
+                                    <div>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">SALES SCRIPT</h4>
+                                      <div className="bg-ms-bg p-4 rounded border border-ms-border space-y-4">
+                                        <div>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Introduction</h5>
+                                          <p className="text-xs text-white leading-relaxed">{launchKits[index]?.data?.salesScript.introduction}</p>
+                                        </div>
+                                        <div>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Discovery Questions</h5>
+                                          <ul className="text-xs text-ms-text-muted list-disc list-inside space-y-0.5">
+                                            {launchKits[index]?.data?.salesScript.discoveryQuestions.map((q, qIdx) => <li key={qIdx}>{q}</li>)}
+                                          </ul>
+                                        </div>
+                                        <div>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Objection Handling</h5>
+                                          <ul className="text-xs text-ms-text-muted list-disc list-inside space-y-0.5">
+                                            {launchKits[index]?.data?.salesScript.objectionHandling.map((o, oIdx) => <li key={oIdx}>{o}</li>)}
+                                          </ul>
+                                        </div>
+                                        <div>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Call to Action</h5>
+                                          <p className="text-xs text-white font-bold">{launchKits[index]?.data?.salesScript.callToAction}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              )}
+                              {!isKitLoaded && (
+                                <div className="text-xs text-ms-text-muted italic text-center py-4 bg-ms-bg rounded border border-ms-border/50">
+                                  Generate a Launch Kit to view Pricing, Validation, Roadmap, Stack, and Scripts.
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <button 
+                            onClick={() => setExpandedIdeas(prev => ({ ...prev, [index]: !prev[index] }))}
+                            className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-ms-card border border-ms-border rounded-full p-1 text-ms-text-muted hover:text-white hover:border-ms-border-active transition-all"
+                            title={expandedIdeas[index] ? "Collapse Details" : "Expand Details"}
+                          >
+                            {expandedIdeas[index] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
                         </div>
                       );
                     })}
@@ -1993,7 +2717,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
                       </h2>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         onClick={() => handleExportPdf(activeIdeaIndex)}
                         disabled={isExporting}
@@ -2010,6 +2734,33 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         )}
                         {isExporting ? "EXPORTING..." : "EXPORT PDF"}
                       </button>
+
+                      <button
+                        onClick={handleEmailActive}
+                        disabled={isEmailingActive}
+                        className="px-4 py-2 bg-ms-bg border border-ms-border hover:border-ms-green hover:text-ms-green text-xs font-ms font-bold rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        {isEmailingActive ? (
+                          <div className="w-3.5 h-3.5 rounded-full border-2 border-ms-text-muted border-t-transparent animate-spin" />
+                        ) : (
+                          <Mail className="w-3.5 h-3.5" />
+                        )}
+                        EMAIL KIT
+                      </button>
+
+                      <button
+                        onClick={handleSupabaseActive}
+                        disabled={isSavingActiveToSupabase}
+                        className="px-4 py-2 bg-ms-bg border border-ms-border hover:border-cyan-400 hover:text-cyan-400 text-xs font-ms font-bold rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        {isSavingActiveToSupabase ? (
+                          <div className="w-3.5 h-3.5 rounded-full border border-2 border-ms-text-muted border-t-transparent animate-spin" />
+                        ) : (
+                          <Database className="w-3.5 h-3.5" />
+                        )}
+                        ADD TO SUPABASE
+                      </button>
+
                       <button
                         onClick={() =>
                           toggleSaveIdea(
@@ -2029,6 +2780,69 @@ ${kit.marketingAssets.coldEmail.body}</div>
                     </div>
                   </div>
 
+                  {/* Active Workspace level Feedback Area */}
+                  {(activeEmailStatus || activeSupabaseStatus) && (
+                    <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-3.5 border-b border-ms-border/40 pb-5">
+                      {activeEmailStatus && (
+                        <div
+                          className={`p-3 rounded border text-xs font-ms flex items-center justify-between gap-2 ${
+                            activeEmailStatus.success
+                              ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
+                              : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
+                          }`}
+                        >
+                          <span>{activeEmailStatus.message}</span>
+                          <button
+                            onClick={() => setActiveEmailStatus(null)}
+                            className="font-bold opacity-65 hover:opacity-100"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      )}
+                      {activeSupabaseStatus && (
+                        <div
+                          className={`p-3 rounded border text-xs font-ms space-y-2 ${
+                            activeSupabaseStatus.success
+                              ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
+                              : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="flex-1">{activeSupabaseStatus.message}</span>
+                            <button
+                              onClick={() => setActiveSupabaseStatus(null)}
+                              className="font-bold opacity-65 hover:opacity-100 self-start mt-0.5"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          {activeSupabaseStatus.sql && (
+                            <div className="space-y-1.5 pt-1.5 border-t border-ms-border/30">
+                              <p className="text-[10px] text-ms-text-muted uppercase tracking-wider font-bold">
+                                Required Table SQL Schema:
+                              </p>
+                              <textarea
+                                readOnly
+                                value={activeSupabaseStatus.sql}
+                                className="w-full h-24 font-mono text-[10px] bg-black/65 text-ms-green border border-ms-border/40 rounded p-2 focus:outline-none select-all"
+                              />
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(activeSupabaseStatus.sql || "");
+                                  alert("SQL schema copied to clipboard!");
+                                }}
+                                className="px-2.5 py-1 bg-ms-border/50 hover:bg-ms-border text-white text-[10px] font-ms font-bold rounded transition-all"
+                              >
+                                Copy SQL Schema
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {launchKits[activeIdeaIndex]?.loading && (
                     <div className="py-12 flex flex-col items-center justify-center">
                       <div className="w-12 h-12 rounded border-4 border-ms-green border-t-transparent animate-spin mb-4"></div>
@@ -2047,6 +2861,28 @@ ${kit.marketingAssets.coldEmail.body}</div>
                       Error: {launchKits[activeIdeaIndex].error}
                     </div>
                   )}
+
+                  {launchKits[activeIdeaIndex]?.data &&
+                    emailStatus[activeIdeaIndex] && (
+                      <div
+                        className={`mb-5 p-3.5 rounded border text-xs font-ms flex items-center justify-between gap-3 transition-all duration-300 ${
+                          emailStatus[activeIdeaIndex]?.success
+                            ? "bg-ms-green-dark/20 border-ms-green/30 text-ms-green shadow-[0_0_15px_rgba(0,240,118,0.05)]"
+                            : "bg-ms-yellow/10 border-ms-yellow/30 text-ms-yellow"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">
+                            {emailStatus[activeIdeaIndex]?.success
+                              ? "📬"
+                              : "⚙️"}
+                          </span>
+                          <span className="font-semibold">
+                            {emailStatus[activeIdeaIndex]?.message}
+                          </span>
+                        </div>
+                      </div>
+                    )}
 
                   {launchKits[activeIdeaIndex]?.data && (
                     <div>
@@ -2592,11 +3428,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
                 </p>
               </div>
               <button
-                onClick={() => {
-                  if (confirm("Clear all saved ideas?")) {
-                    saveToLocalStorage([]);
-                  }
-                }}
+                onClick={() => setShowClearConfirmModal(true)}
                 className="px-3 py-1.5 border border-red-500/30 text-red-400 hover:bg-red-950/20 text-xs font-ms rounded transition-all"
               >
                 CLEAR ALL
@@ -2619,11 +3451,11 @@ ${kit.marketingAssets.coldEmail.body}</div>
                 {savedIdeas.map((saved, idx) => (
                   <div
                     key={idx}
-                    className="bg-ms-card border border-ms-border p-6 rounded-lg relative flex flex-col justify-between"
+                    className={`bg-ms-card border border-ms-border ${apiSettings.compactMode ? "p-4" : "p-6"} rounded-lg relative flex flex-col justify-between`}
                   >
                     <div>
-                      <div className="flex justify-between items-start gap-4 mb-3">
-                        <span className="text-xs text-ms-green bg-ms-green-dark border border-ms-green/20 px-2 py-0.5 rounded font-ms font-bold uppercase">
+                      <div className={`flex justify-between items-start gap-4 ${apiSettings.compactMode ? "mb-2" : "mb-3"}`}>
+                        <span className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/20 px-2 py-0.5 rounded font-ms font-bold uppercase`}>
                           {saved.idea.buildComplexity} BUILD
                         </span>
                         <span className="text-[10px] text-ms-text-muted font-ms">
@@ -2631,14 +3463,14 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         </span>
                       </div>
 
-                      <h3 className="text-base font-bold text-white mb-1">
+                      <h3 className={`${apiSettings.compactMode ? "text-sm" : "text-base"} font-bold text-white mb-1`}>
                         {saved.idea.name}
                       </h3>
-                      <p className="text-xs text-ms-yellow italic mb-3">
+                      <p className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-yellow italic ${apiSettings.compactMode ? "mb-2" : "mb-3"}`}>
                         &ldquo;{saved.idea.tagline}&rdquo;
                       </p>
 
-                      <div className="space-y-3 text-xs text-ms-text-muted leading-relaxed bg-ms-bg p-3 rounded border border-ms-border mb-4">
+                      <div className={`space-y-3 ${apiSettings.compactMode ? "text-[10px] p-2" : "text-xs p-3"} text-ms-text-muted leading-relaxed bg-ms-bg rounded border border-ms-border mb-4`}>
                         <p>
                           <strong>Problem:</strong> {saved.idea.problem}
                         </p>
@@ -2970,6 +3802,37 @@ ${kit.marketingAssets.coldEmail.body}</div>
                     </div>
                   </div>
 
+                  <div className="bg-ms-bg p-5 rounded-lg border border-ms-border space-y-4">
+                    <h3 className="text-xs font-ms text-ms-green uppercase font-bold flex items-center gap-2">
+                      <Wrench className="w-4 h-4" />
+                      UI Preferences
+                    </h3>
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <label className="block text-[10px] font-ms text-white uppercase mb-1">
+                          Compact Mode
+                        </label>
+                        <p className="text-[10px] text-ms-text-muted">
+                          Reduces padding and font sizes of idea cards to view more at once.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={apiSettings.compactMode}
+                          onChange={(e) =>
+                            setApiSettings({
+                              ...apiSettings,
+                              compactMode: e.target.checked,
+                            })
+                          }
+                          className="sr-only peer"
+                        />
+                        <div className="w-9 h-5 bg-ms-card peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-ms-text-muted peer-checked:after:bg-ms-green after:border after:rounded-full after:h-4 after:w-4 after:transition-all border border-ms-border peer-checked:border-ms-green/50"></div>
+                      </label>
+                    </div>
+                  </div>
+
                   <div className="flex justify-end gap-3 pt-2">
                     <button
                       type="button"
@@ -3029,7 +3892,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
 
       {/* Retro Status Footer bar */}
       <footer className="border-t border-ms-border bg-ms-bg/50 px-4 py-3 mt-12 text-center text-[10px] text-ms-text-muted font-ms">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
+        <div className="w-full flex flex-col sm:flex-row justify-between items-center gap-2">
           <span>SYSTEM ONLINE • MEM: 98.4% • CLOUD SANDBOX: ACTIVE</span>
           <span className="flex items-center gap-1.5">
             Powered by{" "}
@@ -3147,6 +4010,45 @@ ${kit.marketingAssets.coldEmail.body}</div>
                   {isAuthRegister
                     ? "Already configured? Verify security cipher"
                     : "Need to establish terminal? Provision user"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CLEAR ALL CONFIRMATION MODAL */}
+      {showClearConfirmModal && (
+        <div className="fixed inset-0 bg-ms-bg/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-ms-card border border-red-500/30 w-full max-w-sm rounded-lg overflow-hidden shadow-2xl relative">
+            <div className="p-6 space-y-4">
+              <div className="text-center">
+                <div className="w-10 h-10 bg-red-950/30 border border-red-500/30 rounded flex items-center justify-center font-ms text-red-400 text-lg font-bold mx-auto mb-2">
+                  <AlertCircle className="w-5 h-5 text-red-500" />
+                </div>
+                <h3 className="text-base font-bold text-white font-ms">
+                  CLEAR ALL SAVED KITS?
+                </h3>
+                <p className="text-[10px] text-ms-text-muted mt-1 font-ms">
+                  This action is irreversible. All saved specs and development prompts will be permanently deleted from local storage.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowClearConfirmModal(false)}
+                  className="flex-1 py-2.5 bg-ms-bg border border-ms-border hover:bg-ms-border text-white text-xs font-ms font-bold rounded transition-all"
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={() => {
+                    saveToLocalStorage([]);
+                    setShowClearConfirmModal(false);
+                  }}
+                  className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white text-xs font-ms font-bold rounded transition-all"
+                >
+                  CONFIRM DELETE
                 </button>
               </div>
             </div>

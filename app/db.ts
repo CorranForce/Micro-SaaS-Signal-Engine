@@ -44,32 +44,31 @@ export interface ApiSettings {
   resendApiKey: string;
   godaddyApiKey: string;
   godaddyApiSecret: string;
+  compactMode?: boolean;
 }
 
 export function getSettings(): ApiSettings {
   ensureDataDir();
   const filePath = path.join(DATA_DIR, "settings.json");
-  if (!fs.existsSync(filePath)) {
-    return {
-      supabaseUrl: "",
-      supabaseAnonKey: "",
-      resendApiKey: "",
-      godaddyApiKey: "",
-      godaddyApiSecret: ""
-    };
+  let fileSettings: Partial<ApiSettings> = {};
+  
+  if (fs.existsSync(filePath)) {
+    try {
+      const data = fs.readFileSync(filePath, "utf-8");
+      fileSettings = JSON.parse(data);
+    } catch (e) {
+      fileSettings = {};
+    }
   }
-  try {
-    const data = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(data);
-  } catch (e) {
-    return {
-      supabaseUrl: "",
-      supabaseAnonKey: "",
-      resendApiKey: "",
-      godaddyApiKey: "",
-      godaddyApiSecret: ""
-    };
-  }
+
+  return {
+    supabaseUrl: fileSettings.supabaseUrl || process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    supabaseAnonKey: fileSettings.supabaseAnonKey || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+    resendApiKey: fileSettings.resendApiKey || process.env.RESEND_API_KEY || "",
+    godaddyApiKey: fileSettings.godaddyApiKey || process.env.GODADDY_API_KEY || "",
+    godaddyApiSecret: fileSettings.godaddyApiSecret || process.env.GODADDY_API_SECRET || "",
+    compactMode: fileSettings.compactMode || false
+  };
 }
 
 export function saveSettings(settings: ApiSettings) {

@@ -173,7 +173,10 @@ Ensure:
 3. noCodeStack maps actual modern SaaS builders (Stripe, Supabase, Resend, etc.) with estimated costs.
 4. marketingAssets contains customized landing headlines, social copy, blog ideas, and cold outreach emails.
 5. salesScript provides highly structured questions, objections, and pitch structures to close the target audience.
-6. databaseRequirements outlines actual database schema tables with field types, descriptions, AND a complete valid PostgreSQL / Supabase SQL schema script in 'sqlSchema' that creates all these tables, relationships, and relevant indexes with comments.`;
+6. databaseRequirements outlines actual database schema tables with field types, descriptions, AND a complete valid PostgreSQL / Supabase SQL schema script in 'sqlSchema' that creates all these tables, relationships, and relevant indexes with comments.
+7. pricingTiers defines the saas pricing plans.
+8. marketValidation provides a go/no-go score out of 100, proof of demand, and any red flags.
+9. preSellChecklist gives a list of action items before launching.`;
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
@@ -267,6 +270,37 @@ Ensure:
                 "objectionHandling",
                 "callToAction",
               ],
+            },
+            pricingTiers: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  price: { type: Type.STRING },
+                  features: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                  },
+                },
+                required: ["name", "price", "features"],
+              },
+            },
+            marketValidation: {
+              type: Type.OBJECT,
+              properties: {
+                goNoGoScore: { type: Type.STRING },
+                proofOfDemand: { type: Type.STRING },
+                redFlags: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+              },
+              required: ["goNoGoScore", "proofOfDemand", "redFlags"],
+            },
+            preSellChecklist: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
             },
             databaseRequirements: {
               type: Type.OBJECT,
@@ -577,3 +611,259 @@ Return ONLY a JSON object with this exact structure:
     return { keywords: [], suggestions: [] };
   }
 }
+
+export async function sendLaunchKitEmail(
+  userEmail: string,
+  idea: any,
+  kit: any,
+) {
+  const settings = getSettings();
+  const apiKey = settings.resendApiKey;
+  if (!apiKey) {
+    console.warn("RESEND_API_KEY is not configured. Skipping email send.");
+    return {
+      success: false,
+      reason: "RESEND_API_KEY is missing in backend environment",
+    };
+  }
+
+  try {
+    const hasKit = !!kit;
+    const subject = hasKit
+      ? `🚀 SaaS Launch Kit Ready: ${idea.name}`
+      : `💡 B2B SaaS Blueprint: ${idea.name}`;
+
+    const html = `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #111827; background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <h1 style="color: #00f076; font-size: 24px; margin-bottom: 4px;">SaaS Radar Opportunity</h1>
+        <p style="color: #4b5563; font-size: 14px; margin-top: 0;">Your premium B2B SaaS blueprint is ready.</p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
+        
+        <h2 style="font-size: 18px; margin-bottom: 8px; color: #111827;">${idea.name}</h2>
+        <p style="font-style: italic; color: #4b5563; margin-top: 0;">"${idea.tagline}"</p>
+        
+        <div style="margin-top: 16px;">
+          <p><strong>Problem:</strong> ${idea.problem}</p>
+          <p><strong>Solution:</strong> ${idea.solution}</p>
+          <p><strong>Target Customer:</strong> ${idea.targetAudience}</p>
+          <p><strong>Pain Solved:</strong> ${idea.painSolved || ""}</p>
+          ${idea.buildComplexity ? `<p><strong>Build Complexity:</strong> ${idea.buildComplexity.toUpperCase()}</p>` : ""}
+          ${idea.roi?.realisticMRRMonth1USD ? `<p><strong>MRR Target:</strong> ${idea.roi.realisticMRRMonth1USD}</p>` : ""}
+        </div>
+        
+        ${
+          hasKit
+            ? `
+          <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">Lovable Vibe-Coding Prompt</h3>
+          <pre style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-all; color: #1f2937;">${kit.lovablePrompt || ""}</pre>
+          
+          <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">4-Week Roadmap</h3>
+          <ul style="padding-left: 20px; color: #1f2937;">
+            ${(kit.buildRoadmap || [])
+              .map(
+                (week: any) => `
+              <li style="margin-bottom: 12px;">
+                <strong>${week.week}: ${week.title}</strong>
+                <ul style="padding-left: 15px; margin-top: 4px; color: #4b5563;">
+                  ${(week.tasks || []).map((t: string) => `<li>${t}</li>`).join("")}
+                </ul>
+              </li>
+            `,
+              )
+              .join("")}
+          </ul>
+
+          <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">Marketing & Outreach</h3>
+          <div style="color: #1f2937;">
+            <p><strong>Landing Page Headline:</strong> ${kit.marketingAssets?.landingHeadline || ""}</p>
+            <p><strong>Elevator Pitch:</strong> ${kit.marketingAssets?.elevatorPitch || ""}</p>
+            <p><strong>Cold Email Subject:</strong> ${kit.marketingAssets?.coldEmail?.subject || ""}</p>
+          </div>
+          <div style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; font-size: 12px; font-style: italic; color: #374151;">
+            ${(kit.marketingAssets?.coldEmail?.body || "").replace(/\n/g, "<br />")}
+          </div>
+        `
+            : `
+          <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 16px; border-radius: 6px; margin-top: 24px; color: #1e3a8a;">
+            <p style="margin: 0; font-weight: bold; font-size: 14px;">Full Developer Launch Kit is Available!</p>
+            <p style="margin: 4px 0 0 0; font-size: 13px;">Open this idea inside the <strong>Signal Engine Dashboard</strong> and click <strong>"Generate Launch Kit"</strong> to construct full database schemas, roadmap, and copy-pasteable vibe-coding prompts.</p>
+          </div>
+        `
+        }
+
+        <p style="font-size: 11px; color: #9ca3af; margin-top: 40px; text-align: center;">Sent with ❤️ from SaaS Radar</p>
+      </div>
+    `;
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        from: "SaaS Radar <onboarding@resend.dev>",
+        to: [userEmail],
+        subject: subject,
+        html: html,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("Resend API error response:", errText);
+      return { success: false, error: errText };
+    }
+
+    const responseData = await response.json();
+    return { success: true, data: responseData };
+  } catch (err: any) {
+    console.error("Failed to send email through Resend:", err);
+    return { success: false, error: err.message || "Unknown error" };
+  }
+}
+
+export async function addToSupabaseAction(idea: any, kit: any = null) {
+  try {
+    const settings = getSettings();
+    const { supabaseUrl, supabaseAnonKey } = settings;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return {
+        success: false,
+        reason: "SUPABASE_CONFIG_MISSING",
+        error:
+          "Supabase configuration is missing. Please go to the settings page/section and provide your Supabase URL and Anon Key first.",
+      };
+    }
+
+    const payload = {
+      name: idea.name,
+      tagline: idea.tagline,
+      problem: idea.problem,
+      solution: idea.solution,
+      target_audience: idea.targetAudience,
+      pain_solved: idea.painSolved,
+      build_complexity: idea.buildComplexity,
+      mrr_target: idea.roi?.realisticMRRMonth1USD || "",
+      build_cost: idea.roi?.buildCostUSD || "",
+      created_at: new Date().toISOString(),
+      launch_kit: kit ? JSON.stringify(kit) : null,
+    };
+
+    const cleanUrl = supabaseUrl.replace(/\/$/, "");
+    const url = `${cleanUrl}/rest/v1/saved_ideas`;
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let parsedErr;
+      try {
+        parsedErr = JSON.parse(errText);
+      } catch {
+        parsedErr = { message: errText };
+      }
+
+      if (
+        (errText.includes("relation") && errText.includes("does not exist")) ||
+        errText.includes("schema cache") ||
+        errText.includes("Could not find the table")
+      ) {
+        const sqlSchema = `-- If you recently created the table and still see schema cache errors, run this first:
+-- NOTIFY pgrst, 'reload schema';
+
+CREATE TABLE IF NOT EXISTS saved_ideas (
+  id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+  name TEXT NOT NULL,
+  tagline TEXT,
+  problem TEXT,
+  solution TEXT,
+  target_audience TEXT,
+  pain_solved TEXT,
+  build_complexity TEXT,
+  mrr_target TEXT,
+  build_cost TEXT,
+  launch_kit JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Enable Row Level Security (or allow anon write inserts)
+ALTER TABLE saved_ideas ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon insert" ON saved_ideas FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon select" ON saved_ideas FOR SELECT TO anon USING (true);`;
+
+        return {
+          success: false,
+          reason: "TABLE_NOT_FOUND",
+          sql: sqlSchema,
+          error: "Table 'saved_ideas' not found (or Supabase schema cache needs reload).",
+        };
+      }
+
+      return {
+        success: false,
+        reason: "SUPABASE_API_ERROR",
+        error: parsedErr.message || "Failed to insert into Supabase.",
+      };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error("Error in addToSupabaseAction server action:", err);
+    return {
+      success: false,
+      error: err.message || "Failed to connect to Supabase endpoint.",
+    };
+  }
+}
+
+export async function checkDomainAvailabilityAction(domain: string) {
+  try {
+    const settings = getSettings();
+    const apiKey = settings.godaddyApiKey;
+    const apiSecret = settings.godaddyApiSecret;
+
+    if (!apiKey || !apiSecret) {
+      return {
+        success: false,
+        reason: "GODADDY_CONFIG_MISSING",
+        error: "GoDaddy API keys are not configured in settings."
+      };
+    }
+
+    const response = await fetch(`https://api.godaddy.com/v1/domains/available?domain=${encodeURIComponent(domain)}`, {
+      headers: {
+        Authorization: `sso-key ${apiKey}:${apiSecret}`,
+        Accept: 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("GoDaddy API error:", text);
+      return { success: false, error: "Failed to check domain availability." };
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      available: data.available,
+      domain: data.domain,
+      price: data.price
+    };
+  } catch (err: any) {
+    console.error("Domain check error:", err);
+    return { success: false, error: err.message };
+  }
+}
+
