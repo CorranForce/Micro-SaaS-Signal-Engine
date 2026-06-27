@@ -50,6 +50,7 @@ import {
   getRealtimeSuggestions,
   sendLaunchKitEmail,
   addToSupabaseAction,
+  syncToSupabaseAction,
   checkDomainAvailabilityAction,
 } from "./actions";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
@@ -267,6 +268,48 @@ const LEGACY_NICHES = [
     name: "Niche Agriculture (Orchards/Greenhouses)",
     icon: "🌱",
     desc: "Harvest yield tracking, micro-climate monitoring logs, and seasonal labor scheduling.",
+  },
+  {
+    id: "ecommerce-ops",
+    name: "E-Commerce & D2C Brands",
+    icon: "🛒",
+    desc: "Multi-channel inventory sync, reverse logistics/returns, and supplier communication.",
+  },
+  {
+    id: "digital-marketing",
+    name: "Digital Marketing Agencies",
+    icon: "📈",
+    desc: "Client portal reporting, ad spend monitoring, and cross-platform campaign approvals.",
+  },
+  {
+    id: "content-creators",
+    name: "Content Creators & Influencers",
+    icon: "📹",
+    desc: "Sponsorship contract tracking, cross-platform scheduling, and asset storage.",
+  },
+  {
+    id: "amazon-fba",
+    name: "Amazon FBA Sellers",
+    icon: "📦",
+    desc: "Re-stock limits forecasting, PPC bid automation, and hijacker alerts.",
+  },
+  {
+    id: "online-course",
+    name: "Online Course Creators",
+    icon: "🎓",
+    desc: "Student engagement analytics, drip sequence automation, and community moderation.",
+  },
+  {
+    id: "remote-recruitment",
+    name: "Remote HR & Recruitment",
+    icon: "🤝",
+    desc: "Asynchronous video interviews, onboarding checklists, and payroll compliance.",
+  },
+  {
+    id: "freelance-designers",
+    name: "Freelance Design & Dev",
+    icon: "🎨",
+    desc: "Client feedback loop, milestone invoicing, and retainer hours tracking.",
   },
 ];
 
@@ -861,7 +904,6 @@ export default function MicroSaaSSignalEngine() {
   // Input states
   const [selectedNiche, setSelectedNiche] = useState<string>("hvac");
   const [customNiche, setCustomNiche] = useState<string>("");
-  const [experienceLevel, setExperienceLevel] = useState<string>("moderate");
   const [mrrTarget, setMrrTarget] = useState<number>(5000);
   const [additionalContext, setAdditionalContext] = useState<string>("");
 
@@ -921,8 +963,15 @@ export default function MicroSaaSSignalEngine() {
           setRealtimeKeywords(data.keywords || []);
           setRealtimeSuggestions(data.suggestions || []);
         }
-      } catch (err) {
-        console.error("Error fetching real-time suggestions:", err);
+      } catch (err: any) {
+        if (
+          err?.message === "Failed to fetch" ||
+          err?.message?.includes("fetch")
+        ) {
+          // Ignore harmless network drop during dev rebuilds
+        } else {
+          console.error("Error fetching real-time suggestions:", err);
+        }
       } finally {
         setIsSuggestionsLoading(false);
       }
@@ -936,29 +985,45 @@ export default function MicroSaaSSignalEngine() {
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Card-specific actions loading state
-  const [isEmailingCard, setIsEmailingCard] = useState<Record<number, boolean>>({});
+  const [isEmailingCard, setIsEmailingCard] = useState<Record<number, boolean>>(
+    {},
+  );
   const [emailCardStatus, setEmailCardStatus] = useState<
     Record<number, { success: boolean; message: string } | null>
   >({});
-  const [isSavingToSupabase, setIsSavingToSupabase] = useState<Record<number, boolean>>({});
+  const [isSavingToSupabase, setIsSavingToSupabase] = useState<
+    Record<number, boolean>
+  >({});
   const [supabaseCardStatus, setSupabaseCardStatus] = useState<
     Record<number, { success: boolean; message: string; sql?: string } | null>
   >({});
-  
+
   // Domain checking states
   const [domainCheckStatus, setDomainCheckStatus] = useState<
-    Record<string, { checking?: boolean; available?: boolean; error?: string; price?: number }>
+    Record<
+      string,
+      {
+        checking?: boolean;
+        available?: boolean;
+        error?: string;
+        price?: number;
+      }
+    >
   >({});
 
   // Expanded cards state
-  const [expandedIdeas, setExpandedIdeas] = useState<Record<number, boolean>>({});
+  const [expandedIdeas, setExpandedIdeas] = useState<Record<number, boolean>>(
+    {},
+  );
 
   // Active workspace actions loading state
   const [isEmailingActive, setIsEmailingActive] = useState<boolean>(false);
-  const [activeEmailStatus, setActiveEmailStatus] = useState<{ success: boolean; message: string } | null>(
-    null,
-  );
-  const [isSavingActiveToSupabase, setIsSavingActiveToSupabase] = useState<boolean>(false);
+  const [activeEmailStatus, setActiveEmailStatus] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+  const [isSavingActiveToSupabase, setIsSavingActiveToSupabase] =
+    useState<boolean>(false);
   const [activeSupabaseStatus, setActiveSupabaseStatus] = useState<{
     success: boolean;
     message: string;
@@ -968,7 +1033,8 @@ export default function MicroSaaSSignalEngine() {
   // Authentication states
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const [showClearConfirmModal, setShowClearConfirmModal] = useState<boolean>(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] =
+    useState<boolean>(false);
   const [isAuthRegister, setIsAuthRegister] = useState<boolean>(false);
   const [authEmail, setAuthEmail] = useState<string>("");
   const [authPassword, setAuthPassword] = useState<string>("");
@@ -984,6 +1050,8 @@ export default function MicroSaaSSignalEngine() {
     godaddyApiKey: "",
     godaddyApiSecret: "",
     compactMode: false,
+    fontFamily: "inter",
+    fontSize: "base",
   });
   const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(false);
   const [isSavingSettings, setIsSavingSettings] = useState<boolean>(false);
@@ -1000,7 +1068,6 @@ export default function MicroSaaSSignalEngine() {
         const parsed = JSON.parse(savedWorkspace);
         if (parsed.selectedNiche) setSelectedNiche(parsed.selectedNiche);
         if (parsed.customNiche) setCustomNiche(parsed.customNiche);
-        if (parsed.experienceLevel) setExperienceLevel(parsed.experienceLevel);
         if (parsed.mrrTarget) setMrrTarget(parsed.mrrTarget);
         if (parsed.additionalContext)
           setAdditionalContext(parsed.additionalContext);
@@ -1024,8 +1091,17 @@ export default function MicroSaaSSignalEngine() {
     }
 
     // Check user session
+    const savedSessionUser = localStorage.getItem("session_user");
+    if (savedSessionUser) {
+      setCurrentUser(savedSessionUser);
+    }
     getSessionUser().then((email) => {
       setCurrentUser(email);
+      if (email) {
+        localStorage.setItem("session_user", email);
+      } else {
+        localStorage.removeItem("session_user");
+      }
     });
 
     return () => {
@@ -1041,7 +1117,6 @@ export default function MicroSaaSSignalEngine() {
     const stateToSave = {
       selectedNiche,
       customNiche,
-      experienceLevel,
       mrrTarget,
       additionalContext,
       generatedIdeas,
@@ -1052,7 +1127,6 @@ export default function MicroSaaSSignalEngine() {
     mounted,
     selectedNiche,
     customNiche,
-    experienceLevel,
     mrrTarget,
     additionalContext,
     generatedIdeas,
@@ -1092,6 +1166,7 @@ export default function MicroSaaSSignalEngine() {
         const res = await registerUser(authEmail, authPassword);
         if (res.success) {
           setCurrentUser(res.email);
+          localStorage.setItem("session_user", res.email);
           setAuthSuccess("Account successfully generated! Connecting...");
           setTimeout(() => {
             setShowAuthModal(false);
@@ -1104,6 +1179,7 @@ export default function MicroSaaSSignalEngine() {
         const res = await loginUser(authEmail, authPassword);
         if (res.success) {
           setCurrentUser(res.email);
+          localStorage.setItem("session_user", res.email);
           setAuthSuccess("Access cipher verified. Initializing session...");
           setTimeout(() => {
             setShowAuthModal(false);
@@ -1127,6 +1203,7 @@ export default function MicroSaaSSignalEngine() {
     try {
       await logoutUser();
       setCurrentUser(null);
+      localStorage.removeItem("session_user");
       if (activeTab === "settings") {
         setActiveTab("find");
       }
@@ -1171,6 +1248,25 @@ export default function MicroSaaSSignalEngine() {
     setSavedIdeas(newSaved);
     localStorage.setItem("saved_micro_saas", JSON.stringify(newSaved));
   };
+
+  useEffect(() => {
+    if (!currentUser || savedIdeas.length === 0) return;
+
+    const syncInterval = setInterval(async () => {
+      try {
+        const res = await syncToSupabaseAction(currentUser, savedIdeas);
+        if (res.success && res.count > 0) {
+          console.log(
+            `Synced ${res.count} saved ideas to Supabase in the background.`,
+          );
+        }
+      } catch (err) {
+        console.error("Background sync error:", err);
+      }
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(syncInterval);
+  }, [currentUser, savedIdeas]);
 
   // Log scrolling removed because we prepend logs
   useEffect(() => {
@@ -1356,7 +1452,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
       `[SCANNING] Crawling online directories & niche industry subreddits for: "${selectedNicheName}"...`,
       `[ANALYZE] Parsing negative reviews for legacy software used by ${selectedNicheName} teams...`,
       `[COMPILING] Identifying key friction points: manual entry, missing mobile compliance, paper tickets...`,
-      `[VALUATION] Calculating ROI metrics using experience target: "${experienceLevel}" and MRR goal: $${mrrTarget}/mo...`,
+      `[VALUATION] Calculating ROI metrics using MRR goal: $${mrrTarget}/mo...`,
       `[GENERATE] Formulating bespoke B2B Micro-SaaS ideas via Gemini 3.5...`,
       `[FINALIZE] Mapping technical feasibility and available dotcom domains...`,
     ];
@@ -1409,7 +1505,10 @@ ${kit.marketingAssets.coldEmail.body}</div>
     } finally {
       setIsScanning(false);
       if (pageTopRef.current) {
-        pageTopRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+        pageTopRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
       } else {
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
@@ -1432,7 +1531,10 @@ ${kit.marketingAssets.coldEmail.body}</div>
       if (res.success) {
         setEmailCardStatus((prev) => ({
           ...prev,
-          [index]: { success: true, message: `Sent blueprint email to ${currentUser}! 📬` },
+          [index]: {
+            success: true,
+            message: `Sent blueprint email to ${currentUser}! 📬`,
+          },
         }));
       } else {
         if (res.reason && res.reason.includes("RESEND_API_KEY")) {
@@ -1446,14 +1548,20 @@ ${kit.marketingAssets.coldEmail.body}</div>
         } else {
           setEmailCardStatus((prev) => ({
             ...prev,
-            [index]: { success: false, message: res.error || "Failed to send email." },
+            [index]: {
+              success: false,
+              message: res.error || "Failed to send email.",
+            },
           }));
         }
       }
     } catch (err: any) {
       setEmailCardStatus((prev) => ({
         ...prev,
-        [index]: { success: false, message: err.message || "Failed to dispatch email." },
+        [index]: {
+          success: false,
+          message: err.message || "Failed to dispatch email.",
+        },
       }));
     } finally {
       setIsEmailingCard((prev) => ({ ...prev, [index]: false }));
@@ -1482,7 +1590,8 @@ ${kit.marketingAssets.coldEmail.body}</div>
             ...prev,
             [index]: {
               success: false,
-              message: "Supabase config missing! Save your URL/Key under Settings first.",
+              message:
+                "Supabase config missing! Save your URL/Key under Settings first.",
             },
           }));
         } else if (res.reason === "TABLE_NOT_FOUND") {
@@ -1491,21 +1600,28 @@ ${kit.marketingAssets.coldEmail.body}</div>
             [index]: {
               success: false,
               message:
-                res.error || "Table 'saved_ideas' not found (or schema cache needs reload). Click copy below to see the required SQL schema.",
+                res.error ||
+                "Table 'saved_ideas' not found (or schema cache needs reload). Click copy below to see the required SQL schema.",
               sql: res.sql,
             },
           }));
         } else {
           setSupabaseCardStatus((prev) => ({
             ...prev,
-            [index]: { success: false, message: res.error || "Failed to save to Supabase." },
+            [index]: {
+              success: false,
+              message: res.error || "Failed to save to Supabase.",
+            },
           }));
         }
       }
     } catch (err: any) {
       setSupabaseCardStatus((prev) => ({
         ...prev,
-        [index]: { success: false, message: err.message || "Failed to save to Supabase." },
+        [index]: {
+          success: false,
+          message: err.message || "Failed to save to Supabase.",
+        },
       }));
     } finally {
       setIsSavingToSupabase((prev) => ({ ...prev, [index]: false }));
@@ -1514,36 +1630,36 @@ ${kit.marketingAssets.coldEmail.body}</div>
 
   const handleCheckDomain = async (domain: string) => {
     if (domainCheckStatus[domain]?.checking) return;
-    
-    setDomainCheckStatus(prev => ({ ...prev, [domain]: { checking: true } }));
-    
+
+    setDomainCheckStatus((prev) => ({ ...prev, [domain]: { checking: true } }));
+
     try {
       const res = await checkDomainAvailabilityAction(domain);
       if (res.success) {
-        setDomainCheckStatus(prev => ({
+        setDomainCheckStatus((prev) => ({
           ...prev,
           [domain]: {
             checking: false,
             available: res.available,
-            price: res.price
-          }
+            price: res.price,
+          },
         }));
       } else {
-        setDomainCheckStatus(prev => ({
+        setDomainCheckStatus((prev) => ({
           ...prev,
           [domain]: {
             checking: false,
-            error: res.error
-          }
+            error: res.error,
+          },
         }));
       }
     } catch (err: any) {
-      setDomainCheckStatus(prev => ({
+      setDomainCheckStatus((prev) => ({
         ...prev,
         [domain]: {
           checking: false,
-          error: err.message || "Failed to check domain."
-        }
+          error: err.message || "Failed to check domain.",
+        },
       }));
     }
   };
@@ -1574,7 +1690,8 @@ ${kit.marketingAssets.coldEmail.body}</div>
         if (res.reason && res.reason.includes("RESEND_API_KEY")) {
           setActiveEmailStatus({
             success: false,
-            message: "Resend API Key is missing. Configure RESEND_API_KEY in the Secrets section.",
+            message:
+              "Resend API Key is missing. Configure RESEND_API_KEY in the Secrets section.",
           });
         } else {
           setActiveEmailStatus({
@@ -1608,18 +1725,22 @@ ${kit.marketingAssets.coldEmail.body}</div>
       if (res.success) {
         setActiveSupabaseStatus({
           success: true,
-          message: "Launch Kit successfully pushed to Supabase table 'saved_ideas'! 🚀",
+          message:
+            "Launch Kit successfully pushed to Supabase table 'saved_ideas'! 🚀",
         });
       } else {
         if (res.reason === "SUPABASE_CONFIG_MISSING") {
           setActiveSupabaseStatus({
             success: false,
-            message: "Supabase config missing! Enter your credentials under the Settings tab first.",
+            message:
+              "Supabase config missing! Enter your credentials under the Settings tab first.",
           });
         } else if (res.reason === "TABLE_NOT_FOUND") {
           setActiveSupabaseStatus({
             success: false,
-            message: res.error || "Table 'saved_ideas' not found (or schema cache needs reload).",
+            message:
+              res.error ||
+              "Table 'saved_ideas' not found (or schema cache needs reload).",
             sql: res.sql,
           });
         } else {
@@ -1760,7 +1881,45 @@ ${kit.marketingAssets.coldEmail.body}</div>
   }
 
   return (
-    <div ref={pageTopRef} className="min-h-screen bg-ms-bg text-ms-text font-sans">
+    <div
+      ref={pageTopRef}
+      className="min-h-screen bg-ms-bg text-ms-text font-sans"
+    >
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+          html {
+            font-size: ${apiSettings.fontSize === "sm" ? "14px" : apiSettings.fontSize === "lg" ? "18px" : apiSettings.fontSize === "xl" ? "20px" : "16px"} !important;
+          }
+          ${
+            apiSettings.fontFamily
+              ? `
+            body, .font-sans, .font-ms {
+              font-family: ${
+                apiSettings.fontFamily === "inter"
+                  ? "var(--font-inter), sans-serif"
+                  : apiSettings.fontFamily === "roboto"
+                    ? "var(--font-roboto), sans-serif"
+                    : apiSettings.fontFamily === "opensans"
+                      ? "var(--font-opensans), sans-serif"
+                      : apiSettings.fontFamily === "lato"
+                        ? "var(--font-lato), sans-serif"
+                        : apiSettings.fontFamily === "poppins"
+                          ? "var(--font-poppins), sans-serif"
+                          : apiSettings.fontFamily === "playfair"
+                            ? "var(--font-playfair), serif"
+                            : apiSettings.fontFamily === "mono"
+                              ? "var(--font-mono), monospace"
+                              : "var(--font-inter), sans-serif"
+              } !important;
+            }
+          `
+              : ""
+          }
+        `,
+        }}
+      />
+
       {/* Visual Ambient Grid Header */}
       <header className="border-b border-ms-border bg-ms-bg/80 backdrop-blur-md sticky top-0 z-40 px-4 py-3.5">
         <div className="w-full flex flex-col md:flex-row items-center justify-between gap-4">
@@ -1910,6 +2069,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
                           onClick={() => {
                             setSelectedNiche(n.id);
                             setCustomNiche("");
+                            setAdditionalContext("");
                           }}
                           className={`p-2.5 text-left border rounded text-xs transition-all ${
                             selectedNiche === n.id && !customNiche
@@ -1929,6 +2089,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         onChange={(e) => {
                           setSelectedNiche(e.target.value);
                           setCustomNiche("");
+                          setAdditionalContext("");
                         }}
                         className="w-full bg-ms-bg border border-ms-border rounded px-3 py-2 text-xs font-ms text-white focus:outline-none focus:border-ms-green"
                       >
@@ -1946,7 +2107,12 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         type="text"
                         placeholder="Or type a custom B2B niche..."
                         value={customNiche}
-                        onChange={(e) => setCustomNiche(e.target.value)}
+                        onChange={(e) => {
+                          if (customNiche === "") {
+                            setAdditionalContext("");
+                          }
+                          setCustomNiche(e.target.value);
+                        }}
                         className="w-full bg-ms-bg border border-ms-border rounded px-3 py-2 text-xs font-ms text-white placeholder-gray-600 focus:outline-none focus:border-ms-green"
                       />
                     </div>
@@ -1969,31 +2135,6 @@ ${kit.marketingAssets.coldEmail.body}</div>
                       <span className="font-ms text-xs font-bold text-ms-green bg-ms-green-dark border border-ms-green/40 px-2 py-1 rounded">
                         ${mrrTarget.toLocaleString()}
                       </span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-ms text-ms-text-muted uppercase mb-1.5">
-                      Your Experience Level
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: "simple", label: "No-Code" },
-                        { id: "moderate", label: "Solo Dev" },
-                        { id: "complex", label: "Full Stack" },
-                      ].map((exp) => (
-                        <button
-                          key={exp.id}
-                          onClick={() => setExperienceLevel(exp.id)}
-                          className={`py-2 text-center border rounded text-xs transition-all font-ms ${
-                            experienceLevel === exp.id
-                              ? "border-ms-yellow bg-ms-yellow/10 text-ms-yellow font-bold"
-                              : "border-ms-border bg-ms-bg text-ms-text-muted hover:border-ms-border-active"
-                          }`}
-                        >
-                          {exp.label}
-                        </button>
-                      ))}
                     </div>
                   </div>
 
@@ -2191,6 +2332,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         onClick={() => {
                           setSelectedNiche(n.id);
                           setCustomNiche("");
+                          setAdditionalContext("");
                         }}
                         className="p-3 bg-ms-bg border border-ms-border hover:border-ms-green rounded text-left transition-all group hover:bg-ms-green-dark/15"
                       >
@@ -2234,37 +2376,107 @@ ${kit.marketingAssets.coldEmail.body}</div>
                               : "border-ms-border hover:border-ms-border-active"
                           }`}
                         >
-                          <div className={`flex flex-col md:flex-row justify-between ${apiSettings.compactMode ? "gap-4" : "gap-6"}`}>
+                          <div
+                            className={`flex flex-col md:flex-row justify-between ${apiSettings.compactMode ? "gap-4" : "gap-6"}`}
+                          >
                             <div className="flex-1">
                               <div className="flex justify-between items-center gap-2 mb-2">
-                              <span className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/30 px-2 py-0.5 rounded font-ms font-bold uppercase`}>
-                                {idea.buildComplexity} BUILD
-                              </span>
-                              <div className="flex items-center gap-2.5 md:hidden">
+                                <span
+                                  className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/30 px-2 py-0.5 rounded font-ms font-bold uppercase`}
+                                >
+                                  {idea.buildComplexity} BUILD
+                                </span>
+                                <div className="flex items-center gap-2.5 md:hidden">
+                                  <button
+                                    onClick={() => handleEmailCard(idea, index)}
+                                    disabled={isEmailingCard[index]}
+                                    className="text-ms-text-muted hover:text-ms-green disabled:opacity-50 transition-colors p-1"
+                                    title="Email Idea"
+                                  >
+                                    {isEmailingCard[index] ? (
+                                      <div className="w-3.5 h-3.5 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                    ) : (
+                                      <Mail className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      handleSupabaseCard(idea, index)
+                                    }
+                                    disabled={isSavingToSupabase[index]}
+                                    className="text-ms-text-muted hover:text-cyan-400 disabled:opacity-50 transition-colors p-1"
+                                    title="Push to Supabase"
+                                  >
+                                    {isSavingToSupabase[index] ? (
+                                      <div className="w-3.5 h-3.5 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                    ) : (
+                                      <Database className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    onClick={() =>
+                                      toggleSaveIdea(
+                                        idea,
+                                        launchKits[index]?.data || null,
+                                      )
+                                    }
+                                    className="text-ms-text-muted hover:text-ms-yellow transition-colors p-1"
+                                  >
+                                    <Bookmark
+                                      className={`w-4 h-4 ${isSaved(idea.name) ? "fill-ms-yellow text-ms-yellow" : ""}`}
+                                    />
+                                  </button>
+                                </div>
+                              </div>
+
+                              <h3
+                                className={`${apiSettings.compactMode ? "text-sm" : "text-base"} font-bold text-white mb-1 leading-tight`}
+                              >
+                                {idea.name}
+                              </h3>
+                              <p
+                                className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-yellow italic mb-2`}
+                              >
+                                &ldquo;{idea.tagline}&rdquo;
+                              </p>
+
+                              <p
+                                className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-text-muted leading-relaxed mb-3`}
+                              >
+                                {idea.solution}
+                              </p>
+                            </div>
+
+                            <div className="md:w-80 flex flex-col justify-between border-t md:border-t-0 md:border-l border-ms-border pt-3 md:pt-0 md:pl-6 space-y-3">
+                              <div className="hidden md:flex items-center gap-3.5 justify-end mb-1">
                                 <button
                                   onClick={() => handleEmailCard(idea, index)}
                                   disabled={isEmailingCard[index]}
-                                  className="text-ms-text-muted hover:text-ms-green disabled:opacity-50 transition-colors p-1"
-                                  title="Email Idea"
+                                  className="text-ms-text-muted hover:text-ms-green disabled:opacity-50 transition-colors flex items-center gap-1.5 text-[10px] font-ms font-bold uppercase"
                                 >
                                   {isEmailingCard[index] ? (
-                                    <div className="w-3.5 h-3.5 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                    <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
                                   ) : (
-                                    <Mail className="w-4 h-4" />
+                                    <Mail className="w-3.5 h-3.5" />
                                   )}
+                                  Email
                                 </button>
+
                                 <button
-                                  onClick={() => handleSupabaseCard(idea, index)}
+                                  onClick={() =>
+                                    handleSupabaseCard(idea, index)
+                                  }
                                   disabled={isSavingToSupabase[index]}
-                                  className="text-ms-text-muted hover:text-cyan-400 disabled:opacity-50 transition-colors p-1"
-                                  title="Push to Supabase"
+                                  className="text-ms-text-muted hover:text-cyan-400 disabled:opacity-50 transition-colors flex items-center gap-1.5 text-[10px] font-ms font-bold uppercase"
                                 >
                                   {isSavingToSupabase[index] ? (
-                                    <div className="w-3.5 h-3.5 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                    <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
                                   ) : (
-                                    <Database className="w-4 h-4" />
+                                    <Database className="w-3.5 h-3.5" />
                                   )}
+                                  Supabase
                                 </button>
+
                                 <button
                                   onClick={() =>
                                     toggleSaveIdea(
@@ -2272,363 +2484,445 @@ ${kit.marketingAssets.coldEmail.body}</div>
                                       launchKits[index]?.data || null,
                                     )
                                   }
-                                  className="text-ms-text-muted hover:text-ms-yellow transition-colors p-1"
+                                  className="text-ms-text-muted hover:text-ms-yellow transition-colors flex items-center gap-1 text-[10px] font-ms font-bold uppercase"
                                 >
                                   <Bookmark
-                                    className={`w-4 h-4 ${isSaved(idea.name) ? "fill-ms-yellow text-ms-yellow" : ""}`}
+                                    className={`w-3.5 h-3.5 ${isSaved(idea.name) ? "fill-ms-yellow text-ms-yellow" : ""}`}
                                   />
+                                  {isSaved(idea.name) ? "Saved" : "Save Idea"}
                                 </button>
                               </div>
-                            </div>
 
-                            <h3 className={`${apiSettings.compactMode ? "text-sm" : "text-base"} font-bold text-white mb-1 leading-tight`}>
-                              {idea.name}
-                            </h3>
-                            <p className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-yellow italic mb-2`}>
-                              &ldquo;{idea.tagline}&rdquo;
-                            </p>
-
-                            <p className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-text-muted leading-relaxed mb-3`}>
-                              {idea.solution}
-                            </p>
-                          </div>
-
-                          <div className="md:w-80 flex flex-col justify-between border-t md:border-t-0 md:border-l border-ms-border pt-3 md:pt-0 md:pl-6 space-y-3">
-                            <div className="hidden md:flex items-center gap-3.5 justify-end mb-1">
-                              <button
-                                onClick={() => handleEmailCard(idea, index)}
-                                disabled={isEmailingCard[index]}
-                                className="text-ms-text-muted hover:text-ms-green disabled:opacity-50 transition-colors flex items-center gap-1.5 text-[10px] font-ms font-bold uppercase"
-                              >
-                                {isEmailingCard[index] ? (
-                                  <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
-                                ) : (
-                                  <Mail className="w-3.5 h-3.5" />
-                                )}
-                                Email
-                              </button>
-
-                              <button
-                                onClick={() => handleSupabaseCard(idea, index)}
-                                disabled={isSavingToSupabase[index]}
-                                className="text-ms-text-muted hover:text-cyan-400 disabled:opacity-50 transition-colors flex items-center gap-1.5 text-[10px] font-ms font-bold uppercase"
-                              >
-                                {isSavingToSupabase[index] ? (
-                                  <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
-                                ) : (
-                                  <Database className="w-3.5 h-3.5" />
-                                )}
-                                Supabase
-                              </button>
-
-                              <button
-                                onClick={() =>
-                                  toggleSaveIdea(
-                                    idea,
-                                    launchKits[index]?.data || null,
-                                  )
-                                }
-                                className="text-ms-text-muted hover:text-ms-yellow transition-colors flex items-center gap-1 text-[10px] font-ms font-bold uppercase"
-                              >
-                                <Bookmark
-                                  className={`w-3.5 h-3.5 ${isSaved(idea.name) ? "fill-ms-yellow text-ms-yellow" : ""}`}
-                                />
-                                {isSaved(idea.name) ? "Saved" : "Save Idea"}
-                              </button>
-                            </div>
-
-                            {/* ROI Bento Panel */}
-                            <div className="bg-ms-bg p-2.5 rounded border border-ms-border grid grid-cols-3 gap-1.5 text-center">
-                              <div>
-                                <div className="text-[9px] text-ms-text-muted font-ms flex items-center justify-center gap-1">
-                                  BUILD
-                                  <div className="relative group">
-                                    <Info className="w-2.5 h-2.5 cursor-help hover:text-white transition-colors" />
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-48 p-2 bg-ms-card border border-ms-border text-[10px] text-left text-white rounded hidden group-hover:block z-10 shadow-lg font-sans normal-case">
-                                      Estimated upfront cost utilizing no-code
-                                      platforms and AI development tools (e.g.
-                                      database setup, hosting, API fees).
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="text-xs font-bold text-white">
-                                  {idea.roi.buildCostUSD}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-[9px] text-ms-text-muted font-ms flex items-center justify-center gap-1">
-                                  MRR TARGET
-                                  <div className="relative group">
-                                    <Info className="w-2.5 h-2.5 cursor-help hover:text-white transition-colors" />
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-48 p-2 bg-ms-card border border-ms-border text-[10px] text-left text-white rounded hidden group-hover:block z-10 shadow-lg font-sans normal-case">
-                                      Projected Monthly Recurring Revenue based
-                                      on early traction and realistic average
-                                      revenue per user (ARPU) in this niche.
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="text-xs font-bold text-ms-green">
-                                  {idea.roi.realisticMRRMonth1USD}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-[9px] text-ms-text-muted font-ms flex items-center justify-center gap-1">
-                                  1-MO ROI
-                                  <div className="relative group">
-                                    <Info className="w-2.5 h-2.5 cursor-help hover:text-white transition-colors" />
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-48 p-2 bg-ms-card border border-ms-border text-[10px] text-left text-white rounded hidden group-hover:block z-10 shadow-lg font-sans normal-case">
-                                      Return on Investment percentage after
-                                      month one, estimated based on projected
-                                      MRR relative to upfront build cost.
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="text-xs font-bold text-ms-yellow">
-                                  {idea.roi.roiMonth1Pct}
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Domain Checker */}
-                            {idea.domains && idea.domains.length > 0 && (
-                              <div className="bg-ms-bg/50 p-2.5 rounded border border-ms-border">
-                                <div className="text-[10px] text-ms-text-muted font-ms font-bold tracking-wider uppercase mb-2">
-                                  Available Domains
-                                </div>
-                                <div className="space-y-1.5">
-                                  {idea.domains.map((dom, domIdx) => {
-                                    const status = domainCheckStatus[dom.domain];
-                                    return (
-                                      <div key={domIdx} className="flex items-center justify-between gap-2 text-xs">
-                                        <div className="font-mono text-white truncate flex-1">
-                                          {dom.domain}
-                                        </div>
-                                        {status ? (
-                                          <div className="flex items-center gap-1.5">
-                                            {status.checking ? (
-                                              <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
-                                            ) : status.available ? (
-                                              <span className="text-[10px] font-ms font-bold text-ms-green uppercase">
-                                                Avail {status.price ? `($${status.price / 1000000})` : ""}
-                                              </span>
-                                            ) : (
-                                              <span className="text-[10px] font-ms font-bold text-ms-yellow uppercase" title={status.error || "Taken"}>
-                                                Taken
-                                              </span>
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <button
-                                            onClick={() => handleCheckDomain(dom.domain)}
-                                            className="text-[10px] font-ms font-bold text-cyan-400 hover:text-cyan-300 uppercase px-2 py-0.5 border border-cyan-500/30 rounded transition-colors"
-                                          >
-                                            Check
-                                          </button>
-                                        )}
+                              {/* ROI Bento Panel */}
+                              <div className="bg-ms-bg p-2.5 rounded border border-ms-border grid grid-cols-3 gap-1.5 text-center">
+                                <div>
+                                  <div className="text-[9px] text-ms-text-muted font-ms flex items-center justify-center gap-1">
+                                    BUILD
+                                    <div className="relative group">
+                                      <Info className="w-2.5 h-2.5 cursor-help hover:text-white transition-colors" />
+                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-48 p-2 bg-ms-card border border-ms-border text-[10px] text-left text-white rounded hidden group-hover:block z-10 shadow-lg font-sans normal-case">
+                                        Estimated upfront cost utilizing no-code
+                                        platforms and AI development tools (e.g.
+                                        database setup, hosting, API fees).
                                       </div>
-                                    );
-                                  })}
+                                    </div>
+                                  </div>
+                                  <div className="text-xs font-bold text-white">
+                                    {idea.roi.buildCostUSD}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[9px] text-ms-text-muted font-ms flex items-center justify-center gap-1">
+                                    MRR TARGET
+                                    <div className="relative group">
+                                      <Info className="w-2.5 h-2.5 cursor-help hover:text-white transition-colors" />
+                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-48 p-2 bg-ms-card border border-ms-border text-[10px] text-left text-white rounded hidden group-hover:block z-10 shadow-lg font-sans normal-case">
+                                        Projected Monthly Recurring Revenue
+                                        based on early traction and realistic
+                                        average revenue per user (ARPU) in this
+                                        niche.
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="text-xs font-bold text-ms-green">
+                                    {idea.roi.realisticMRRMonth1USD}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-[9px] text-ms-text-muted font-ms flex items-center justify-center gap-1">
+                                    1-MO ROI
+                                    <div className="relative group">
+                                      <Info className="w-2.5 h-2.5 cursor-help hover:text-white transition-colors" />
+                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-48 p-2 bg-ms-card border border-ms-border text-[10px] text-left text-white rounded hidden group-hover:block z-10 shadow-lg font-sans normal-case">
+                                        Return on Investment percentage after
+                                        month one, estimated based on projected
+                                        MRR relative to upfront build cost.
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="text-xs font-bold text-ms-yellow">
+                                    {idea.roi.roiMonth1Pct}
+                                  </div>
                                 </div>
                               </div>
-                            )}
 
-                            {/* Card Level Action Status Messages */}
-                            {(emailCardStatus[index] || supabaseCardStatus[index]) && (
-                              <div className="space-y-1.5 mt-1">
-                                {emailCardStatus[index] && (
-                                  <div
-                                    className={`p-2 rounded border text-[10px] font-ms flex items-center justify-between gap-1.5 ${
-                                      emailCardStatus[index]?.success
-                                        ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
-                                        : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
-                                    }`}
-                                  >
-                                    <span className="truncate">{emailCardStatus[index]?.message}</span>
-                                    <button
-                                      onClick={() => setEmailCardStatus(prev => ({ ...prev, [index]: null }))}
-                                      className="text-[9px] opacity-60 hover:opacity-100 font-bold"
-                                    >
-                                      ✕
-                                    </button>
+                              {/* Domain Checker */}
+                              {idea.domains && idea.domains.length > 0 && (
+                                <div className="bg-ms-bg/50 p-2.5 rounded border border-ms-border">
+                                  <div className="text-[10px] text-ms-text-muted font-ms font-bold tracking-wider uppercase mb-2">
+                                    Available Domains
                                   </div>
-                                )}
-                                {supabaseCardStatus[index] && (
-                                  <div
-                                    className={`p-2 rounded border text-[10px] font-ms space-y-1.5 ${
-                                      supabaseCardStatus[index]?.success
-                                        ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
-                                        : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between gap-1.5">
-                                      <span className="truncate flex-1">{supabaseCardStatus[index]?.message}</span>
+                                  <div className="space-y-1.5">
+                                    {idea.domains.map((dom, domIdx) => {
+                                      const status =
+                                        domainCheckStatus[dom.domain];
+                                      return (
+                                        <div
+                                          key={domIdx}
+                                          className="flex items-center justify-between gap-2 text-xs"
+                                        >
+                                          <div className="font-mono text-white truncate flex-1">
+                                            {dom.domain}
+                                          </div>
+                                          {status ? (
+                                            <div className="flex items-center gap-1.5">
+                                              {status.checking ? (
+                                                <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
+                                              ) : status.available ? (
+                                                <span className="text-[10px] font-ms font-bold text-ms-green uppercase">
+                                                  Avail{" "}
+                                                  {status.price
+                                                    ? `($${status.price / 1000000})`
+                                                    : ""}
+                                                </span>
+                                              ) : (
+                                                <span
+                                                  className="text-[10px] font-ms font-bold text-ms-yellow uppercase"
+                                                  title={
+                                                    status.error || "Taken"
+                                                  }
+                                                >
+                                                  Taken
+                                                </span>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <button
+                                              onClick={() =>
+                                                handleCheckDomain(dom.domain)
+                                              }
+                                              className="text-[10px] font-ms font-bold text-cyan-400 hover:text-cyan-300 uppercase px-2 py-0.5 border border-cyan-500/30 rounded transition-colors"
+                                            >
+                                              Check
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Card Level Action Status Messages */}
+                              {(emailCardStatus[index] ||
+                                supabaseCardStatus[index]) && (
+                                <div className="space-y-1.5 mt-1">
+                                  {emailCardStatus[index] && (
+                                    <div
+                                      className={`p-2 rounded border text-[10px] font-ms flex items-center justify-between gap-1.5 ${
+                                        emailCardStatus[index]?.success
+                                          ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
+                                          : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
+                                      }`}
+                                    >
+                                      <span className="truncate">
+                                        {emailCardStatus[index]?.message}
+                                      </span>
                                       <button
-                                        onClick={() => setSupabaseCardStatus(prev => ({ ...prev, [index]: null }))}
-                                        className="text-[9px] opacity-60 hover:opacity-100 font-bold self-start mt-0.5"
+                                        onClick={() =>
+                                          setEmailCardStatus((prev) => ({
+                                            ...prev,
+                                            [index]: null,
+                                          }))
+                                        }
+                                        className="text-[9px] opacity-60 hover:opacity-100 font-bold"
                                       >
                                         ✕
                                       </button>
                                     </div>
-                                    {supabaseCardStatus[index]?.sql && (
-                                      <div className="space-y-1 pt-1 border-t border-ms-border/30">
-                                        <textarea
-                                          readOnly
-                                          value={supabaseCardStatus[index]?.sql}
-                                          className="w-full h-24 font-mono text-[9px] bg-black/60 text-ms-green border border-ms-border/40 rounded p-1.5 focus:outline-none select-all"
-                                        />
+                                  )}
+                                  {supabaseCardStatus[index] && (
+                                    <div
+                                      className={`p-2 rounded border text-[10px] font-ms space-y-1.5 ${
+                                        supabaseCardStatus[index]?.success
+                                          ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
+                                          : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-1.5">
+                                        <span className="truncate flex-1">
+                                          {supabaseCardStatus[index]?.message}
+                                        </span>
                                         <button
-                                          onClick={() => {
-                                            navigator.clipboard.writeText(supabaseCardStatus[index]?.sql || "");
-                                            alert("SQL schema copied!");
-                                          }}
-                                          className="px-2 py-0.5 bg-ms-border/60 hover:bg-ms-border text-[9px] rounded text-white font-ms transition-all"
+                                          onClick={() =>
+                                            setSupabaseCardStatus((prev) => ({
+                                              ...prev,
+                                              [index]: null,
+                                            }))
+                                          }
+                                          className="text-[9px] opacity-60 hover:opacity-100 font-bold self-start mt-0.5"
                                         >
-                                          Copy SQL
+                                          ✕
                                         </button>
                                       </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            <button
-                              onClick={() => handleGenerateKit(idea, index)}
-                              disabled={isKitLoading}
-                              className={`w-full py-2.5 text-xs font-ms font-bold tracking-wider uppercase rounded flex items-center justify-center gap-1.5 transition-all ${
-                                isKitLoaded
-                                  ? "bg-ms-green-dark border border-ms-green text-ms-green"
-                                  : "bg-ms-green text-ms-bg hover:bg-[#00d066]"
-                              }`}
-                            >
-                              {isKitLoading ? (
-                                <span className="animate-pulse">
-                                  BUILDING KIT...
-                                </span>
-                              ) : isKitLoaded ? (
-                                <>
-                                  LAUNCH KIT ACTIVE{" "}
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-ms-green" />
-                                </>
-                              ) : (
-                                <>
-                                  GENERATE LAUNCH KIT{" "}
-                                  <ArrowRight className="w-3.5 h-3.5" />
-                                </>
+                                      {supabaseCardStatus[index]?.sql && (
+                                        <div className="space-y-1 pt-1 border-t border-ms-border/30">
+                                          <textarea
+                                            readOnly
+                                            value={
+                                              supabaseCardStatus[index]?.sql
+                                            }
+                                            className="w-full h-24 font-mono text-[9px] bg-black/60 text-ms-green border border-ms-border/40 rounded p-1.5 focus:outline-none select-all"
+                                          />
+                                          <button
+                                            onClick={() => {
+                                              navigator.clipboard.writeText(
+                                                supabaseCardStatus[index]
+                                                  ?.sql || "",
+                                              );
+                                              alert("SQL schema copied!");
+                                            }}
+                                            className="px-2 py-0.5 bg-ms-border/60 hover:bg-ms-border text-[9px] rounded text-white font-ms transition-all"
+                                          >
+                                            Copy SQL
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
                               )}
-                            </button>
-                          </div>
+
+                              <button
+                                onClick={() => handleGenerateKit(idea, index)}
+                                disabled={isKitLoading}
+                                className={`w-full py-2.5 text-xs font-ms font-bold tracking-wider uppercase rounded flex items-center justify-center gap-1.5 transition-all ${
+                                  isKitLoaded
+                                    ? "bg-ms-green-dark border border-ms-green text-ms-green"
+                                    : "bg-ms-green text-ms-bg hover:bg-[#00d066]"
+                                }`}
+                              >
+                                {isKitLoading ? (
+                                  <span className="animate-pulse">
+                                    BUILDING KIT...
+                                  </span>
+                                ) : isKitLoaded ? (
+                                  <>
+                                    LAUNCH KIT ACTIVE{" "}
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-ms-green" />
+                                  </>
+                                ) : (
+                                  <>
+                                    GENERATE LAUNCH KIT{" "}
+                                    <ArrowRight className="w-3.5 h-3.5" />
+                                  </>
+                                )}
+                              </button>
+                            </div>
                           </div>
 
                           {expandedIdeas[index] && (
-                            <div className={`${apiSettings.compactMode ? "mt-4 pt-4 space-y-4" : "mt-6 pt-6 space-y-6"} border-t border-ms-border`}>
-                              <div className={`grid grid-cols-1 md:grid-cols-2 ${apiSettings.compactMode ? "gap-4" : "gap-6"}`}>
+                            <div
+                              className={`${apiSettings.compactMode ? "mt-4 pt-4 space-y-4" : "mt-6 pt-6 space-y-6"} border-t border-ms-border`}
+                            >
+                              <div
+                                className={`grid grid-cols-1 md:grid-cols-2 ${apiSettings.compactMode ? "gap-4" : "gap-6"}`}
+                              >
                                 <div>
-                                  <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">PAIN SOLVED</h4>
-                                  <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">{idea.painSolved}</p>
+                                  <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                    PAIN SOLVED
+                                  </h4>
+                                  <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">
+                                    {idea.painSolved}
+                                  </p>
                                 </div>
                                 <div>
-                                  <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">TARGET CUSTOMER</h4>
-                                  <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">{idea.targetAudience}</p>
+                                  <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                    TARGET CUSTOMER
+                                  </h4>
+                                  <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">
+                                    {idea.targetAudience}
+                                  </p>
                                 </div>
                               </div>
-                              
+
                               <div>
-                                <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">GTM CHANNEL</h4>
-                                <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">{idea.gtmChannel}</p>
+                                <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                  GTM CHANNEL
+                                </h4>
+                                <p className="text-xs text-white bg-ms-bg p-3 rounded border border-ms-border leading-relaxed">
+                                  {idea.gtmChannel}
+                                </p>
                               </div>
 
                               {isKitLoaded && (
                                 <>
                                   {launchKits[index]?.data?.pricingTiers && (
                                     <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">PRICING TIERS</h4>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                        PRICING TIERS
+                                      </h4>
                                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                        {launchKits[index]?.data?.pricingTiers?.map((tier, tIdx) => (
-                                          <div key={tIdx} className="bg-ms-bg p-3 rounded border border-ms-border">
-                                            <div className="font-bold text-white text-sm">{tier.name}</div>
-                                            <div className="text-ms-green font-mono text-xs my-1">{tier.price}</div>
-                                            <ul className="text-xs text-ms-text-muted space-y-1 mt-2 list-disc list-inside">
-                                              {tier.features.map((f, fIdx) => <li key={fIdx}>{f}</li>)}
-                                            </ul>
-                                          </div>
-                                        ))}
+                                        {launchKits[
+                                          index
+                                        ]?.data?.pricingTiers?.map(
+                                          (tier, tIdx) => (
+                                            <div
+                                              key={tIdx}
+                                              className="bg-ms-bg p-3 rounded border border-ms-border"
+                                            >
+                                              <div className="font-bold text-white text-sm">
+                                                {tier.name}
+                                              </div>
+                                              <div className="text-ms-green font-mono text-xs my-1">
+                                                {tier.price}
+                                              </div>
+                                              <ul className="text-xs text-ms-text-muted space-y-1 mt-2 list-disc list-inside">
+                                                {tier.features.map(
+                                                  (f, fIdx) => (
+                                                    <li key={fIdx}>{f}</li>
+                                                  ),
+                                                )}
+                                              </ul>
+                                            </div>
+                                          ),
+                                        )}
                                       </div>
                                     </div>
                                   )}
 
                                   {launchKits[index]?.data?.noCodeStack && (
                                     <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">NO-CODE STACK</h4>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                        NO-CODE STACK
+                                      </h4>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                                        {launchKits[index]?.data?.noCodeStack.map((stack, sIdx) => (
-                                          <div key={sIdx} className="bg-ms-bg p-3 rounded border border-ms-border">
-                                            <div className="font-bold text-white text-xs">{stack.tool}</div>
-                                            <div className="text-ms-text-muted text-[10px] uppercase mb-1">{stack.role}</div>
-                                            <div className="text-ms-text-muted text-xs leading-relaxed">{stack.why}</div>
-                                            <div className="text-ms-yellow font-mono text-[10px] mt-2 border-t border-ms-border pt-1">Est. {stack.cost}</div>
-                                          </div>
-                                        ))}
+                                        {launchKits[
+                                          index
+                                        ]?.data?.noCodeStack.map(
+                                          (stack, sIdx) => (
+                                            <div
+                                              key={sIdx}
+                                              className="bg-ms-bg p-3 rounded border border-ms-border"
+                                            >
+                                              <div className="font-bold text-white text-xs">
+                                                {stack.tool}
+                                              </div>
+                                              <div className="text-ms-text-muted text-[10px] uppercase mb-1">
+                                                {stack.role}
+                                              </div>
+                                              <div className="text-ms-text-muted text-xs leading-relaxed">
+                                                {stack.why}
+                                              </div>
+                                              <div className="text-ms-yellow font-mono text-[10px] mt-2 border-t border-ms-border pt-1">
+                                                Est. {stack.cost}
+                                              </div>
+                                            </div>
+                                          ),
+                                        )}
                                       </div>
                                     </div>
                                   )}
 
                                   {launchKits[index]?.data?.buildRoadmap && (
                                     <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">4-WEEK BUILD ROADMAP</h4>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                        4-WEEK BUILD ROADMAP
+                                      </h4>
                                       <div className="space-y-2">
-                                        {launchKits[index]?.data?.buildRoadmap.map((wk, wIdx) => (
-                                          <div key={wIdx} className="bg-ms-bg p-3 rounded border border-ms-border flex flex-col md:flex-row gap-4">
-                                            <div className="w-24 shrink-0">
-                                              <span className="text-xs font-bold text-ms-yellow uppercase">{wk.week}</span>
+                                        {launchKits[
+                                          index
+                                        ]?.data?.buildRoadmap.map(
+                                          (wk, wIdx) => (
+                                            <div
+                                              key={wIdx}
+                                              className="bg-ms-bg p-3 rounded border border-ms-border flex flex-col md:flex-row gap-4"
+                                            >
+                                              <div className="w-24 shrink-0">
+                                                <span className="text-xs font-bold text-ms-yellow uppercase">
+                                                  {wk.week}
+                                                </span>
+                                              </div>
+                                              <div>
+                                                <div className="text-xs font-bold text-white mb-1">
+                                                  {wk.title}
+                                                </div>
+                                                <ul className="text-[10px] text-ms-text-muted space-y-0.5 list-disc list-inside">
+                                                  {wk.tasks.map(
+                                                    (task, tIdx) => (
+                                                      <li key={tIdx}>{task}</li>
+                                                    ),
+                                                  )}
+                                                </ul>
+                                              </div>
                                             </div>
-                                            <div>
-                                              <div className="text-xs font-bold text-white mb-1">{wk.title}</div>
-                                              <ul className="text-[10px] text-ms-text-muted space-y-0.5 list-disc list-inside">
-                                                {wk.tasks.map((task, tIdx) => <li key={tIdx}>{task}</li>)}
-                                              </ul>
-                                            </div>
-                                          </div>
-                                        ))}
+                                          ),
+                                        )}
                                       </div>
                                     </div>
                                   )}
-                                  
-                                  {launchKits[index]?.data?.marketValidation && (
+
+                                  {launchKits[index]?.data
+                                    ?.marketValidation && (
                                     <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">MARKET VALIDATION</h4>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                        MARKET VALIDATION
+                                      </h4>
                                       <div className="bg-ms-bg p-3 rounded border border-ms-border space-y-3">
                                         <div className="flex items-center gap-3">
-                                          <span className="text-xs font-bold text-ms-text-muted uppercase">GO/NO-GO SCORE:</span>
+                                          <span className="text-xs font-bold text-ms-text-muted uppercase">
+                                            GO/NO-GO SCORE:
+                                          </span>
                                           <span className="text-sm font-bold text-ms-green bg-ms-green-dark/30 border border-ms-green/40 px-2 rounded">
-                                            {launchKits[index]?.data?.marketValidation?.goNoGoScore}
+                                            {
+                                              launchKits[index]?.data
+                                                ?.marketValidation?.goNoGoScore
+                                            }
                                           </span>
                                         </div>
                                         <div>
-                                          <span className="text-xs font-bold text-ms-text-muted uppercase block mb-1">PROOF OF DEMAND:</span>
-                                          <span className="text-xs text-white leading-relaxed">{launchKits[index]?.data?.marketValidation?.proofOfDemand}</span>
+                                          <span className="text-xs font-bold text-ms-text-muted uppercase block mb-1">
+                                            PROOF OF DEMAND:
+                                          </span>
+                                          <span className="text-xs text-white leading-relaxed">
+                                            {
+                                              launchKits[index]?.data
+                                                ?.marketValidation
+                                                ?.proofOfDemand
+                                            }
+                                          </span>
                                         </div>
                                         <div>
-                                          <span className="text-xs font-bold text-ms-text-muted uppercase block mb-1">RED FLAGS:</span>
+                                          <span className="text-xs font-bold text-ms-text-muted uppercase block mb-1">
+                                            RED FLAGS:
+                                          </span>
                                           <ul className="text-xs text-ms-yellow list-disc list-inside">
-                                            {launchKits[index]?.data?.marketValidation?.redFlags.map((flag, fIdx) => <li key={fIdx}>{flag}</li>)}
+                                            {launchKits[
+                                              index
+                                            ]?.data?.marketValidation?.redFlags.map(
+                                              (flag, fIdx) => (
+                                                <li key={fIdx}>{flag}</li>
+                                              ),
+                                            )}
                                           </ul>
                                         </div>
                                       </div>
                                     </div>
                                   )}
-                                  
-                                  {launchKits[index]?.data?.preSellChecklist && (
+
+                                  {launchKits[index]?.data
+                                    ?.preSellChecklist && (
                                     <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">PRE-SELL VALIDATION CHECKLIST</h4>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                        PRE-SELL VALIDATION CHECKLIST
+                                      </h4>
                                       <div className="bg-ms-bg p-3 rounded border border-ms-border">
                                         <ul className="text-xs text-white space-y-2">
-                                          {launchKits[index]?.data?.preSellChecklist?.map((chk, cIdx) => (
-                                            <li key={cIdx} className="flex gap-2">
-                                              <span className="text-ms-green mt-0.5">☐</span>
-                                              <span>{chk}</span>
-                                            </li>
-                                          ))}
+                                          {launchKits[
+                                            index
+                                          ]?.data?.preSellChecklist?.map(
+                                            (chk, cIdx) => (
+                                              <li
+                                                key={cIdx}
+                                                className="flex gap-2"
+                                              >
+                                                <span className="text-ms-green mt-0.5">
+                                                  ☐
+                                                </span>
+                                                <span>{chk}</span>
+                                              </li>
+                                            ),
+                                          )}
                                         </ul>
                                       </div>
                                     </div>
@@ -2636,46 +2930,147 @@ ${kit.marketingAssets.coldEmail.body}</div>
 
                                   {launchKits[index]?.data?.marketingAssets && (
                                     <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">MARKETING ASSETS</h4>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                        MARKETING ASSETS
+                                      </h4>
                                       <div className="bg-ms-bg p-4 rounded border border-ms-border space-y-4">
                                         <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Landing Page Copy</h5>
-                                          <p className="text-xs font-bold text-white mb-0.5">{launchKits[index]?.data?.marketingAssets.landingHeadline}</p>
-                                          <p className="text-xs text-ms-text-muted mb-1">{launchKits[index]?.data?.marketingAssets.landingSubheadline}</p>
-                                          <span className="text-[10px] bg-ms-green-dark border border-ms-green/30 text-ms-green px-2 py-0.5 rounded uppercase font-bold">{launchKits[index]?.data?.marketingAssets.ctaButton}</span>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
+                                            Landing Page Copy
+                                          </h5>
+                                          <p className="text-xs font-bold text-white mb-0.5">
+                                            {
+                                              launchKits[index]?.data
+                                                ?.marketingAssets
+                                                .landingHeadline
+                                            }
+                                          </p>
+                                          <p className="text-xs text-ms-text-muted mb-1">
+                                            {
+                                              launchKits[index]?.data
+                                                ?.marketingAssets
+                                                .landingSubheadline
+                                            }
+                                          </p>
+                                          <span className="text-[10px] bg-ms-green-dark border border-ms-green/30 text-ms-green px-2 py-0.5 rounded uppercase font-bold">
+                                            {
+                                              launchKits[index]?.data
+                                                ?.marketingAssets.ctaButton
+                                            }
+                                          </span>
                                         </div>
                                         <div className="border-t border-ms-border pt-3">
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Cold Email</h5>
-                                          <p className="text-xs font-bold text-white mb-0.5">Subject: {launchKits[index]?.data?.marketingAssets.coldEmail.subject}</p>
-                                          <p className="text-[10px] text-ms-text-muted leading-relaxed font-mono whitespace-pre-wrap">{launchKits[index]?.data?.marketingAssets.coldEmail.body}</p>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
+                                            Cold Email
+                                          </h5>
+                                          <p className="text-xs font-bold text-white mb-0.5">
+                                            Subject:{" "}
+                                            {
+                                              launchKits[index]?.data
+                                                ?.marketingAssets.coldEmail
+                                                .subject
+                                            }
+                                          </p>
+                                          <p className="text-[10px] text-ms-text-muted leading-relaxed font-mono whitespace-pre-wrap">
+                                            {
+                                              launchKits[index]?.data
+                                                ?.marketingAssets.coldEmail.body
+                                            }
+                                          </p>
                                         </div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {launchKits[index]?.data?.pricingTiers && (
+                                    <div>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                        PRICING STRATEGY
+                                      </h4>
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                        {launchKits[
+                                          index
+                                        ]?.data?.pricingTiers.map(
+                                          (tier: any, i: number) => (
+                                            <div
+                                              key={i}
+                                              className="border border-ms-border p-3 rounded bg-ms-bg flex flex-col h-full"
+                                            >
+                                              <div className="font-bold text-white text-[10px] mb-1">
+                                                {tier.name}
+                                              </div>
+                                              <div className="text-ms-green font-ms text-xs font-bold mb-2">
+                                                {tier.price}
+                                              </div>
+                                              <ul className="text-[10px] text-ms-text-muted space-y-1 flex-1 list-disc pl-3">
+                                                {tier.features.map(
+                                                  (f: string, j: number) => (
+                                                    <li key={j}>{f}</li>
+                                                  ),
+                                                )}
+                                              </ul>
+                                            </div>
+                                          ),
+                                        )}
                                       </div>
                                     </div>
                                   )}
 
                                   {launchKits[index]?.data?.salesScript && (
                                     <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">SALES SCRIPT</h4>
+                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
+                                        SALES SCRIPT
+                                      </h4>
                                       <div className="bg-ms-bg p-4 rounded border border-ms-border space-y-4">
                                         <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Introduction</h5>
-                                          <p className="text-xs text-white leading-relaxed">{launchKits[index]?.data?.salesScript.introduction}</p>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
+                                            Introduction
+                                          </h5>
+                                          <p className="text-xs text-white leading-relaxed">
+                                            {
+                                              launchKits[index]?.data
+                                                ?.salesScript.introduction
+                                            }
+                                          </p>
                                         </div>
                                         <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Discovery Questions</h5>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
+                                            Discovery Questions
+                                          </h5>
                                           <ul className="text-xs text-ms-text-muted list-disc list-inside space-y-0.5">
-                                            {launchKits[index]?.data?.salesScript.discoveryQuestions.map((q, qIdx) => <li key={qIdx}>{q}</li>)}
+                                            {launchKits[
+                                              index
+                                            ]?.data?.salesScript.discoveryQuestions.map(
+                                              (q, qIdx) => (
+                                                <li key={qIdx}>{q}</li>
+                                              ),
+                                            )}
                                           </ul>
                                         </div>
                                         <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Objection Handling</h5>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
+                                            Objection Handling
+                                          </h5>
                                           <ul className="text-xs text-ms-text-muted list-disc list-inside space-y-0.5">
-                                            {launchKits[index]?.data?.salesScript.objectionHandling.map((o, oIdx) => <li key={oIdx}>{o}</li>)}
+                                            {launchKits[
+                                              index
+                                            ]?.data?.salesScript.objectionHandling.map(
+                                              (o, oIdx) => (
+                                                <li key={oIdx}>{o}</li>
+                                              ),
+                                            )}
                                           </ul>
                                         </div>
                                         <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">Call to Action</h5>
-                                          <p className="text-xs text-white font-bold">{launchKits[index]?.data?.salesScript.callToAction}</p>
+                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
+                                            Call to Action
+                                          </h5>
+                                          <p className="text-xs text-white font-bold">
+                                            {
+                                              launchKits[index]?.data
+                                                ?.salesScript.callToAction
+                                            }
+                                          </p>
                                         </div>
                                       </div>
                                     </div>
@@ -2684,18 +3079,32 @@ ${kit.marketingAssets.coldEmail.body}</div>
                               )}
                               {!isKitLoaded && (
                                 <div className="text-xs text-ms-text-muted italic text-center py-4 bg-ms-bg rounded border border-ms-border/50">
-                                  Generate a Launch Kit to view Pricing, Validation, Roadmap, Stack, and Scripts.
+                                  Generate a Launch Kit to view Pricing,
+                                  Validation, Roadmap, Stack, and Scripts.
                                 </div>
                               )}
                             </div>
                           )}
 
-                          <button 
-                            onClick={() => setExpandedIdeas(prev => ({ ...prev, [index]: !prev[index] }))}
+                          <button
+                            onClick={() =>
+                              setExpandedIdeas((prev) => ({
+                                ...prev,
+                                [index]: !prev[index],
+                              }))
+                            }
                             className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-ms-card border border-ms-border rounded-full p-1 text-ms-text-muted hover:text-white hover:border-ms-border-active transition-all"
-                            title={expandedIdeas[index] ? "Collapse Details" : "Expand Details"}
+                            title={
+                              expandedIdeas[index]
+                                ? "Collapse Details"
+                                : "Expand Details"
+                            }
                           >
-                            {expandedIdeas[index] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            {expandedIdeas[index] ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
                           </button>
                         </div>
                       );
@@ -2809,7 +3218,9 @@ ${kit.marketingAssets.coldEmail.body}</div>
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="flex-1">{activeSupabaseStatus.message}</span>
+                            <span className="flex-1">
+                              {activeSupabaseStatus.message}
+                            </span>
                             <button
                               onClick={() => setActiveSupabaseStatus(null)}
                               className="font-bold opacity-65 hover:opacity-100 self-start mt-0.5"
@@ -2829,7 +3240,9 @@ ${kit.marketingAssets.coldEmail.body}</div>
                               />
                               <button
                                 onClick={() => {
-                                  navigator.clipboard.writeText(activeSupabaseStatus.sql || "");
+                                  navigator.clipboard.writeText(
+                                    activeSupabaseStatus.sql || "",
+                                  );
                                   alert("SQL schema copied to clipboard!");
                                 }}
                                 className="px-2.5 py-1 bg-ms-border/50 hover:bg-ms-border text-white text-[10px] font-ms font-bold rounded transition-all"
@@ -3156,6 +3569,41 @@ ${kit.marketingAssets.coldEmail.body}</div>
                                 </pre>
                               </div>
                             </div>
+
+                            {launchKits[activeIdeaIndex]?.data
+                              ?.pricingTiers && (
+                              <div className="bg-ms-bg border border-ms-border p-4 rounded-lg space-y-4">
+                                <h5 className="text-xs font-bold text-ms-yellow uppercase font-ms">
+                                  Pricing Strategy
+                                </h5>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  {launchKits[
+                                    activeIdeaIndex
+                                  ]?.data?.pricingTiers.map(
+                                    (tier: any, i: number) => (
+                                      <div
+                                        key={i}
+                                        className="border border-ms-border p-3 rounded bg-ms-card flex flex-col h-full"
+                                      >
+                                        <div className="font-bold text-white text-xs mb-1">
+                                          {tier.name}
+                                        </div>
+                                        <div className="text-ms-green font-ms text-sm font-bold mb-3">
+                                          {tier.price}
+                                        </div>
+                                        <ul className="text-xs text-ms-text-muted space-y-1.5 flex-1 list-disc pl-3">
+                                          {tier.features.map(
+                                            (f: string, j: number) => (
+                                              <li key={j}>{f}</li>
+                                            ),
+                                          )}
+                                        </ul>
+                                      </div>
+                                    ),
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -3454,8 +3902,12 @@ ${kit.marketingAssets.coldEmail.body}</div>
                     className={`bg-ms-card border border-ms-border ${apiSettings.compactMode ? "p-4" : "p-6"} rounded-lg relative flex flex-col justify-between`}
                   >
                     <div>
-                      <div className={`flex justify-between items-start gap-4 ${apiSettings.compactMode ? "mb-2" : "mb-3"}`}>
-                        <span className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/20 px-2 py-0.5 rounded font-ms font-bold uppercase`}>
+                      <div
+                        className={`flex justify-between items-start gap-4 ${apiSettings.compactMode ? "mb-2" : "mb-3"}`}
+                      >
+                        <span
+                          className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/20 px-2 py-0.5 rounded font-ms font-bold uppercase`}
+                        >
                           {saved.idea.buildComplexity} BUILD
                         </span>
                         <span className="text-[10px] text-ms-text-muted font-ms">
@@ -3463,14 +3915,20 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         </span>
                       </div>
 
-                      <h3 className={`${apiSettings.compactMode ? "text-sm" : "text-base"} font-bold text-white mb-1`}>
+                      <h3
+                        className={`${apiSettings.compactMode ? "text-sm" : "text-base"} font-bold text-white mb-1`}
+                      >
                         {saved.idea.name}
                       </h3>
-                      <p className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-yellow italic ${apiSettings.compactMode ? "mb-2" : "mb-3"}`}>
+                      <p
+                        className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-yellow italic ${apiSettings.compactMode ? "mb-2" : "mb-3"}`}
+                      >
                         &ldquo;{saved.idea.tagline}&rdquo;
                       </p>
 
-                      <div className={`space-y-3 ${apiSettings.compactMode ? "text-[10px] p-2" : "text-xs p-3"} text-ms-text-muted leading-relaxed bg-ms-bg rounded border border-ms-border mb-4`}>
+                      <div
+                        className={`space-y-3 ${apiSettings.compactMode ? "text-[10px] p-2" : "text-xs p-3"} text-ms-text-muted leading-relaxed bg-ms-bg rounded border border-ms-border mb-4`}
+                      >
                         <p>
                           <strong>Problem:</strong> {saved.idea.problem}
                         </p>
@@ -3813,7 +4271,8 @@ ${kit.marketingAssets.coldEmail.body}</div>
                           Compact Mode
                         </label>
                         <p className="text-[10px] text-ms-text-muted">
-                          Reduces padding and font sizes of idea cards to view more at once.
+                          Reduces padding and font sizes of idea cards to view
+                          more at once.
                         </p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
@@ -3830,6 +4289,53 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         />
                         <div className="w-9 h-5 bg-ms-card peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-ms-text-muted peer-checked:after:bg-ms-green after:border after:rounded-full after:h-4 after:w-4 after:transition-all border border-ms-border peer-checked:border-ms-green/50"></div>
                       </label>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="block text-[10px] font-ms text-white uppercase">
+                        Font Face
+                      </label>
+                      <select
+                        value={apiSettings.fontFamily}
+                        onChange={(e) =>
+                          setApiSettings({
+                            ...apiSettings,
+                            fontFamily: e.target.value,
+                          })
+                        }
+                        className="w-full bg-ms-card border border-ms-border rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-ms-green transition-colors font-sans"
+                      >
+                        <option value="inter">Inter (Sans Serif)</option>
+                        <option value="roboto">Roboto (Sans Serif)</option>
+                        <option value="opensans">Open Sans (Sans Serif)</option>
+                        <option value="lato">Lato (Sans Serif)</option>
+                        <option value="poppins">Poppins (Sans Serif)</option>
+                        <option value="playfair">
+                          Playfair Display (Serif)
+                        </option>
+                        <option value="mono">JetBrains Mono (Monospace)</option>
+                      </select>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="block text-[10px] font-ms text-white uppercase">
+                        Font Size
+                      </label>
+                      <select
+                        value={apiSettings.fontSize}
+                        onChange={(e) =>
+                          setApiSettings({
+                            ...apiSettings,
+                            fontSize: e.target.value,
+                          })
+                        }
+                        className="w-full bg-ms-card border border-ms-border rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-ms-green transition-colors font-sans"
+                      >
+                        <option value="sm">Small</option>
+                        <option value="base">Default</option>
+                        <option value="lg">Large</option>
+                        <option value="xl">Extra Large</option>
+                      </select>
                     </div>
                   </div>
 
@@ -4030,7 +4536,8 @@ ${kit.marketingAssets.coldEmail.body}</div>
                   CLEAR ALL SAVED KITS?
                 </h3>
                 <p className="text-[10px] text-ms-text-muted mt-1 font-ms">
-                  This action is irreversible. All saved specs and development prompts will be permanently deleted from local storage.
+                  This action is irreversible. All saved specs and development
+                  prompts will be permanently deleted from local storage.
                 </p>
               </div>
 

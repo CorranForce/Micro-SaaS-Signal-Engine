@@ -17,8 +17,9 @@ export function getUsers() {
     const defaultUser = {
       email: "corranforce@gmail.com",
       // sha256 hash of "password123"
-      passwordHash: "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
-      createdAt: new Date().toISOString()
+      passwordHash:
+        "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
+      createdAt: new Date().toISOString(),
     };
     const initialUsers = [defaultUser];
     fs.writeFileSync(filePath, JSON.stringify(initialUsers, null, 2), "utf-8");
@@ -45,13 +46,15 @@ export interface ApiSettings {
   godaddyApiKey: string;
   godaddyApiSecret: string;
   compactMode?: boolean;
+  fontFamily?: string;
+  fontSize?: string;
 }
 
 export function getSettings(): ApiSettings {
   ensureDataDir();
   const filePath = path.join(DATA_DIR, "settings.json");
   let fileSettings: Partial<ApiSettings> = {};
-  
+
   if (fs.existsSync(filePath)) {
     try {
       const data = fs.readFileSync(filePath, "utf-8");
@@ -62,12 +65,24 @@ export function getSettings(): ApiSettings {
   }
 
   return {
-    supabaseUrl: fileSettings.supabaseUrl || process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-    supabaseAnonKey: fileSettings.supabaseAnonKey || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+    supabaseUrl:
+      fileSettings.supabaseUrl ||
+      process.env.SUPABASE_URL ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      "",
+    supabaseAnonKey:
+      fileSettings.supabaseAnonKey ||
+      process.env.SUPABASE_ANON_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      "",
     resendApiKey: fileSettings.resendApiKey || process.env.RESEND_API_KEY || "",
-    godaddyApiKey: fileSettings.godaddyApiKey || process.env.GODADDY_API_KEY || "",
-    godaddyApiSecret: fileSettings.godaddyApiSecret || process.env.GODADDY_API_SECRET || "",
-    compactMode: fileSettings.compactMode || false
+    godaddyApiKey:
+      fileSettings.godaddyApiKey || process.env.GODADDY_API_KEY || "",
+    godaddyApiSecret:
+      fileSettings.godaddyApiSecret || process.env.GODADDY_API_SECRET || "",
+    compactMode: fileSettings.compactMode || false,
+    fontFamily: fileSettings.fontFamily || "inter",
+    fontSize: fileSettings.fontSize || "base",
   };
 }
 

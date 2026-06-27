@@ -333,6 +333,7 @@ Ensure:
             "marketingAssets",
             "salesScript",
             "databaseRequirements",
+            "pricingTiers",
           ],
         },
       },
@@ -421,7 +422,7 @@ export async function loginUser(email: string, password: string) {
     cookieStore.set("session_user", user.email, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7, // 1 week
+      maxAge: 60 * 60 * 24 * 365, // 1 year
       path: "/",
     });
 
@@ -460,7 +461,7 @@ export async function registerUser(email: string, password: string) {
     cookieStore.set("session_user", newUser.email, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 7,
+      maxAge: 60 * 60 * 24 * 365,
       path: "/",
     });
 
@@ -682,6 +683,22 @@ export async function sendLaunchKitEmail(
           <div style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; font-size: 12px; font-style: italic; color: #374151;">
             ${(kit.marketingAssets?.coldEmail?.body || "").replace(/\n/g, "<br />")}
           </div>
+
+          <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">Pricing Tiers</h3>
+          <div style="color: #1f2937;">
+            ${(kit.pricingTiers || [])
+              .map(
+                (tier: any) => `
+              <div style="margin-bottom: 12px;">
+                <strong>${tier.name} - ${tier.price}</strong>
+                <ul style="padding-left: 15px; margin-top: 4px; color: #4b5563;">
+                  ${(tier.features || []).map((f: string) => `<li>${f}</li>`).join("")}
+                </ul>
+              </div>
+            `,
+              )
+              .join("")}
+          </div>
         `
             : `
           <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 16px; border-radius: 6px; margin-top: 24px; color: #1e3a8a;">
@@ -747,6 +764,7 @@ export async function addToSupabaseAction(idea: any, kit: any = null) {
       build_complexity: idea.buildComplexity,
       mrr_target: idea.roi?.realisticMRRMonth1USD || "",
       build_cost: idea.roi?.buildCostUSD || "",
+      user_email: (kit && kit.user_email) || "anonymous", // fallback or we can accept it in params
       created_at: new Date().toISOString(),
       launch_kit: kit ? JSON.stringify(kit) : null,
     };
@@ -794,6 +812,7 @@ CREATE TABLE IF NOT EXISTS saved_ideas (
   mrr_target TEXT,
   build_cost TEXT,
   launch_kit JSONB,
+  user_email TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -806,7 +825,8 @@ CREATE POLICY "Allow anon select" ON saved_ideas FOR SELECT TO anon USING (true)
           success: false,
           reason: "TABLE_NOT_FOUND",
           sql: sqlSchema,
-          error: "Table 'saved_ideas' not found (or Supabase schema cache needs reload).",
+          error:
+            "Table 'saved_ideas' not found (or Supabase schema cache needs reload).",
         };
       }
 
@@ -827,6 +847,78 @@ CREATE POLICY "Allow anon select" ON saved_ideas FOR SELECT TO anon USING (true)
   }
 }
 
+export async function syncToSupabaseAction(userEmail: string, items: any[]) {
+  try {
+    const settings = getSettings();
+    const { supabaseUrl, supabaseAnonKey } = settings;
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return { success: false, reason: "SUPABASE_CONFIG_MISSING" };
+    }
+
+    const payloads = items.map((item) => ({
+      name: item.idea.name,
+      tagline: item.idea.tagline,
+      problem: item.idea.problem,
+      solution: item.idea.solution,
+      target_audience: item.idea.targetAudience,
+      pain_solved: item.idea.painSolved,
+      build_complexity: item.idea.buildComplexity,
+      mrr_target: item.idea.roi?.realisticMRRMonth1USD || "",
+      build_cost: item.idea.roi?.buildCostUSD || "",
+      created_at: item.savedAt
+        ? new Date(item.savedAt).toISOString()
+        : new Date().toISOString(),
+      launch_kit: item.kit ? JSON.stringify(item.kit) : null,
+      user_email: userEmail,
+    }));
+
+    const cleanUrl = supabaseUrl.replace(/\/$/, "");
+    const url = `${cleanUrl}/rest/v1/saved_ideas`;
+
+    // Fetch existing names for this user to avoid duplicates
+    const getUrl = `${url}?user_email=eq.${encodeURIComponent(userEmail)}&select=name`;
+    const getRes = await fetch(getUrl, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+      },
+    });
+
+    let existingNames = new Set();
+    if (getRes.ok) {
+      const existing = await getRes.json();
+      existingNames = new Set(existing.map((e: any) => e.name));
+    }
+
+    const newPayloads = payloads.filter((p) => !existingNames.has(p.name));
+
+    if (newPayloads.length === 0) return { success: true, count: 0 };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify(newPayloads),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("Supabase sync failed:", errText);
+      return { success: false, error: errText };
+    }
+
+    return { success: true, count: newPayloads.length };
+  } catch (err: any) {
+    console.error("Error in syncToSupabaseAction:", err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function checkDomainAvailabilityAction(domain: string) {
   try {
     const settings = getSettings();
@@ -837,16 +929,19 @@ export async function checkDomainAvailabilityAction(domain: string) {
       return {
         success: false,
         reason: "GODADDY_CONFIG_MISSING",
-        error: "GoDaddy API keys are not configured in settings."
+        error: "GoDaddy API keys are not configured in settings.",
       };
     }
 
-    const response = await fetch(`https://api.godaddy.com/v1/domains/available?domain=${encodeURIComponent(domain)}`, {
-      headers: {
-        Authorization: `sso-key ${apiKey}:${apiSecret}`,
-        Accept: 'application/json'
-      }
-    });
+    const response = await fetch(
+      `https://api.godaddy.com/v1/domains/available?domain=${encodeURIComponent(domain)}`,
+      {
+        headers: {
+          Authorization: `sso-key ${apiKey}:${apiSecret}`,
+          Accept: "application/json",
+        },
+      },
+    );
 
     if (!response.ok) {
       const text = await response.text();
@@ -859,11 +954,10 @@ export async function checkDomainAvailabilityAction(domain: string) {
       success: true,
       available: data.available,
       domain: data.domain,
-      price: data.price
+      price: data.price,
     };
   } catch (err: any) {
     console.error("Domain check error:", err);
     return { success: false, error: err.message };
   }
 }
-
