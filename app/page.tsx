@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { LaunchKitTabs } from "./LaunchKitTabs";
 import {
   Search,
   Sparkles,
@@ -150,88 +151,10 @@ interface LaunchKit {
 // Pre-defined Boring B2B Niches
 const LEGACY_NICHES = [
   {
-    id: "hvac",
-    name: "HVAC & Electrical",
-    icon: "🔌",
-    desc: "Scheduling, inventory tracking, and client signatures for contractors.",
-  },
-  {
-    id: "construction",
-    name: "Commercial Roofing/Subcontractors",
-    icon: "🏗️",
-    desc: "Subcontractor dispatching, daily logs, and weather-delay reporting.",
-  },
-  {
-    id: "veterinary",
-    name: "Independent Veterinary Practices",
-    icon: "🐾",
-    desc: "Client reminder automation, inventory waste management, and boarding logs.",
-  },
-  {
-    id: "pest-control",
-    name: "Pest Control & Exterminators",
-    icon: "🐜",
-    desc: "Chemical usage tracking, service area optimization, and recurring billing.",
-  },
-  {
-    id: "dry-cleaning",
-    name: "Dry Cleaning & Laundry",
-    icon: "🧥",
-    desc: "Pick-up route planners, locker integrations, and batch notification emails.",
-  },
-  {
-    id: "waste-management",
-    name: "Waste Management & Scrap Yards",
-    icon: "♻️",
-    desc: "Scale measurement recording, scrap pricing feeds, and roll-off bin tracking.",
-  },
-  {
-    id: "logistics",
-    name: "Local Fleet & Courier Logistics",
-    icon: "🚚",
-    desc: "Driver route handoffs, fuel surcharge calculators, and proof of delivery.",
-  },
-  {
-    id: "landscaping",
-    name: "Commercial Landscaping",
-    icon: "🌿",
-    desc: "Seasonal weather dispatching, crew work-order signoffs, and pesticide logs.",
-  },
-  {
-    id: "plumbing",
-    name: "Commercial Plumbing",
-    icon: "🚰",
-    desc: "Pipeline diagnostic logs, commercial parts inventory, and emergency contractor dispatching.",
-  },
-  {
-    id: "cleaning",
-    name: "Janitorial & Cleaning",
-    icon: "🧹",
-    desc: "Supply inventory tracking, contract shift checklists, and automated client invoicing.",
-  },
-  {
-    id: "dentist",
-    name: "Dental Practice Ops",
-    icon: "🦷",
-    desc: "HIPAA compliance checklists, instrument sterilization tracking, and hygiene chair scheduling.",
-  },
-  {
-    id: "storage",
-    name: "Self Storage Facilities",
+    id: "amazon-fba",
+    name: "Amazon FBA Sellers",
     icon: "📦",
-    desc: "Locker rental automation, gate integrations, and automated delinquent tenant notifications.",
-  },
-  {
-    id: "property-management",
-    name: "Property Management & HOAs",
-    icon: "🏘️",
-    desc: "Maintenance request ticketing, violation tracking, and community amenity booking.",
-  },
-  {
-    id: "cnc-manufacturing",
-    name: "CNC & Custom Manufacturing",
-    icon: "⚙️",
-    desc: "Machine uptime monitoring, raw material inventory tracking, and custom quoting.",
+    desc: "Re-stock limits forecasting, PPC bid automation, and hijacker alerts.",
   },
   {
     id: "auto-repair",
@@ -246,40 +169,34 @@ const LEGACY_NICHES = [
     desc: "Class capacity management, instructor substitutions, and recurring membership billing.",
   },
   {
-    id: "food-distributors",
-    name: "Specialty Food Distributors",
-    icon: "🥖",
-    desc: "Perishable inventory tracking, delivery route optimization, and wholesale ordering.",
-  },
-  {
     id: "childcare",
     name: "Childcare & Daycares",
     icon: "🧸",
     desc: "Daily activity reporting, meal tracking, and secure parent check-in/out.",
   },
   {
-    id: "physical-therapy",
-    name: "Physical Therapy Clinics",
-    icon: "🏃‍♂️",
-    desc: "Home exercise program generation, progress notes, and insurance pre-authorization.",
+    id: "cnc-manufacturing",
+    name: "CNC & Custom Manufacturing",
+    icon: "⚙️",
+    desc: "Machine uptime monitoring, raw material inventory tracking, and custom quoting.",
   },
   {
-    id: "niche-agriculture",
-    name: "Niche Agriculture (Orchards/Greenhouses)",
-    icon: "🌱",
-    desc: "Harvest yield tracking, micro-climate monitoring logs, and seasonal labor scheduling.",
+    id: "landscaping",
+    name: "Commercial Landscaping",
+    icon: "🌿",
+    desc: "Seasonal weather dispatching, crew work-order signoffs, and pesticide logs.",
   },
   {
-    id: "ecommerce-ops",
-    name: "E-Commerce & D2C Brands",
-    icon: "🛒",
-    desc: "Multi-channel inventory sync, reverse logistics/returns, and supplier communication.",
+    id: "plumbing",
+    name: "Commercial Plumbing",
+    icon: "🚰",
+    desc: "Pipeline diagnostic logs, commercial parts inventory, and emergency contractor dispatching.",
   },
   {
-    id: "digital-marketing",
-    name: "Digital Marketing Agencies",
-    icon: "📈",
-    desc: "Client portal reporting, ad spend monitoring, and cross-platform campaign approvals.",
+    id: "construction",
+    name: "Commercial Roofing/Subcontractors",
+    icon: "🏗️",
+    desc: "Subcontractor dispatching, daily logs, and weather-delay reporting.",
   },
   {
     id: "content-creators",
@@ -288,10 +205,64 @@ const LEGACY_NICHES = [
     desc: "Sponsorship contract tracking, cross-platform scheduling, and asset storage.",
   },
   {
-    id: "amazon-fba",
-    name: "Amazon FBA Sellers",
-    icon: "📦",
-    desc: "Re-stock limits forecasting, PPC bid automation, and hijacker alerts.",
+    id: "dentist",
+    name: "Dental Practice Ops",
+    icon: "🦷",
+    desc: "HIPAA compliance checklists, instrument sterilization tracking, and hygiene chair scheduling.",
+  },
+  {
+    id: "digital-marketing",
+    name: "Digital Marketing Agencies",
+    icon: "📈",
+    desc: "Client portal reporting, ad spend monitoring, and cross-platform campaign approvals.",
+  },
+  {
+    id: "dry-cleaning",
+    name: "Dry Cleaning & Laundry",
+    icon: "🧥",
+    desc: "Pick-up route planners, locker integrations, and batch notification emails.",
+  },
+  {
+    id: "ecommerce-ops",
+    name: "E-Commerce & D2C Brands",
+    icon: "🛒",
+    desc: "Multi-channel inventory sync, reverse logistics/returns, and supplier communication.",
+  },
+  {
+    id: "freelance-designers",
+    name: "Freelance Design & Dev",
+    icon: "🎨",
+    desc: "Client feedback loop, milestone invoicing, and retainer hours tracking.",
+  },
+  {
+    id: "hvac",
+    name: "HVAC & Electrical",
+    icon: "🔌",
+    desc: "Scheduling, inventory tracking, and client signatures for contractors.",
+  },
+  {
+    id: "veterinary",
+    name: "Independent Veterinary Practices",
+    icon: "🐾",
+    desc: "Client reminder automation, inventory waste management, and boarding logs.",
+  },
+  {
+    id: "cleaning",
+    name: "Janitorial & Cleaning",
+    icon: "🧹",
+    desc: "Supply inventory tracking, contract shift checklists, and automated client invoicing.",
+  },
+  {
+    id: "logistics",
+    name: "Local Fleet & Courier Logistics",
+    icon: "🚚",
+    desc: "Driver route handoffs, fuel surcharge calculators, and proof of delivery.",
+  },
+  {
+    id: "niche-agriculture",
+    name: "Niche Agriculture (Orchards/Greenhouses)",
+    icon: "🌱",
+    desc: "Harvest yield tracking, micro-climate monitoring logs, and seasonal labor scheduling.",
   },
   {
     id: "online-course",
@@ -300,16 +271,46 @@ const LEGACY_NICHES = [
     desc: "Student engagement analytics, drip sequence automation, and community moderation.",
   },
   {
+    id: "pest-control",
+    name: "Pest Control & Exterminators",
+    icon: "🐜",
+    desc: "Chemical usage tracking, service area optimization, and recurring billing.",
+  },
+  {
+    id: "physical-therapy",
+    name: "Physical Therapy Clinics",
+    icon: "🏃‍♂️",
+    desc: "Home exercise program generation, progress notes, and insurance pre-authorization.",
+  },
+  {
+    id: "property-management",
+    name: "Property Management & HOAs",
+    icon: "🏘️",
+    desc: "Maintenance request ticketing, violation tracking, and community amenity booking.",
+  },
+  {
     id: "remote-recruitment",
     name: "Remote HR & Recruitment",
     icon: "🤝",
     desc: "Asynchronous video interviews, onboarding checklists, and payroll compliance.",
   },
   {
-    id: "freelance-designers",
-    name: "Freelance Design & Dev",
-    icon: "🎨",
-    desc: "Client feedback loop, milestone invoicing, and retainer hours tracking.",
+    id: "storage",
+    name: "Self Storage Facilities",
+    icon: "📦",
+    desc: "Locker rental automation, gate integrations, and automated delinquent tenant notifications.",
+  },
+  {
+    id: "food-distributors",
+    name: "Specialty Food Distributors",
+    icon: "🥖",
+    desc: "Perishable inventory tracking, delivery route optimization, and wholesale ordering.",
+  },
+  {
+    id: "waste-management",
+    name: "Waste Management & Scrap Yards",
+    icon: "♻️",
+    desc: "Scale measurement recording, scrap pricing feeds, and roll-off bin tracking.",
   },
 ];
 
@@ -931,6 +932,8 @@ export default function MicroSaaSSignalEngine() {
     { idea: SaasIdea; kit: LaunchKit | null; savedAt: string }[]
   >([]);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [expandedSavedIdeas, setExpandedSavedIdeas] = useState<Record<number, boolean>>({});
+  const [savedKitsSearchQuery, setSavedKitsSearchQuery] = useState("");
 
   // Track email dispatch status for launch kits
   const [emailStatus, setEmailStatus] = useState<
@@ -1276,9 +1279,13 @@ export default function MicroSaaSSignalEngine() {
   // Handle PDF Export
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
-  const handleExportPdf = async (index: number) => {
-    const idea = generatedIdeas[index];
-    const kit = launchKits[index]?.data;
+  const handleExportPdf = async (
+    index: number,
+    providedIdea?: SaasIdea,
+    providedKit?: LaunchKit
+  ) => {
+    const idea = providedIdea || generatedIdeas[index];
+    const kit = providedKit || launchKits[index]?.data;
     if (!idea || !kit) return;
 
     try {
@@ -1321,13 +1328,13 @@ export default function MicroSaaSSignalEngine() {
         <h2 style="font-size: 20px; color: #222; margin-bottom: 10px;">2. Build Roadmap</h2>
       `;
 
-      kit.buildRoadmap.phases.forEach((phase) => {
+      kit.buildRoadmap.forEach((week: any) => {
         html += `
           <div style="margin-bottom: 15px;">
-            <h3 style="font-size: 16px; margin: 0 0 5px 0;">${phase.name} (Day ${phase.timeframeDays})</h3>
-            <p style="margin: 0; font-size: 14px;">${phase.focus}</p>
+            <h3 style="font-size: 16px; margin: 0 0 5px 0;">${week.week}</h3>
+            <p style="margin: 0; font-size: 14px; font-weight: bold;">${week.title}</p>
             <ul style="margin: 5px 0 0 20px; font-size: 13px;">
-              ${phase.keyFeatures.map((f) => `<li>${f}</li>`).join("")}
+              ${week.tasks.map((f: string) => `<li>${f}</li>`).join("")}
             </ul>
           </div>
         `;
@@ -1340,7 +1347,7 @@ export default function MicroSaaSSignalEngine() {
         <table style="width: 100%; border-collapse: collapse; font-size: 14px; text-align: left;">
           <thead>
             <tr style="border-bottom: 2px solid #ddd;">
-              <th style="padding: 8px;">Layer</th>
+              <th style="padding: 8px;">Role</th>
               <th style="padding: 8px;">Tool</th>
               <th style="padding: 8px;">Cost</th>
             </tr>
@@ -1348,11 +1355,11 @@ export default function MicroSaaSSignalEngine() {
           <tbody>
             ${kit.noCodeStack
               .map(
-                (stack) => `
+                (stack: any) => `
               <tr style="border-bottom: 1px solid #eee;">
-                <td style="padding: 8px; font-weight: bold;">${stack.layer}</td>
+                <td style="padding: 8px; font-weight: bold;">${stack.role}</td>
                 <td style="padding: 8px;">${stack.tool}</td>
-                <td style="padding: 8px; color: #555;">${stack.monthlyCost}</td>
+                <td style="padding: 8px; color: #555;">${stack.cost}</td>
               </tr>
             `,
               )
@@ -1880,6 +1887,18 @@ ${kit.marketingAssets.coldEmail.body}</div>
     );
   }
 
+  const filteredSavedIdeas = savedIdeas.filter(saved => {
+    if (!savedKitsSearchQuery.trim()) return true;
+    const query = savedKitsSearchQuery.toLowerCase();
+    const idea = saved.idea;
+    return (
+      idea.name.toLowerCase().includes(query) ||
+      idea.niche.toLowerCase().includes(query) ||
+      idea.problem.toLowerCase().includes(query) ||
+      idea.solution.toLowerCase().includes(query)
+    );
+  });
+
   return (
     <div
       ref={pageTopRef}
@@ -2368,13 +2387,14 @@ ${kit.marketingAssets.coldEmail.body}</div>
                       return (
                         <div
                           key={index}
-                          className={`bg-ms-card border rounded-lg flex flex-col transition-all relative ${
+                          className={`bg-ms-card border rounded-lg flex flex-col transition-all relative animate-fade-in ${
                             apiSettings.compactMode ? "p-3 pb-6" : "p-5 pb-8"
                           } ${
-                            activeIdeaIndex === index
+                            expandedIdeas[index]
                               ? "border-ms-green green-glow"
                               : "border-ms-border hover:border-ms-border-active"
                           }`}
+                          style={{ animationFillMode: "both", animationDelay: `${index * 150}ms` }}
                         >
                           <div
                             className={`flex flex-col md:flex-row justify-between ${apiSettings.compactMode ? "gap-4" : "gap-6"}`}
@@ -2746,336 +2766,54 @@ ${kit.marketingAssets.coldEmail.body}</div>
                               </div>
 
                               {isKitLoaded && (
-                                <>
-                                  {launchKits[index]?.data?.pricingTiers && (
-                                    <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
-                                        PRICING TIERS
-                                      </h4>
-                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                        {launchKits[
-                                          index
-                                        ]?.data?.pricingTiers?.map(
-                                          (tier, tIdx) => (
-                                            <div
-                                              key={tIdx}
-                                              className="bg-ms-bg p-3 rounded border border-ms-border"
-                                            >
-                                              <div className="font-bold text-white text-sm">
-                                                {tier.name}
-                                              </div>
-                                              <div className="text-ms-green font-mono text-xs my-1">
-                                                {tier.price}
-                                              </div>
-                                              <ul className="text-xs text-ms-text-muted space-y-1 mt-2 list-disc list-inside">
-                                                {tier.features.map(
-                                                  (f, fIdx) => (
-                                                    <li key={fIdx}>{f}</li>
-                                                  ),
-                                                )}
-                                              </ul>
-                                            </div>
-                                          ),
+                                <div className="mt-6 border-t border-ms-border pt-6">
+                                  <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                                      Generated Launch Kit
+                                    </h3>
+                                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                                      <button
+                                        onClick={() => handleExportPdf(index)}
+                                        disabled={isExporting}
+                                        className="flex-1 sm:flex-none px-4 py-2 border border-ms-text-muted text-ms-text-muted hover:text-white hover:border-ms-border-active rounded text-xs font-ms font-bold flex justify-center items-center gap-2 transition-colors disabled:opacity-50"
+                                      >
+                                        {isExporting ? (
+                                          <div className="w-3.5 h-3.5 rounded-full border-2 border-ms-text-muted border-t-transparent animate-spin" />
+                                        ) : (
+                                          <Download className="w-3.5 h-3.5" />
                                         )}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {launchKits[index]?.data?.noCodeStack && (
-                                    <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
-                                        NO-CODE STACK
-                                      </h4>
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                                        {launchKits[
-                                          index
-                                        ]?.data?.noCodeStack.map(
-                                          (stack, sIdx) => (
-                                            <div
-                                              key={sIdx}
-                                              className="bg-ms-bg p-3 rounded border border-ms-border"
-                                            >
-                                              <div className="font-bold text-white text-xs">
-                                                {stack.tool}
-                                              </div>
-                                              <div className="text-ms-text-muted text-[10px] uppercase mb-1">
-                                                {stack.role}
-                                              </div>
-                                              <div className="text-ms-text-muted text-xs leading-relaxed">
-                                                {stack.why}
-                                              </div>
-                                              <div className="text-ms-yellow font-mono text-[10px] mt-2 border-t border-ms-border pt-1">
-                                                Est. {stack.cost}
-                                              </div>
-                                            </div>
-                                          ),
+                                        {isExporting ? "EXPORTING..." : "EXPORT PDF"}
+                                      </button>
+                                      <button
+                                        onClick={() => handleEmailCard(idea, index)}
+                                        disabled={isEmailingCard[index]}
+                                        className="flex-1 sm:flex-none px-4 py-2 bg-ms-green text-ms-bg font-ms font-bold text-xs rounded hover:bg-[#00d066] transition-all flex justify-center items-center gap-2 disabled:opacity-70"
+                                      >
+                                        {isEmailingCard[index] ? (
+                                          <div className="w-3.5 h-3.5 rounded-full border-2 border-ms-bg/50 border-t-transparent animate-spin" />
+                                        ) : (
+                                          <Mail className="w-3.5 h-3.5" />
                                         )}
-                                      </div>
+                                        {isEmailingCard[index] ? "EMAILING..." : "EMAIL PDF"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                  
+                                  {emailCardStatus[index] && (
+                                    <div
+                                      className={`mb-4 px-4 py-3 rounded text-xs font-ms flex items-center gap-2 ${
+                                        emailCardStatus[index]?.success
+                                          ? "bg-ms-green-dark border border-ms-green text-ms-green"
+                                          : "bg-red-950 border border-red-500 text-red-400"
+                                      }`}
+                                    >
+                                      <Info className="w-4 h-4 shrink-0" />
+                                      {emailCardStatus[index]?.message}
                                     </div>
                                   )}
 
-                                  {launchKits[index]?.data?.buildRoadmap && (
-                                    <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
-                                        4-WEEK BUILD ROADMAP
-                                      </h4>
-                                      <div className="space-y-2">
-                                        {launchKits[
-                                          index
-                                        ]?.data?.buildRoadmap.map(
-                                          (wk, wIdx) => (
-                                            <div
-                                              key={wIdx}
-                                              className="bg-ms-bg p-3 rounded border border-ms-border flex flex-col md:flex-row gap-4"
-                                            >
-                                              <div className="w-24 shrink-0">
-                                                <span className="text-xs font-bold text-ms-yellow uppercase">
-                                                  {wk.week}
-                                                </span>
-                                              </div>
-                                              <div>
-                                                <div className="text-xs font-bold text-white mb-1">
-                                                  {wk.title}
-                                                </div>
-                                                <ul className="text-[10px] text-ms-text-muted space-y-0.5 list-disc list-inside">
-                                                  {wk.tasks.map(
-                                                    (task, tIdx) => (
-                                                      <li key={tIdx}>{task}</li>
-                                                    ),
-                                                  )}
-                                                </ul>
-                                              </div>
-                                            </div>
-                                          ),
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {launchKits[index]?.data
-                                    ?.marketValidation && (
-                                    <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
-                                        MARKET VALIDATION
-                                      </h4>
-                                      <div className="bg-ms-bg p-3 rounded border border-ms-border space-y-3">
-                                        <div className="flex items-center gap-3">
-                                          <span className="text-xs font-bold text-ms-text-muted uppercase">
-                                            GO/NO-GO SCORE:
-                                          </span>
-                                          <span className="text-sm font-bold text-ms-green bg-ms-green-dark/30 border border-ms-green/40 px-2 rounded">
-                                            {
-                                              launchKits[index]?.data
-                                                ?.marketValidation?.goNoGoScore
-                                            }
-                                          </span>
-                                        </div>
-                                        <div>
-                                          <span className="text-xs font-bold text-ms-text-muted uppercase block mb-1">
-                                            PROOF OF DEMAND:
-                                          </span>
-                                          <span className="text-xs text-white leading-relaxed">
-                                            {
-                                              launchKits[index]?.data
-                                                ?.marketValidation
-                                                ?.proofOfDemand
-                                            }
-                                          </span>
-                                        </div>
-                                        <div>
-                                          <span className="text-xs font-bold text-ms-text-muted uppercase block mb-1">
-                                            RED FLAGS:
-                                          </span>
-                                          <ul className="text-xs text-ms-yellow list-disc list-inside">
-                                            {launchKits[
-                                              index
-                                            ]?.data?.marketValidation?.redFlags.map(
-                                              (flag, fIdx) => (
-                                                <li key={fIdx}>{flag}</li>
-                                              ),
-                                            )}
-                                          </ul>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {launchKits[index]?.data
-                                    ?.preSellChecklist && (
-                                    <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
-                                        PRE-SELL VALIDATION CHECKLIST
-                                      </h4>
-                                      <div className="bg-ms-bg p-3 rounded border border-ms-border">
-                                        <ul className="text-xs text-white space-y-2">
-                                          {launchKits[
-                                            index
-                                          ]?.data?.preSellChecklist?.map(
-                                            (chk, cIdx) => (
-                                              <li
-                                                key={cIdx}
-                                                className="flex gap-2"
-                                              >
-                                                <span className="text-ms-green mt-0.5">
-                                                  ☐
-                                                </span>
-                                                <span>{chk}</span>
-                                              </li>
-                                            ),
-                                          )}
-                                        </ul>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {launchKits[index]?.data?.marketingAssets && (
-                                    <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
-                                        MARKETING ASSETS
-                                      </h4>
-                                      <div className="bg-ms-bg p-4 rounded border border-ms-border space-y-4">
-                                        <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
-                                            Landing Page Copy
-                                          </h5>
-                                          <p className="text-xs font-bold text-white mb-0.5">
-                                            {
-                                              launchKits[index]?.data
-                                                ?.marketingAssets
-                                                .landingHeadline
-                                            }
-                                          </p>
-                                          <p className="text-xs text-ms-text-muted mb-1">
-                                            {
-                                              launchKits[index]?.data
-                                                ?.marketingAssets
-                                                .landingSubheadline
-                                            }
-                                          </p>
-                                          <span className="text-[10px] bg-ms-green-dark border border-ms-green/30 text-ms-green px-2 py-0.5 rounded uppercase font-bold">
-                                            {
-                                              launchKits[index]?.data
-                                                ?.marketingAssets.ctaButton
-                                            }
-                                          </span>
-                                        </div>
-                                        <div className="border-t border-ms-border pt-3">
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
-                                            Cold Email
-                                          </h5>
-                                          <p className="text-xs font-bold text-white mb-0.5">
-                                            Subject:{" "}
-                                            {
-                                              launchKits[index]?.data
-                                                ?.marketingAssets.coldEmail
-                                                .subject
-                                            }
-                                          </p>
-                                          <p className="text-[10px] text-ms-text-muted leading-relaxed font-mono whitespace-pre-wrap">
-                                            {
-                                              launchKits[index]?.data
-                                                ?.marketingAssets.coldEmail.body
-                                            }
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {launchKits[index]?.data?.pricingTiers && (
-                                    <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
-                                        PRICING STRATEGY
-                                      </h4>
-                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                        {launchKits[
-                                          index
-                                        ]?.data?.pricingTiers.map(
-                                          (tier: any, i: number) => (
-                                            <div
-                                              key={i}
-                                              className="border border-ms-border p-3 rounded bg-ms-bg flex flex-col h-full"
-                                            >
-                                              <div className="font-bold text-white text-[10px] mb-1">
-                                                {tier.name}
-                                              </div>
-                                              <div className="text-ms-green font-ms text-xs font-bold mb-2">
-                                                {tier.price}
-                                              </div>
-                                              <ul className="text-[10px] text-ms-text-muted space-y-1 flex-1 list-disc pl-3">
-                                                {tier.features.map(
-                                                  (f: string, j: number) => (
-                                                    <li key={j}>{f}</li>
-                                                  ),
-                                                )}
-                                              </ul>
-                                            </div>
-                                          ),
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {launchKits[index]?.data?.salesScript && (
-                                    <div>
-                                      <h4 className="text-[10px] font-bold text-ms-text-muted uppercase mb-2">
-                                        SALES SCRIPT
-                                      </h4>
-                                      <div className="bg-ms-bg p-4 rounded border border-ms-border space-y-4">
-                                        <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
-                                            Introduction
-                                          </h5>
-                                          <p className="text-xs text-white leading-relaxed">
-                                            {
-                                              launchKits[index]?.data
-                                                ?.salesScript.introduction
-                                            }
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
-                                            Discovery Questions
-                                          </h5>
-                                          <ul className="text-xs text-ms-text-muted list-disc list-inside space-y-0.5">
-                                            {launchKits[
-                                              index
-                                            ]?.data?.salesScript.discoveryQuestions.map(
-                                              (q, qIdx) => (
-                                                <li key={qIdx}>{q}</li>
-                                              ),
-                                            )}
-                                          </ul>
-                                        </div>
-                                        <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
-                                            Objection Handling
-                                          </h5>
-                                          <ul className="text-xs text-ms-text-muted list-disc list-inside space-y-0.5">
-                                            {launchKits[
-                                              index
-                                            ]?.data?.salesScript.objectionHandling.map(
-                                              (o, oIdx) => (
-                                                <li key={oIdx}>{o}</li>
-                                              ),
-                                            )}
-                                          </ul>
-                                        </div>
-                                        <div>
-                                          <h5 className="text-[10px] font-bold text-ms-yellow uppercase mb-1">
-                                            Call to Action
-                                          </h5>
-                                          <p className="text-xs text-white font-bold">
-                                            {
-                                              launchKits[index]?.data
-                                                ?.salesScript.callToAction
-                                            }
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
+                                  <LaunchKitTabs kit={launchKits[index]?.data} onCopy={handleCopy} copiedText={copiedText} generateSqlFallback={generateSqlFallback} VisualSchemaDiagram={VisualSchemaDiagram} />
+                                </div>
                               )}
                               {!isKitLoaded && (
                                 <div className="text-xs text-ms-text-muted italic text-center py-4 bg-ms-bg rounded border border-ms-border/50">
@@ -3113,735 +2851,8 @@ ${kit.marketingAssets.coldEmail.body}</div>
                 </div>
               )}
 
-              {/* Selected Idea Details & Launch Kit Workspace */}
-              {activeIdeaIndex !== null && (
-                <div className="bg-ms-card border border-ms-green/40 rounded-lg p-6 relative">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-ms-border pb-4 mb-6">
-                    <div>
-                      <span className="text-[10px] text-ms-green font-ms font-bold uppercase tracking-wider block">
-                        03. active workspace
-                      </span>
-                      <h2 className="text-lg font-bold text-white mt-1">
-                        {generatedIdeas[activeIdeaIndex].name} — Launch Kit
-                      </h2>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => handleExportPdf(activeIdeaIndex)}
-                        disabled={isExporting}
-                        className={`px-4 py-2 bg-ms-bg border border-ms-border text-xs font-ms font-bold rounded flex items-center gap-1.5 transition-colors ${
-                          isExporting
-                            ? "text-ms-text-muted opacity-50 cursor-not-allowed"
-                            : "hover:border-ms-green text-ms-green"
-                        }`}
-                      >
-                        {isExporting ? (
-                          <div className="w-3.5 h-3.5 rounded-full border-2 border-ms-text-muted border-t-transparent animate-spin" />
-                        ) : (
-                          <Download className="w-3.5 h-3.5" />
-                        )}
-                        {isExporting ? "EXPORTING..." : "EXPORT PDF"}
-                      </button>
-
-                      <button
-                        onClick={handleEmailActive}
-                        disabled={isEmailingActive}
-                        className="px-4 py-2 bg-ms-bg border border-ms-border hover:border-ms-green hover:text-ms-green text-xs font-ms font-bold rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                      >
-                        {isEmailingActive ? (
-                          <div className="w-3.5 h-3.5 rounded-full border-2 border-ms-text-muted border-t-transparent animate-spin" />
-                        ) : (
-                          <Mail className="w-3.5 h-3.5" />
-                        )}
-                        EMAIL KIT
-                      </button>
-
-                      <button
-                        onClick={handleSupabaseActive}
-                        disabled={isSavingActiveToSupabase}
-                        className="px-4 py-2 bg-ms-bg border border-ms-border hover:border-cyan-400 hover:text-cyan-400 text-xs font-ms font-bold rounded flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                      >
-                        {isSavingActiveToSupabase ? (
-                          <div className="w-3.5 h-3.5 rounded-full border border-2 border-ms-text-muted border-t-transparent animate-spin" />
-                        ) : (
-                          <Database className="w-3.5 h-3.5" />
-                        )}
-                        ADD TO SUPABASE
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          toggleSaveIdea(
-                            generatedIdeas[activeIdeaIndex],
-                            launchKits[activeIdeaIndex]?.data || null,
-                          )
-                        }
-                        className="px-4 py-2 bg-ms-bg border border-ms-border hover:border-ms-yellow text-xs font-ms font-bold rounded flex items-center gap-1.5 transition-colors"
-                      >
-                        <Bookmark
-                          className={`w-3.5 h-3.5 ${isSaved(generatedIdeas[activeIdeaIndex].name) ? "fill-ms-yellow text-ms-yellow" : ""}`}
-                        />
-                        {isSaved(generatedIdeas[activeIdeaIndex].name)
-                          ? "SAVED"
-                          : "SAVE FOR LATER"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Active Workspace level Feedback Area */}
-                  {(activeEmailStatus || activeSupabaseStatus) && (
-                    <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-3.5 border-b border-ms-border/40 pb-5">
-                      {activeEmailStatus && (
-                        <div
-                          className={`p-3 rounded border text-xs font-ms flex items-center justify-between gap-2 ${
-                            activeEmailStatus.success
-                              ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
-                              : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
-                          }`}
-                        >
-                          <span>{activeEmailStatus.message}</span>
-                          <button
-                            onClick={() => setActiveEmailStatus(null)}
-                            className="font-bold opacity-65 hover:opacity-100"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      )}
-                      {activeSupabaseStatus && (
-                        <div
-                          className={`p-3 rounded border text-xs font-ms space-y-2 ${
-                            activeSupabaseStatus.success
-                              ? "bg-ms-green-dark/15 border-ms-green/30 text-ms-green"
-                              : "bg-ms-yellow/15 border-ms-yellow/30 text-ms-yellow"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="flex-1">
-                              {activeSupabaseStatus.message}
-                            </span>
-                            <button
-                              onClick={() => setActiveSupabaseStatus(null)}
-                              className="font-bold opacity-65 hover:opacity-100 self-start mt-0.5"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                          {activeSupabaseStatus.sql && (
-                            <div className="space-y-1.5 pt-1.5 border-t border-ms-border/30">
-                              <p className="text-[10px] text-ms-text-muted uppercase tracking-wider font-bold">
-                                Required Table SQL Schema:
-                              </p>
-                              <textarea
-                                readOnly
-                                value={activeSupabaseStatus.sql}
-                                className="w-full h-24 font-mono text-[10px] bg-black/65 text-ms-green border border-ms-border/40 rounded p-2 focus:outline-none select-all"
-                              />
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(
-                                    activeSupabaseStatus.sql || "",
-                                  );
-                                  alert("SQL schema copied to clipboard!");
-                                }}
-                                className="px-2.5 py-1 bg-ms-border/50 hover:bg-ms-border text-white text-[10px] font-ms font-bold rounded transition-all"
-                              >
-                                Copy SQL Schema
-                              </button>
                             </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {launchKits[activeIdeaIndex]?.loading && (
-                    <div className="py-12 flex flex-col items-center justify-center">
-                      <div className="w-12 h-12 rounded border-4 border-ms-green border-t-transparent animate-spin mb-4"></div>
-                      <p className="font-ms text-xs text-ms-green animate-pulse">
-                        GENERATING STARTER PROMPT & SALES ASSETS...
-                      </p>
-                      <p className="text-[10px] text-ms-text-muted mt-2">
-                        Writing high-fidelity specs & technical blueprints via
-                        Gemini.
-                      </p>
-                    </div>
-                  )}
-
-                  {launchKits[activeIdeaIndex]?.error && (
-                    <div className="py-8 text-center text-red-400 font-ms text-xs">
-                      Error: {launchKits[activeIdeaIndex].error}
-                    </div>
-                  )}
-
-                  {launchKits[activeIdeaIndex]?.data &&
-                    emailStatus[activeIdeaIndex] && (
-                      <div
-                        className={`mb-5 p-3.5 rounded border text-xs font-ms flex items-center justify-between gap-3 transition-all duration-300 ${
-                          emailStatus[activeIdeaIndex]?.success
-                            ? "bg-ms-green-dark/20 border-ms-green/30 text-ms-green shadow-[0_0_15px_rgba(0,240,118,0.05)]"
-                            : "bg-ms-yellow/10 border-ms-yellow/30 text-ms-yellow"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">
-                            {emailStatus[activeIdeaIndex]?.success
-                              ? "📬"
-                              : "⚙️"}
-                          </span>
-                          <span className="font-semibold">
-                            {emailStatus[activeIdeaIndex]?.message}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                  {launchKits[activeIdeaIndex]?.data && (
-                    <div>
-                      {/* Tabs Bar */}
-                      <div className="flex overflow-x-auto pb-2 border-b border-ms-border mb-6 gap-1 scrollbar-none">
-                        {[
-                          {
-                            id: "prompt",
-                            label: "⚡ VIBE PROMPT",
-                            icon: <Code className="w-3.5 h-3.5" />,
-                          },
-                          {
-                            id: "stack",
-                            label: "🛠️ TECH STACK",
-                            icon: <Wrench className="w-3.5 h-3.5" />,
-                          },
-                          {
-                            id: "roadmap",
-                            label: "📅 ROADMAP",
-                            icon: <Calendar className="w-3.5 h-3.5" />,
-                          },
-                          {
-                            id: "marketing",
-                            label: "📢 MARKETING",
-                            icon: <Mail className="w-3.5 h-3.5" />,
-                          },
-                          {
-                            id: "sales",
-                            label: "💼 OUTREACH",
-                            icon: <Users className="w-3.5 h-3.5" />,
-                          },
-                          {
-                            id: "database",
-                            label: "🗄️ DATABASE",
-                            icon: <Database className="w-3.5 h-3.5" />,
-                          },
-                        ].map((t) => (
-                          <button
-                            key={t.id}
-                            onClick={() => setKitTab(t.id as any)}
-                            className={`px-4 py-2.5 rounded text-xs font-ms flex items-center gap-1.5 whitespace-nowrap transition-all border ${
-                              kitTab === t.id
-                                ? "bg-ms-green-dark border-ms-green text-ms-green font-bold"
-                                : "bg-ms-bg border-transparent text-ms-text-muted hover:text-white hover:border-ms-border"
-                            }`}
-                          >
-                            {t.icon}
-                            {t.label}
-                          </button>
-                        ))}
-                      </div>
-
-                      {/* Tab Content Rendering */}
-                      <div className="space-y-6">
-                        {/* Tab: Vibe-Coding Prompt */}
-                        {kitTab === "prompt" && (
-                          <div className="space-y-4">
-                            <div className="flex justify-between items-center bg-ms-bg/50 border border-ms-border px-4 py-3 rounded">
-                              <div>
-                                <h4 className="text-xs font-bold text-white uppercase font-ms">
-                                  AI App Builder Starter Prompt
-                                </h4>
-                                <p className="text-[10px] text-ms-text-muted mt-0.5">
-                                  Copy and paste this directly into your
-                                  favorite AI tool to build the entire app
-                                  shell.
-                                </p>
-                              </div>
-                              <button
-                                onClick={() =>
-                                  handleCopy(
-                                    launchKits[activeIdeaIndex]?.data
-                                      ?.lovablePrompt || "",
-                                    "vibe-prompt",
-                                  )
-                                }
-                                className="px-3 py-1.5 bg-ms-green text-ms-bg font-ms font-bold text-xs rounded hover:bg-[#00d066] transition-all flex items-center gap-1"
-                              >
-                                {copiedText === "vibe-prompt" ? (
-                                  <>
-                                    <Check className="w-3 h-3" /> COPIED
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="w-3 h-3" /> COPY
-                                  </>
-                                )}
-                              </button>
-                            </div>
-
-                            <div className="bg-ms-bg border border-ms-border p-4 rounded text-xs font-ms text-ms-text-muted leading-relaxed max-h-96 overflow-y-auto whitespace-pre-wrap select-all scrollbar-thin">
-                              {launchKits[activeIdeaIndex]?.data?.lovablePrompt}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Tab: Tech Stack */}
-                        {kitTab === "stack" && (
-                          <div className="space-y-4">
-                            <h4 className="text-xs font-bold font-ms text-ms-yellow tracking-wider uppercase mb-2">
-                              Core Tech Stack Integrations
-                            </h4>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {launchKits[
-                                activeIdeaIndex
-                              ]?.data?.noCodeStack.map((tool, idx) => (
-                                <div
-                                  key={idx}
-                                  className="bg-ms-bg border border-ms-border p-4 rounded-lg flex flex-col justify-between"
-                                >
-                                  <div>
-                                    <div className="flex justify-between items-start gap-2 mb-1.5">
-                                      <span className="text-xs font-bold text-white font-ms">
-                                        {tool.tool}
-                                      </span>
-                                      <span className="text-[10px] bg-ms-border text-ms-text-muted px-1.5 py-0.5 rounded font-ms">
-                                        {tool.cost}
-                                      </span>
-                                    </div>
-                                    <span className="text-[10px] text-ms-green bg-ms-green-dark border border-ms-green/20 px-1.5 py-0.5 rounded font-ms uppercase block w-fit mb-2">
-                                      {tool.role}
-                                    </span>
-                                    <p className="text-xs text-ms-text-muted leading-relaxed">
-                                      {tool.why}
-                                    </p>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Tab: 4-Week Roadmap */}
-                        {kitTab === "roadmap" && (
-                          <div className="space-y-4">
-                            <h4 className="text-xs font-bold font-ms text-ms-yellow tracking-wider uppercase mb-2">
-                              Step-by-Step Go-to-Market Builder
-                            </h4>
-                            <div className="space-y-4">
-                              {launchKits[
-                                activeIdeaIndex
-                              ]?.data?.buildRoadmap.map((week, idx) => (
-                                <div
-                                  key={idx}
-                                  className="bg-ms-bg border border-ms-border p-4 rounded-lg"
-                                >
-                                  <div className="flex items-center gap-2 mb-2.5">
-                                    <span className="text-xs bg-ms-green text-ms-bg font-ms font-bold px-1.5 py-0.5 rounded">
-                                      {week.week}
-                                    </span>
-                                    <h5 className="text-xs font-bold text-white uppercase">
-                                      {week.title}
-                                    </h5>
-                                  </div>
-                                  <ul className="space-y-2">
-                                    {week.tasks.map((task, tIdx) => (
-                                      <li
-                                        key={tIdx}
-                                        className="text-xs text-ms-text-muted leading-relaxed flex items-start gap-2"
-                                      >
-                                        <span className="text-ms-green shrink-0">
-                                          ›
-                                        </span>
-                                        <span>{task}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Tab: Marketing Assets */}
-                        {kitTab === "marketing" && (
-                          <div className="space-y-6">
-                            {/* Landing copy banner */}
-                            <div className="bg-ms-bg border border-ms-border p-4 rounded-lg">
-                              <h5 className="text-xs font-bold text-ms-yellow uppercase font-ms mb-2">
-                                Pre-sell Landing Copy
-                              </h5>
-                              <div className="space-y-3">
-                                <div>
-                                  <span className="text-[10px] text-ms-text-muted font-ms block">
-                                    Headline:
-                                  </span>
-                                  <span className="text-xs text-white font-bold block mt-1">
-                                    &ldquo;
-                                    {
-                                      launchKits[activeIdeaIndex]?.data
-                                        ?.marketingAssets.landingHeadline
-                                    }
-                                    &rdquo;
-                                  </span>
-                                </div>
-                                <div>
-                                  <span className="text-[10px] text-ms-text-muted font-ms block">
-                                    Subheadline:
-                                  </span>
-                                  <p className="text-xs text-ms-text-muted mt-1">
-                                    &ldquo;
-                                    {
-                                      launchKits[activeIdeaIndex]?.data
-                                        ?.marketingAssets.landingSubheadline
-                                    }
-                                    &rdquo;
-                                  </p>
-                                </div>
-                                <div className="flex gap-4">
-                                  <div>
-                                    <span className="text-[10px] text-ms-text-muted font-ms block">
-                                      CTA Button:
-                                    </span>
-                                    <span className="text-xs bg-ms-border text-white px-2 py-1 rounded inline-block mt-1 font-bold">
-                                      {
-                                        launchKits[activeIdeaIndex]?.data
-                                          ?.marketingAssets.ctaButton
-                                      }
-                                    </span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Outreach Cold Email Template */}
-                            <div className="bg-ms-bg border border-ms-border p-4 rounded-lg space-y-3">
-                              <div className="flex justify-between items-center border-b border-ms-border pb-2">
-                                <h5 className="text-xs font-bold text-ms-yellow uppercase font-ms">
-                                  B2B Cold Outreach Email Template
-                                </h5>
-                                <button
-                                  onClick={() =>
-                                    handleCopy(
-                                      `Subject: ${launchKits[activeIdeaIndex]?.data?.marketingAssets.coldEmail.subject}\n\n${launchKits[activeIdeaIndex]?.data?.marketingAssets.coldEmail.body}`,
-                                      "cold-email",
-                                    )
-                                  }
-                                  className="text-xs text-ms-green hover:underline flex items-center gap-1 font-ms"
-                                >
-                                  {copiedText === "cold-email" ? (
-                                    <>
-                                      <Check className="w-3 h-3" /> COPIED
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy className="w-3 h-3" /> COPY EMAIL
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-ms-text-muted font-ms">
-                                  Subject:
-                                </span>
-                                <span className="text-xs text-white font-bold block mt-0.5">
-                                  {
-                                    launchKits[activeIdeaIndex]?.data
-                                      ?.marketingAssets.coldEmail.subject
-                                  }
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-ms-text-muted font-ms">
-                                  Body:
-                                </span>
-                                <pre className="text-xs text-ms-text-muted font-sans whitespace-pre-wrap leading-relaxed mt-1.5 bg-ms-card p-3 rounded border border-ms-border select-all">
-                                  {
-                                    launchKits[activeIdeaIndex]?.data
-                                      ?.marketingAssets.coldEmail.body
-                                  }
-                                </pre>
-                              </div>
-                            </div>
-
-                            {launchKits[activeIdeaIndex]?.data
-                              ?.pricingTiers && (
-                              <div className="bg-ms-bg border border-ms-border p-4 rounded-lg space-y-4">
-                                <h5 className="text-xs font-bold text-ms-yellow uppercase font-ms">
-                                  Pricing Strategy
-                                </h5>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                  {launchKits[
-                                    activeIdeaIndex
-                                  ]?.data?.pricingTiers.map(
-                                    (tier: any, i: number) => (
-                                      <div
-                                        key={i}
-                                        className="border border-ms-border p-3 rounded bg-ms-card flex flex-col h-full"
-                                      >
-                                        <div className="font-bold text-white text-xs mb-1">
-                                          {tier.name}
-                                        </div>
-                                        <div className="text-ms-green font-ms text-sm font-bold mb-3">
-                                          {tier.price}
-                                        </div>
-                                        <ul className="text-xs text-ms-text-muted space-y-1.5 flex-1 list-disc pl-3">
-                                          {tier.features.map(
-                                            (f: string, j: number) => (
-                                              <li key={j}>{f}</li>
-                                            ),
-                                          )}
-                                        </ul>
-                                      </div>
-                                    ),
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Tab: Sales Script */}
-                        {kitTab === "sales" && (
-                          <div className="space-y-4">
-                            <h4 className="text-xs font-bold font-ms text-ms-yellow tracking-wider uppercase mb-2">
-                              Direct Phone / LinkedIn Outreach Script
-                            </h4>
-
-                            <div className="bg-ms-bg border border-ms-border p-4 rounded-lg space-y-4">
-                              <div>
-                                <span className="text-[10px] text-ms-green font-ms uppercase font-bold block">
-                                  1. Hook & Introduction
-                                </span>
-                                <p className="text-xs text-ms-text leading-relaxed mt-1">
-                                  {
-                                    launchKits[activeIdeaIndex]?.data
-                                      ?.salesScript.introduction
-                                  }
-                                </p>
-                              </div>
-
-                              <div>
-                                <span className="text-[10px] text-ms-green font-ms uppercase font-bold block">
-                                  2. Discovery Questions (Find the pain)
-                                </span>
-                                <ul className="space-y-1.5 mt-1">
-                                  {launchKits[
-                                    activeIdeaIndex
-                                  ]?.data?.salesScript.discoveryQuestions.map(
-                                    (q, idx) => (
-                                      <li
-                                        key={idx}
-                                        className="text-xs text-ms-text-muted leading-relaxed flex items-start gap-2"
-                                      >
-                                        <span className="text-ms-green">?</span>
-                                        <span>{q}</span>
-                                      </li>
-                                    ),
-                                  )}
-                                </ul>
-                              </div>
-
-                              <div>
-                                <span className="text-[10px] text-ms-green font-ms uppercase font-bold block">
-                                  3. Core Value Props
-                                </span>
-                                <ul className="space-y-1.5 mt-1">
-                                  {launchKits[
-                                    activeIdeaIndex
-                                  ]?.data?.salesScript.pitchValueProps.map(
-                                    (p, idx) => (
-                                      <li
-                                        key={idx}
-                                        className="text-xs text-ms-text-muted leading-relaxed flex items-start gap-2"
-                                      >
-                                        <span className="text-ms-yellow">
-                                          ✔
-                                        </span>
-                                        <span>{p}</span>
-                                      </li>
-                                    ),
-                                  )}
-                                </ul>
-                              </div>
-
-                              <div>
-                                <span className="text-[10px] text-ms-green font-ms uppercase font-bold block">
-                                  4. Handling Objections
-                                </span>
-                                <ul className="space-y-2.5 mt-1.5">
-                                  {launchKits[
-                                    activeIdeaIndex
-                                  ]?.data?.salesScript.objectionHandling.map(
-                                    (o, idx) => (
-                                      <li
-                                        key={idx}
-                                        className="text-xs text-ms-text-muted leading-relaxed border-l-2 border-ms-border pl-3"
-                                      >
-                                        <p className="text-white italic">{o}</p>
-                                      </li>
-                                    ),
-                                  )}
-                                </ul>
-                              </div>
-
-                              <div>
-                                <span className="text-[10px] text-ms-green font-ms uppercase font-bold block">
-                                  5. Call to Action (CTA)
-                                </span>
-                                <p className="text-xs text-ms-text leading-relaxed mt-1 font-bold">
-                                  {
-                                    launchKits[activeIdeaIndex]?.data
-                                      ?.salesScript.callToAction
-                                  }
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Tab: Database requirements */}
-                        {kitTab === "database" && (
-                          <div className="space-y-6">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-ms-border pb-3">
-                              <div>
-                                <h4 className="text-xs font-bold font-ms text-ms-yellow tracking-wider uppercase">
-                                  Relational Table Schemas
-                                </h4>
-                                <p className="text-xs text-ms-text-muted mt-1">
-                                  {
-                                    launchKits[activeIdeaIndex]?.data
-                                      ?.databaseRequirements.schemaDescription
-                                  }
-                                </p>
-                              </div>
-                            </div>
-
-                            {/* SQL Editor Code Block Container */}
-                            <div className="bg-ms-card border border-ms-border rounded-lg overflow-hidden">
-                              <div className="border-b border-ms-border px-4 py-3 bg-ms-bg/50 flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2.5 h-2.5 rounded-full bg-ms-green animate-pulse"></div>
-                                  <span className="text-[10px] font-ms font-bold text-white tracking-wider uppercase">
-                                    SUPABASE / POSTGRESQL SQL SCRIPT
-                                  </span>
-                                </div>
-                                <button
-                                  onClick={() => {
-                                    const activeKit =
-                                      launchKits[activeIdeaIndex]?.data;
-                                    const sqlCode =
-                                      activeKit?.databaseRequirements
-                                        .sqlSchema ||
-                                      (activeKit?.databaseRequirements.tables
-                                        ? generateSqlFallback(
-                                            activeKit.databaseRequirements
-                                              .tables,
-                                          )
-                                        : "");
-                                    handleCopy(sqlCode, "sql-schema");
-                                  }}
-                                  className={`px-3 py-1.5 rounded text-[10px] font-ms font-bold flex items-center gap-1.5 transition-all ${
-                                    copiedText === "sql-schema"
-                                      ? "bg-ms-green text-ms-bg font-bold"
-                                      : "bg-ms-bg border border-ms-border text-ms-green hover:bg-ms-green/10"
-                                  }`}
-                                >
-                                  {copiedText === "sql-schema" ? (
-                                    <>
-                                      <Check className="w-3 h-3" />
-                                      COPIED!
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy className="w-3 h-3" />
-                                      COPY SQL
-                                    </>
-                                  )}
-                                </button>
-                              </div>
-                              <div className="p-4 bg-black/40 font-mono text-[11px] text-ms-green leading-relaxed overflow-x-auto max-h-72 custom-scrollbar whitespace-pre">
-                                {launchKits[activeIdeaIndex]?.data
-                                  ?.databaseRequirements.sqlSchema ||
-                                  (launchKits[activeIdeaIndex]?.data
-                                    ?.databaseRequirements.tables
-                                    ? generateSqlFallback(
-                                        launchKits[activeIdeaIndex]!.data!
-                                          .databaseRequirements.tables,
-                                      )
-                                    : "-- No tables defined")}
-                              </div>
-                              <div className="px-4 py-2 bg-ms-bg/30 text-[9px] text-ms-text-muted italic border-t border-ms-border font-ms">
-                                💡 Pro tip: Copy and paste this script directly
-                                into your Supabase SQL Editor to provision all
-                                database tables instantly.
-                              </div>
-                            </div>
-
-                            <div className="space-y-4">
-                              <span className="text-[10px] text-ms-green font-ms uppercase font-bold block tracking-wider">
-                                Visual Entity-Relationship Diagram
-                              </span>
-                              {launchKits[activeIdeaIndex]?.data
-                                ?.databaseRequirements?.tables && (
-                                <VisualSchemaDiagram
-                                  tables={
-                                    launchKits[activeIdeaIndex]!.data!
-                                      .databaseRequirements.tables
-                                  }
-                                />
-                              )}
-                            </div>
-
-                            <div className="space-y-4">
-                              <span className="text-[10px] text-ms-green font-ms uppercase font-bold block tracking-wider">
-                                Field-by-Field Table Specs
-                              </span>
-                              {launchKits[
-                                activeIdeaIndex
-                              ]?.data?.databaseRequirements.tables.map(
-                                (table, idx) => (
-                                  <div
-                                    key={idx}
-                                    className="bg-ms-bg border border-ms-border p-4 rounded-lg"
-                                  >
-                                    <div className="flex justify-between items-center mb-2 text-xs font-bold">
-                                      <span className="text-white font-ms">
-                                        🗄️ table: {table.name}
-                                      </span>
-                                      <span className="text-[10px] text-ms-text-muted font-normal">
-                                        {table.purpose}
-                                      </span>
-                                    </div>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
-                                      {table.fields.map((field, fIdx) => (
-                                        <div
-                                          key={fIdx}
-                                          className="bg-ms-card p-2 rounded border border-ms-border text-[11px] font-ms text-ms-text-muted"
-                                        >
-                                          {field}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                ),
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
-          </div>
         )}
 
         {/* COMPARE NICHES TAB */}
@@ -3895,10 +2906,31 @@ ${kit.marketingAssets.coldEmail.body}</div>
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {savedIdeas.map((saved, idx) => (
-                  <div
-                    key={idx}
+              <>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-ms-text-muted" />
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Search saved kits by name, niche, problem, or solution..."
+                    value={savedKitsSearchQuery}
+                    onChange={(e) => setSavedKitsSearchQuery(e.target.value)}
+                    className="w-full bg-ms-bg border border-ms-border rounded pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-ms-border-active transition-colors"
+                  />
+                </div>
+                {filteredSavedIdeas.length === 0 ? (
+                  <div className="py-12 text-center">
+                    <p className="text-sm text-ms-text-muted">No saved kits match your search.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {filteredSavedIdeas.map((saved, idx) => {
+                      // Get the original index to preserve correct mapping and toggling functionality
+                      const originalIdx = savedIdeas.findIndex(s => s === saved);
+                      return (
+                      <div
+                    key={originalIdx}
                     className={`bg-ms-card border border-ms-border ${apiSettings.compactMode ? "p-4" : "p-6"} rounded-lg relative flex flex-col justify-between`}
                   >
                     <div>
@@ -3944,37 +2976,10 @@ ${kit.marketingAssets.coldEmail.body}</div>
 
                     <div className="flex gap-2">
                       <button
-                        onClick={() => {
-                          // Load back to workspace
-                          setGeneratedIdeas((prev) => {
-                            if (prev.some((p) => p.name === saved.idea.name)) {
-                              return prev;
-                            }
-                            return [saved.idea, ...prev];
-                          });
-                          const matchingIdx = generatedIdeas.findIndex(
-                            (p) => p.name === saved.idea.name,
-                          );
-                          if (matchingIdx !== -1) {
-                            setActiveIdeaIndex(matchingIdx);
-                          } else {
-                            setActiveIdeaIndex(0);
-                          }
-                          if (saved.kit) {
-                            setLaunchKits((prev) => ({
-                              ...prev,
-                              [matchingIdx !== -1 ? matchingIdx : 0]: {
-                                loading: false,
-                                data: saved.kit,
-                                error: null,
-                              },
-                            }));
-                          }
-                          setActiveTab("find");
-                        }}
+                        onClick={() => setExpandedSavedIdeas(prev => ({ ...prev, [originalIdx]: !prev[originalIdx] }))}
                         className="flex-1 py-2.5 bg-ms-green text-ms-bg font-ms font-bold text-xs rounded hover:bg-[#00d066] transition-all"
                       >
-                        OPEN IN WORKSPACE
+                        {expandedSavedIdeas[originalIdx] ? "HIDE KIT" : "VIEW KIT"}
                       </button>
 
                       {saved.kit && (
@@ -3982,12 +2987,12 @@ ${kit.marketingAssets.coldEmail.body}</div>
                           onClick={() =>
                             handleCopy(
                               saved.kit?.lovablePrompt || "",
-                              `copied-saved-prompt-${idx}`,
+                              `copied-saved-prompt-${originalIdx}`,
                             )
                           }
                           className="px-4 py-2 bg-ms-bg border border-ms-border text-xs font-ms text-white hover:border-ms-green rounded transition-colors flex items-center justify-center gap-1.5"
                         >
-                          {copiedText === `copied-saved-prompt-${idx}` ? (
+                          {copiedText === `copied-saved-prompt-${originalIdx}` ? (
                             <>
                               <Check className="w-3.5 h-3.5 text-ms-green" />{" "}
                               COPIED
@@ -4012,9 +3017,37 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         DELETE
                       </button>
                     </div>
+
+                    {expandedSavedIdeas[originalIdx] && saved.kit && (
+                      <div className="mt-6 border-t border-ms-border pt-6">
+                        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+                          <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                            Saved Launch Kit
+                          </h3>
+                          <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <button
+                              onClick={() => handleExportPdf(originalIdx, saved.idea, saved.kit!)}
+                              disabled={isExporting}
+                              className="flex-1 sm:flex-none px-4 py-2 border border-ms-text-muted text-ms-text-muted hover:text-white hover:border-ms-border-active rounded text-xs font-ms font-bold flex justify-center items-center gap-2 transition-colors disabled:opacity-50"
+                            >
+                              {isExporting ? (
+                                <div className="w-3.5 h-3.5 rounded-full border-2 border-ms-text-muted border-t-transparent animate-spin" />
+                              ) : (
+                                <Download className="w-3.5 h-3.5" />
+                              )}
+                              {isExporting ? "EXPORTING..." : "EXPORT PDF"}
+                            </button>
+                          </div>
+                        </div>
+                        <LaunchKitTabs kit={saved.kit} onCopy={handleCopy} copiedText={copiedText} generateSqlFallback={generateSqlFallback} VisualSchemaDiagram={VisualSchemaDiagram} inlineMode={true} />
+                      </div>
+                    )}
                   </div>
-                ))}
+                );
+                })}
               </div>
+            )}
+            </>
             )}
           </div>
         )}
