@@ -1,5 +1,7 @@
+import "server-only";
 import fs from "fs";
 import path from "path";
+import { encryptSecret, decryptSecret } from "./security";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 
@@ -9,34 +11,36 @@ function ensureDataDir() {
   }
 }
 
-export function getUsers() {
+// Write via temp file + rename so a crash mid-write can't corrupt the store.
+function writeJsonAtomic(filePath: string, value: unknown) {
   ensureDataDir();
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(value, null, 2), "utf-8");
+  fs.renameSync(tmpPath, filePath);
+}
+
+export interface StoredUser {
+  email: string;
+  passwordHash: string;
+  createdAt: string;
+}
+
+export function getUsers(): StoredUser[] {
   const filePath = path.join(DATA_DIR, "users.json");
   if (!fs.existsSync(filePath)) {
-    // Seed default admin account
-    const defaultUser = {
-      email: "corranforce@gmail.com",
-      // sha256 hash of "password123"
-      passwordHash:
-        "ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f",
-      createdAt: new Date().toISOString(),
-    };
-    const initialUsers = [defaultUser];
-    fs.writeFileSync(filePath, JSON.stringify(initialUsers, null, 2), "utf-8");
-    return initialUsers;
+    return [];
   }
   try {
     const data = fs.readFileSync(filePath, "utf-8");
-    return JSON.parse(data);
-  } catch (e) {
+    const parsed = JSON.parse(data);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
     return [];
   }
 }
 
-export function saveUsers(users: any[]) {
-  ensureDataDir();
-  const filePath = path.join(DATA_DIR, "users.json");
-  fs.writeFileSync(filePath, JSON.stringify(users, null, 2), "utf-8");
+export function saveUsers(users: StoredUser[]) {
+  writeJsonAtomic(path.join(DATA_DIR, "users.json"), users);
 }
 
 export interface ApiSettings {
@@ -50,8 +54,15 @@ export interface ApiSettings {
   fontSize?: string;
 }
 
+// Credential fields are encrypted at rest with the app secret.
+const SECRET_FIELDS = [
+  "supabaseAnonKey",
+  "resendApiKey",
+  "godaddyApiKey",
+  "godaddyApiSecret",
+] as const;
+
 export function getSettings(): ApiSettings {
-  ensureDataDir();
   const filePath = path.join(DATA_DIR, "settings.json");
   let fileSettings: Partial<ApiSettings> = {};
 
@@ -59,7 +70,12 @@ export function getSettings(): ApiSettings {
     try {
       const data = fs.readFileSync(filePath, "utf-8");
       fileSettings = JSON.parse(data);
-    } catch (e) {
+      for (const field of SECRET_FIELDS) {
+        if (fileSettings[field]) {
+          fileSettings[field] = decryptSecret(fileSettings[field] as string);
+        }
+      }
+    } catch {
       fileSettings = {};
     }
   }
@@ -87,7 +103,11 @@ export function getSettings(): ApiSettings {
 }
 
 export function saveSettings(settings: ApiSettings) {
-  ensureDataDir();
-  const filePath = path.join(DATA_DIR, "settings.json");
-  fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), "utf-8");
+  const toStore: ApiSettings = { ...settings };
+  for (const field of SECRET_FIELDS) {
+    if (toStore[field]) {
+      toStore[field] = encryptSecret(toStore[field]);
+    }
+  }
+  writeJsonAtomic(path.join(DATA_DIR, "settings.json"), toStore);
 }

@@ -7,30 +7,22 @@ import {
   Sparkles,
   TrendingUp,
   Coins,
-  Clock,
   ArrowRight,
   Copy,
   Check,
-  RotateCcw,
   Code,
   Database,
   Mail,
-  BookOpen,
   Users,
-  ChevronRight,
   Info,
-  ExternalLink,
   Globe,
   Wrench,
   Calendar,
-  DollarSign,
   AlertCircle,
   CheckCircle2,
   Bookmark,
-  Share2,
   ChevronDown,
   Lock,
-  Compass,
   Download,
   MessageSquare,
   X,
@@ -66,87 +58,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-// --- Types ---
-interface SaasIdea {
-  name: string;
-  tagline: string;
-  problem: string;
-  solution: string;
-  targetAudience: string;
-  painSolved: string;
-  competitors: string[];
-  gtmChannel: string;
-  buildComplexity: "simple" | "moderate" | "complex";
-  integrationComplexity: "simple" | "moderate" | "complex";
-  roi: {
-    buildCostUSD: string;
-    monthlyExpensesUSD: string;
-    realisticMRRMonth1USD: string;
-    breakEvenMonths: number;
-    roiMonth1Pct: string;
-    assumptions: string;
-  };
-  domains: {
-    domain: string;
-    likelihood: "High" | "Medium" | "Low";
-    reason: string;
-  }[];
-}
-
-interface LaunchKit {
-  lovablePrompt: string;
-  buildRoadmap: {
-    week: string;
-    title: string;
-    tasks: string[];
-  }[];
-  noCodeStack: {
-    tool: string;
-    role: string;
-    why: string;
-    cost: string;
-  }[];
-  marketingAssets: {
-    landingHeadline: string;
-    landingSubheadline: string;
-    ctaButton: string;
-    elevatorPitch: string;
-    coldEmail: {
-      subject: string;
-      body: string;
-    };
-    socialPost: string;
-    socialContentStrategy: string;
-    blogPostIdeas: string[];
-  };
-  salesScript: {
-    introduction: string;
-    discoveryQuestions: string[];
-    pitchValueProps: string[];
-    objectionHandling: string[];
-    callToAction: string;
-  };
-  pricingTiers?: {
-    name: string;
-    price: string;
-    features: string[];
-  }[];
-  marketValidation?: {
-    goNoGoScore: string;
-    proofOfDemand: string;
-    redFlags: string[];
-  };
-  preSellChecklist?: string[];
-  databaseRequirements: {
-    schemaDescription: string;
-    sqlSchema?: string;
-    tables: {
-      name: string;
-      fields: string[];
-      purpose: string;
-    }[];
-  };
-}
+// --- Types (shared with server actions and LaunchKitTabs) ---
+import type { SaasIdea, LaunchKit } from "./types";
 
 // Pre-defined Boring B2B Niches
 const LEGACY_NICHES = [
@@ -923,10 +836,6 @@ export default function MicroSaaSSignalEngine() {
       { loading: boolean; data: LaunchKit | null; error: string | null }
     >
   >({});
-  const [kitTab, setKitTab] = useState<
-    "prompt" | "stack" | "roadmap" | "marketing" | "sales" | "database"
-  >("prompt");
-
   // Saved Ideas (Durable persistence via localStorage)
   const [savedIdeas, setSavedIdeas] = useState<
     { idea: SaasIdea; kit: LaunchKit | null; savedAt: string }[]
@@ -934,11 +843,6 @@ export default function MicroSaaSSignalEngine() {
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [expandedSavedIdeas, setExpandedSavedIdeas] = useState<Record<number, boolean>>({});
   const [savedKitsSearchQuery, setSavedKitsSearchQuery] = useState("");
-
-  // Track email dispatch status for launch kits
-  const [emailStatus, setEmailStatus] = useState<
-    Record<number, { success: boolean; message: string } | null>
-  >({});
 
   // Real-time suggestions state
   const [realtimeKeywords, setRealtimeKeywords] = useState<string[]>([]);
@@ -955,14 +859,18 @@ export default function MicroSaaSSignalEngine() {
 
     if (!finalNiche) return;
 
-    setIsSuggestionsLoading(true);
+    // Only show the loading state once the debounced request actually fires,
+    // and ignore stale responses so an earlier slow call can't overwrite a
+    // newer result.
+    let cancelled = false;
     const delayDebounceFn = setTimeout(async () => {
+      setIsSuggestionsLoading(true);
       try {
         const data = await getRealtimeSuggestions(
           finalNiche,
           additionalContext,
         );
-        if (data) {
+        if (!cancelled && data) {
           setRealtimeKeywords(data.keywords || []);
           setRealtimeSuggestions(data.suggestions || []);
         }
@@ -976,11 +884,14 @@ export default function MicroSaaSSignalEngine() {
           console.error("Error fetching real-time suggestions:", err);
         }
       } finally {
-        setIsSuggestionsLoading(false);
+        if (!cancelled) setIsSuggestionsLoading(false);
       }
     }, 600);
 
-    return () => clearTimeout(delayDebounceFn);
+    return () => {
+      cancelled = true;
+      clearTimeout(delayDebounceFn);
+    };
   }, [selectedNiche, customNiche, additionalContext]);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
@@ -1018,20 +929,6 @@ export default function MicroSaaSSignalEngine() {
   const [expandedIdeas, setExpandedIdeas] = useState<Record<number, boolean>>(
     {},
   );
-
-  // Active workspace actions loading state
-  const [isEmailingActive, setIsEmailingActive] = useState<boolean>(false);
-  const [activeEmailStatus, setActiveEmailStatus] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
-  const [isSavingActiveToSupabase, setIsSavingActiveToSupabase] =
-    useState<boolean>(false);
-  const [activeSupabaseStatus, setActiveSupabaseStatus] = useState<{
-    success: boolean;
-    message: string;
-    sql?: string;
-  } | null>(null);
 
   // Authentication states
   const [currentUser, setCurrentUser] = useState<string | null>(null);
@@ -1140,9 +1037,14 @@ export default function MicroSaaSSignalEngine() {
   useEffect(() => {
     if (currentUser?.toLowerCase() === "corranforce@gmail.com") {
       setIsLoadingSettings(true);
-      loadApiSettings(currentUser)
+      loadApiSettings()
         .then((settings) => {
-          setApiSettings(settings);
+          setApiSettings({
+            ...settings,
+            compactMode: settings.compactMode ?? false,
+            fontFamily: settings.fontFamily || "inter",
+            fontSize: settings.fontSize || "base",
+          });
           setSettingsMessage(null);
         })
         .catch((err) => {
@@ -1165,32 +1067,29 @@ export default function MicroSaaSSignalEngine() {
     setIsSubmittingAuth(true);
 
     try {
-      if (isAuthRegister) {
-        const res = await registerUser(authEmail, authPassword);
-        if (res.success) {
-          setCurrentUser(res.email);
-          localStorage.setItem("session_user", res.email);
-          setAuthSuccess("Account successfully generated! Connecting...");
-          setTimeout(() => {
-            setShowAuthModal(false);
-            setAuthEmail("");
-            setAuthPassword("");
-            setAuthSuccess(null);
-          }, 1200);
-        }
+      const res = isAuthRegister
+        ? await registerUser(authEmail, authPassword)
+        : await loginUser(authEmail, authPassword);
+
+      if (res.success && res.email) {
+        setCurrentUser(res.email);
+        localStorage.setItem("session_user", res.email);
+        setAuthSuccess(
+          isAuthRegister
+            ? "Account successfully generated! Connecting..."
+            : "Access cipher verified. Initializing session...",
+        );
+        setTimeout(() => {
+          setShowAuthModal(false);
+          setAuthEmail("");
+          setAuthPassword("");
+          setAuthSuccess(null);
+        }, 1200);
       } else {
-        const res = await loginUser(authEmail, authPassword);
-        if (res.success) {
-          setCurrentUser(res.email);
-          localStorage.setItem("session_user", res.email);
-          setAuthSuccess("Access cipher verified. Initializing session...");
-          setTimeout(() => {
-            setShowAuthModal(false);
-            setAuthEmail("");
-            setAuthPassword("");
-            setAuthSuccess(null);
-          }, 1200);
-        }
+        setAuthError(
+          res.error ||
+            "Authentication failed. Double check your credentials.",
+        );
       }
     } catch (err: any) {
       setAuthError(
@@ -1229,7 +1128,7 @@ export default function MicroSaaSSignalEngine() {
     setSettingsMessage(null);
 
     try {
-      const res = await updateApiSettings(currentUser, apiSettings);
+      const res = await updateApiSettings(apiSettings);
       if (res.success) {
         setSettingsMessage({
           type: "success",
@@ -1255,13 +1154,34 @@ export default function MicroSaaSSignalEngine() {
   useEffect(() => {
     if (!currentUser || savedIdeas.length === 0) return;
 
+    const syncedKey = `synced_ideas_${currentUser.toLowerCase()}`;
+
     const syncInterval = setInterval(async () => {
       try {
-        const res = await syncToSupabaseAction(currentUser, savedIdeas);
-        if (res.success && res.count > 0) {
-          console.log(
-            `Synced ${res.count} saved ideas to Supabase in the background.`,
+        // Track what has already been synced locally so the background job
+        // doesn't re-send (or duplicate) rows every 30 seconds.
+        let synced: string[] = [];
+        try {
+          synced = JSON.parse(localStorage.getItem(syncedKey) || "[]");
+        } catch {
+          synced = [];
+        }
+        const unsynced = savedIdeas.filter(
+          (s) => !synced.includes(s.idea.name),
+        );
+        if (unsynced.length === 0) return;
+
+        const res = await syncToSupabaseAction(unsynced);
+        if (res.success) {
+          localStorage.setItem(
+            syncedKey,
+            JSON.stringify([...synced, ...unsynced.map((s) => s.idea.name)]),
           );
+          if ((res.count ?? 0) > 0) {
+            console.log(
+              `Synced ${res.count} saved ideas to Supabase in the background.`,
+            );
+          }
         }
       } catch (err) {
         console.error("Background sync error:", err);
@@ -1533,7 +1453,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
 
     try {
       const kitData = launchKits[index]?.data || null;
-      const res = await sendLaunchKitEmail(currentUser, idea, kitData);
+      const res = await sendLaunchKitEmail(idea, kitData);
 
       if (res.success) {
         setEmailCardStatus((prev) => ({
@@ -1671,114 +1591,17 @@ ${kit.marketingAssets.coldEmail.body}</div>
     }
   };
 
-  const handleEmailActive = async () => {
-    if (activeIdeaIndex === null) return;
-    const idea = generatedIdeas[activeIdeaIndex];
-    if (!idea) return;
-
-    if (!currentUser) {
-      setShowAuthModal(true);
-      return;
-    }
-
-    setIsEmailingActive(true);
-    setActiveEmailStatus(null);
-
-    try {
-      const kitData = launchKits[activeIdeaIndex]?.data || null;
-      const res = await sendLaunchKitEmail(currentUser, idea, kitData);
-
-      if (res.success) {
-        setActiveEmailStatus({
-          success: true,
-          message: `Launch Kit successfully emailed to ${currentUser}! 📬`,
-        });
-      } else {
-        if (res.reason && res.reason.includes("RESEND_API_KEY")) {
-          setActiveEmailStatus({
-            success: false,
-            message:
-              "Resend API Key is missing. Configure RESEND_API_KEY in the Secrets section.",
-          });
-        } else {
-          setActiveEmailStatus({
-            success: false,
-            message: res.error || "Failed to send email.",
-          });
-        }
-      }
-    } catch (err: any) {
-      setActiveEmailStatus({
-        success: false,
-        message: err.message || "Failed to dispatch email.",
-      });
-    } finally {
-      setIsEmailingActive(false);
-    }
-  };
-
-  const handleSupabaseActive = async () => {
-    if (activeIdeaIndex === null) return;
-    const idea = generatedIdeas[activeIdeaIndex];
-    if (!idea) return;
-
-    setIsSavingActiveToSupabase(true);
-    setActiveSupabaseStatus(null);
-
-    try {
-      const kitData = launchKits[activeIdeaIndex]?.data || null;
-      const res = await addToSupabaseAction(idea, kitData);
-
-      if (res.success) {
-        setActiveSupabaseStatus({
-          success: true,
-          message:
-            "Launch Kit successfully pushed to Supabase table 'saved_ideas'! 🚀",
-        });
-      } else {
-        if (res.reason === "SUPABASE_CONFIG_MISSING") {
-          setActiveSupabaseStatus({
-            success: false,
-            message:
-              "Supabase config missing! Enter your credentials under the Settings tab first.",
-          });
-        } else if (res.reason === "TABLE_NOT_FOUND") {
-          setActiveSupabaseStatus({
-            success: false,
-            message:
-              res.error ||
-              "Table 'saved_ideas' not found (or schema cache needs reload).",
-            sql: res.sql,
-          });
-        } else {
-          setActiveSupabaseStatus({
-            success: false,
-            message: res.error || "Failed to save to Supabase.",
-          });
-        }
-      }
-    } catch (err: any) {
-      setActiveSupabaseStatus({
-        success: false,
-        message: err.message || "Failed to save to Supabase.",
-      });
-    } finally {
-      setIsSavingActiveToSupabase(false);
-    }
-  };
-
   // Generate Launch Kit for a specific idea
   const handleGenerateKit = async (idea: SaasIdea, index: number) => {
     setLaunchKits((prev) => ({
       ...prev,
       [index]: { loading: true, data: null, error: null },
     }));
-    setEmailStatus((prev) => ({
+    setEmailCardStatus((prev) => ({
       ...prev,
       [index]: null,
     }));
     setActiveIdeaIndex(index);
-    setKitTab("prompt");
 
     try {
       const data = await generateLaunchKit(idea);
@@ -1787,19 +1610,13 @@ ${kit.marketingAssets.coldEmail.body}</div>
         [index]: { loading: false, data: data, error: null },
       }));
 
-      // Trigger automatic email dispatch if user is logged in
+      // Trigger automatic email dispatch if user is logged in.
+      // Status is surfaced through emailCardStatus, which the card renders.
       if (currentUser) {
-        setEmailStatus((prev) => ({
-          ...prev,
-          [index]: {
-            success: true,
-            message: `Dispatching Launch Kit email to ${currentUser}...`,
-          },
-        }));
         try {
-          const emailRes = await sendLaunchKitEmail(currentUser, idea, data);
+          const emailRes = await sendLaunchKitEmail(idea, data);
           if (emailRes.success) {
-            setEmailStatus((prev) => ({
+            setEmailCardStatus((prev) => ({
               ...prev,
               [index]: {
                 success: true,
@@ -1808,7 +1625,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
             }));
           } else {
             if (emailRes.reason && emailRes.reason.includes("RESEND_API_KEY")) {
-              setEmailStatus((prev) => ({
+              setEmailCardStatus((prev) => ({
                 ...prev,
                 [index]: {
                   success: false,
@@ -1816,7 +1633,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
                 },
               }));
             } else {
-              setEmailStatus((prev) => ({
+              setEmailCardStatus((prev) => ({
                 ...prev,
                 [index]: {
                   success: false,
@@ -1827,7 +1644,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
           }
         } catch (emailErr: any) {
           console.error("Error sending Launch Kit email:", emailErr);
-          setEmailStatus((prev) => ({
+          setEmailCardStatus((prev) => ({
             ...prev,
             [index]: {
               success: false,
@@ -1835,14 +1652,6 @@ ${kit.marketingAssets.coldEmail.body}</div>
             },
           }));
         }
-      } else {
-        setEmailStatus((prev) => ({
-          ...prev,
-          [index]: {
-            success: false,
-            message: `Log in to automatically receive this Launch Kit by email.`,
-          },
-        }));
       }
     } catch (err: any) {
       console.error(err);
@@ -1893,9 +1702,10 @@ ${kit.marketingAssets.coldEmail.body}</div>
     const idea = saved.idea;
     return (
       idea.name.toLowerCase().includes(query) ||
-      idea.niche.toLowerCase().includes(query) ||
+      idea.tagline.toLowerCase().includes(query) ||
       idea.problem.toLowerCase().includes(query) ||
-      idea.solution.toLowerCase().includes(query)
+      idea.solution.toLowerCase().includes(query) ||
+      idea.targetAudience.toLowerCase().includes(query)
     );
   });
 
@@ -2265,7 +2075,12 @@ ${kit.marketingAssets.coldEmail.body}</div>
               {/* Terminal Logs Viewport */}
               <div className="bg-ms-bg border border-ms-border rounded-lg p-4 font-ms text-xs h-64 flex flex-col justify-between overflow-hidden">
                 <div className="flex items-center justify-between border-b border-ms-border pb-2 mb-2 text-[10px] text-ms-text-muted uppercase">
-                  <span>🛰️ Live Social & Forum Crawler</span>
+                  <span>
+                    🛰️ Scan Activity Feed{" "}
+                    <span className="text-gray-600 normal-case">
+                      (simulated visualization)
+                    </span>
+                  </span>
                   <span className="flex items-center gap-1">
                     <span
                       className={`w-1.5 h-1.5 rounded-full ${isScanning ? "bg-ms-green animate-pulse" : "bg-red-500"}`}
@@ -2295,7 +2110,16 @@ ${kit.marketingAssets.coldEmail.body}</div>
                         color = "text-ms-green font-bold";
                       if (log.startsWith("[ERROR]"))
                         color = "text-red-400 font-bold";
-                      return <TypewriterLog key={i} text={log} color={color} />;
+                      // Logs are prepended, so an entry's distance from the
+                      // END of the array is its stable identity — index keys
+                      // would make every row re-run its typing animation.
+                      return (
+                        <TypewriterLog
+                          key={terminalLogs.length - 1 - i}
+                          text={log}
+                          color={color}
+                        />
+                      );
                     })
                   )}
                 </div>
@@ -2592,7 +2416,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
                                                 <span className="text-[10px] font-ms font-bold text-ms-green uppercase">
                                                   Avail{" "}
                                                   {status.price
-                                                    ? `($${status.price / 1000000})`
+                                                    ? `($${(status.price / 1000000).toFixed(2)})`
                                                     : ""}
                                                 </span>
                                               ) : (
@@ -2860,12 +2684,16 @@ ${kit.marketingAssets.coldEmail.body}</div>
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row gap-6 justify-between items-start sm:items-center border-b border-ms-border pb-3">
               <div>
-                <h2 className="text-xl font-bold text-white">
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
                   Niche Comparison Engine
+                  <span className="text-[10px] font-ms bg-ms-yellow/15 text-ms-yellow border border-ms-yellow/40 px-2 py-0.5 rounded uppercase tracking-wider">
+                    Simulated Data
+                  </span>
                 </h2>
                 <p className="text-xs text-ms-text-muted font-ms mt-0.5">
-                  Side-by-side analysis of industry viability and development
-                  metrics.
+                  Illustrative side-by-side comparison. Metrics are generated
+                  placeholders, not live market data — validate niches with
+                  real research before committing.
                 </p>
               </div>
             </div>

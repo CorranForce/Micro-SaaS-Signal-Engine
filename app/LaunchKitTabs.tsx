@@ -1,7 +1,28 @@
+"use client";
+
 import React, { useState } from "react";
 import { Code, Wrench, Calendar, Mail, Users, Database, Copy, Check } from "lucide-react";
+import type { LaunchKit } from "./types";
 
-export function LaunchKitTabs({ kit, onCopy, copiedText, generateSqlFallback, VisualSchemaDiagram, inlineMode }: any) {
+type SchemaTable = { name: string; fields: string[]; purpose: string };
+
+interface LaunchKitTabsProps {
+  kit: LaunchKit | null | undefined;
+  onCopy: (text: string, label: string) => void;
+  copiedText: string | null;
+  generateSqlFallback?: (tables: SchemaTable[]) => string;
+  VisualSchemaDiagram?: React.ComponentType<{ tables: SchemaTable[] }>;
+  inlineMode?: boolean;
+}
+
+export function LaunchKitTabs({
+  kit,
+  onCopy,
+  copiedText,
+  generateSqlFallback,
+  VisualSchemaDiagram,
+  inlineMode,
+}: LaunchKitTabsProps) {
   const [kitTab, setKitTab] = useState("prompt");
 
   if (!kit) return null;
@@ -191,7 +212,11 @@ export function LaunchKitTabs({ kit, onCopy, copiedText, generateSqlFallback, Vi
         </div>
         <button
           onClick={() => {
-            const sqlCode = kit.databaseRequirements?.sqlSchema || (kit.databaseRequirements?.tables ? generateSqlFallback(kit.databaseRequirements.tables) : "");
+            const sqlCode =
+              kit.databaseRequirements?.sqlSchema ||
+              (kit.databaseRequirements?.tables && generateSqlFallback
+                ? generateSqlFallback(kit.databaseRequirements.tables)
+                : "");
             onCopy(sqlCode, "sql-schema");
           }}
           className="px-3 py-1.5 bg-ms-bg border border-ms-border text-ms-green hover:text-white hover:border-ms-green transition-colors text-xs font-ms font-bold rounded flex items-center justify-center gap-1.5 w-full sm:w-auto"
@@ -205,7 +230,10 @@ export function LaunchKitTabs({ kit, onCopy, copiedText, generateSqlFallback, Vi
         <div className="space-y-4">
           <span className="text-[10px] text-ms-green font-ms uppercase font-bold block tracking-wider">PostgreSQL Setup Script</span>
           <div className="p-4 bg-black/40 font-mono text-[11px] text-ms-green leading-relaxed overflow-x-auto max-h-[500px] custom-scrollbar whitespace-pre rounded border border-ms-border">
-            {kit.databaseRequirements?.sqlSchema || (kit.databaseRequirements?.tables ? generateSqlFallback(kit.databaseRequirements.tables) : "-- No SQL provided")}
+            {kit.databaseRequirements?.sqlSchema ||
+              (kit.databaseRequirements?.tables && generateSqlFallback
+                ? generateSqlFallback(kit.databaseRequirements.tables)
+                : "-- No SQL provided")}
           </div>
         </div>
         <div className="space-y-4">

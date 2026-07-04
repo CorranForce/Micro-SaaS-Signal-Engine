@@ -1,6 +1,59 @@
 "use server";
 
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { cookies, headers } from "next/headers";
+import {
+  createSessionToken,
+  verifySessionToken,
+  hashPassword,
+  verifyPassword,
+  rateLimit,
+  escapeHtml,
+} from "./security";
+import {
+  getSettings,
+  saveSettings,
+  getUsers,
+  saveUsers,
+  ApiSettings,
+} from "./db";
+
+const OPERATOR_EMAIL = (
+  process.env.OPERATOR_EMAIL || "corranforce@gmail.com"
+).toLowerCase();
+const SESSION_COOKIE = "session_token";
+
+// Identity comes from the signed session cookie — never from client-supplied
+// parameters. Returns null for anonymous/invalid/expired sessions.
+async function getSessionEmail(): Promise<string | null> {
+  const cookieStore = await cookies();
+  return verifySessionToken(cookieStore.get(SESSION_COOKIE)?.value);
+}
+
+async function setSessionCookie(email: string) {
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, createSessionToken(email), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 24 * 30, // 30 days, matches token max age
+    path: "/",
+  });
+}
+
+// Best-effort client identifier for rate limiting anonymous calls.
+async function getClientKey(): Promise<string> {
+  try {
+    const h = await headers();
+    const forwarded = h.get("x-forwarded-for");
+    if (forwarded) return forwarded.split(",")[0].trim();
+    const real = h.get("x-real-ip");
+    if (real) return real;
+  } catch {
+    // headers() unavailable in this context
+  }
+  return "local";
+}
 
 let aiClient: GoogleGenAI | null = null;
 
@@ -25,6 +78,10 @@ function getAIClient(): GoogleGenAI {
 }
 
 export async function searchSaaSIdeas(niche: string, context: string) {
+  const client = await getClientKey();
+  if (!rateLimit(`search:${client}`, 10, 60_000)) {
+    throw new Error("Rate limit exceeded. Please wait a minute and try again.");
+  }
   try {
     const ai = getAIClient();
 
@@ -149,6 +206,10 @@ export async function generateLaunchKit(idea: {
   targetAudience: string;
   painSolved: string;
 }) {
+  const client = await getClientKey();
+  if (!rateLimit(`kit:${client}`, 6, 60_000)) {
+    throw new Error("Rate limit exceeded. Please wait a minute and try again.");
+  }
   try {
     const ai = getAIClient();
 
@@ -350,179 +411,134 @@ Ensure:
   }
 }
 
-export async function getLatestNewsForNiche(niche: string) {
-  try {
-    const ai = getAIClient();
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: `Find the 3 most recent, relevant news headlines or business trends in the "${niche}" industry. Return a clean JSON array with title, source, and an approximate date.`,
-      tools: [{ googleSearch: {} }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              title: { type: Type.STRING },
-              source: { type: Type.STRING },
-              date: { type: Type.STRING },
-            },
-            required: ["title", "source", "date"],
-          },
-        },
-      },
-    });
-
-    const text = response.text;
-    if (!text) {
-      return [];
-    }
-    return JSON.parse(text);
-  } catch (error: any) {
-    console.error("Error fetching news:", error);
-    return [];
-  }
-}
-
 // --- AUTHENTICATION & API SETTINGS ACTIONS ---
 
-import {
-  getSettings,
-  saveSettings,
-  getUsers,
-  saveUsers,
-  ApiSettings,
-} from "./db";
-import crypto from "crypto";
-import { cookies } from "next/headers";
-
-function hashPassword(password: string): string {
-  return crypto.createHash("sha256").update(password).digest("hex");
+export interface AuthResult {
+  success: boolean;
+  email?: string;
+  error?: string;
 }
 
-export async function loginUser(email: string, password: string) {
-  try {
-    const users = getUsers();
-    const user = users.find(
-      (u: any) => u.email.toLowerCase() === email.toLowerCase(),
-    );
-    if (!user) {
-      throw new Error(
-        "No user found with this email. You can register a new account.",
-      );
-    }
-    const pwdHash = hashPassword(password);
-    if (user.passwordHash !== pwdHash) {
-      throw new Error("Incorrect password.");
-    }
-
-    const cookieStore = await cookies();
-    cookieStore.set("session_user", user.email, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 365, // 1 year
-      path: "/",
-    });
-
-    return { success: true, email: user.email };
-  } catch (error: any) {
-    throw new Error(error.message || "Failed to log in.");
-  }
-}
-
-export async function registerUser(email: string, password: string) {
-  try {
-    if (!email || !password) {
-      throw new Error("Email and password are required.");
-    }
-    if (password.length < 6) {
-      throw new Error("Password must be at least 6 characters long.");
-    }
-    const users = getUsers();
-    const exists = users.some(
-      (u: any) => u.email.toLowerCase() === email.toLowerCase(),
-    );
-    if (exists) {
-      throw new Error("An account with this email already exists.");
-    }
-
-    const newUser = {
-      email: email.toLowerCase(),
-      passwordHash: hashPassword(password),
-      createdAt: new Date().toISOString(),
+// Expected auth failures are returned as structured values (not thrown):
+// Next.js redacts thrown error messages in production, which would turn
+// "Invalid email or password" into a generic server error.
+export async function loginUser(
+  email: string,
+  password: string,
+): Promise<AuthResult> {
+  const client = await getClientKey();
+  const normalized = (email || "").trim().toLowerCase();
+  if (
+    !rateLimit(`login:${client}`, 10, 15 * 60_000) ||
+    !rateLimit(`login:${normalized}`, 5, 15 * 60_000)
+  ) {
+    return {
+      success: false,
+      error: "Too many login attempts. Please wait 15 minutes and try again.",
     };
-
-    users.push(newUser);
-    saveUsers(users);
-
-    const cookieStore = await cookies();
-    cookieStore.set("session_user", newUser.email, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 60 * 60 * 24 * 365,
-      path: "/",
-    });
-
-    return { success: true, email: newUser.email };
-  } catch (error: any) {
-    throw new Error(error.message || "Failed to register.");
   }
+
+  const users = getUsers();
+  const user = users.find((u) => u.email.toLowerCase() === normalized);
+  // Same message whether the account exists or not — no user enumeration.
+  if (!user) {
+    return { success: false, error: "Invalid email or password." };
+  }
+
+  const { valid, needsUpgrade } = verifyPassword(password, user.passwordHash);
+  if (!valid) {
+    return { success: false, error: "Invalid email or password." };
+  }
+
+  if (needsUpgrade) {
+    // Transparently migrate legacy SHA-256 hashes to salted scrypt.
+    user.passwordHash = hashPassword(password);
+    saveUsers(users);
+  }
+
+  await setSessionCookie(user.email);
+  return { success: true, email: user.email };
+}
+
+export async function registerUser(
+  email: string,
+  password: string,
+): Promise<AuthResult> {
+  const client = await getClientKey();
+  if (!rateLimit(`register:${client}`, 5, 60 * 60_000)) {
+    return {
+      success: false,
+      error: "Too many registrations from this address. Please try later.",
+    };
+  }
+
+  const normalized = (email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    return { success: false, error: "Please enter a valid email address." };
+  }
+  if (!password || password.length < 8) {
+    return {
+      success: false,
+      error: "Password must be at least 8 characters long.",
+    };
+  }
+
+  const users = getUsers();
+  if (users.some((u) => u.email.toLowerCase() === normalized)) {
+    return {
+      success: false,
+      error: "An account with this email already exists.",
+    };
+  }
+
+  users.push({
+    email: normalized,
+    passwordHash: hashPassword(password),
+    createdAt: new Date().toISOString(),
+  });
+  saveUsers(users);
+
+  await setSessionCookie(normalized);
+  return { success: true, email: normalized };
 }
 
 export async function logoutUser() {
-  try {
-    const cookieStore = await cookies();
-    cookieStore.delete("session_user");
-    return { success: true };
-  } catch (error: any) {
-    throw new Error(error.message || "Failed to log out.");
-  }
+  const cookieStore = await cookies();
+  cookieStore.delete(SESSION_COOKIE);
+  cookieStore.delete("session_user"); // legacy cookie from the old auth
+  return { success: true };
 }
 
-export async function getSessionUser() {
-  try {
-    const cookieStore = await cookies();
-    const sessionCookie = cookieStore.get("session_user");
-    return sessionCookie ? sessionCookie.value : null;
-  } catch (e) {
-    return null;
-  }
+export async function getSessionUser(): Promise<string | null> {
+  return getSessionEmail();
 }
 
-export async function loadApiSettings(email: string) {
-  try {
-    if (!email || email.toLowerCase() !== "corranforce@gmail.com") {
-      throw new Error(
-        "Access Denied: Only corranforce@gmail.com can manage API settings.",
-      );
-    }
-    return getSettings();
-  } catch (error: any) {
-    throw new Error(error.message || "Failed to load API settings.");
+export async function loadApiSettings() {
+  const email = await getSessionEmail();
+  if (!email || email.toLowerCase() !== OPERATOR_EMAIL) {
+    throw new Error("Access denied.");
   }
+  return getSettings();
 }
 
-export async function updateApiSettings(email: string, settings: ApiSettings) {
-  try {
-    if (!email || email.toLowerCase() !== "corranforce@gmail.com") {
-      throw new Error(
-        "Access Denied: Only corranforce@gmail.com can manage API settings.",
-      );
-    }
-    saveSettings(settings);
-    return { success: true };
-  } catch (error: any) {
-    throw new Error(error.message || "Failed to update API settings.");
+export async function updateApiSettings(settings: ApiSettings) {
+  const email = await getSessionEmail();
+  if (!email || email.toLowerCase() !== OPERATOR_EMAIL) {
+    throw new Error("Access denied.");
   }
+  saveSettings(settings);
+  return { success: true };
 }
 
 export async function chatWithAgent(
   history: { role: "user" | "model"; parts: [{ text: string }] }[],
   message: string,
   taskType: "complex" | "general" | "fast" = "general",
-) {
+): Promise<string> {
+  const client = await getClientKey();
+  if (!rateLimit(`chat:${client}`, 20, 60_000)) {
+    throw new Error("Rate limit exceeded. Please slow down and try again.");
+  }
   try {
     const ai = getAIClient();
 
@@ -547,7 +563,9 @@ export async function chatWithAgent(
       config,
     });
 
-    return response.text;
+    return (
+      response.text ?? "Sorry — no response was generated. Please try again."
+    );
   } catch (error: any) {
     console.error("Error in chatWithAgent Server Action:", error);
     throw new Error(error.message || "Failed to generate chat response.");
@@ -558,6 +576,11 @@ export async function getRealtimeSuggestions(
   niche: string,
   currentText: string,
 ) {
+  // Background/typeahead helper — fail quietly when over the limit.
+  const client = await getClientKey();
+  if (!rateLimit(`suggest:${client}`, 30, 60_000)) {
+    return { keywords: [], suggestions: [] };
+  }
   try {
     const ai = getAIClient();
 
@@ -613,11 +636,24 @@ Return ONLY a JSON object with this exact structure:
   }
 }
 
-export async function sendLaunchKitEmail(
-  userEmail: string,
-  idea: any,
-  kit: any,
-) {
+export async function sendLaunchKitEmail(idea: any, kit: any = null) {
+  // Recipient is always the logged-in user — this endpoint must never be
+  // usable as an open relay to arbitrary addresses.
+  const userEmail = await getSessionEmail();
+  if (!userEmail) {
+    return {
+      success: false,
+      reason: "AUTH_REQUIRED",
+      error: "You must be logged in to email launch kits.",
+    };
+  }
+  if (!rateLimit(`email:${userEmail}`, 5, 60_000)) {
+    return {
+      success: false,
+      error: "Rate limit exceeded. Please wait a minute and try again.",
+    };
+  }
+
   const settings = getSettings();
   const apiKey = settings.resendApiKey;
   if (!apiKey) {
@@ -634,39 +670,43 @@ export async function sendLaunchKitEmail(
       ? `🚀 SaaS Launch Kit Ready: ${idea.name}`
       : `💡 B2B SaaS Blueprint: ${idea.name}`;
 
+    // All model-generated / client-supplied values are escaped before being
+    // interpolated into markup.
+    const e = escapeHtml;
+
     const html = `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #111827; background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px;">
         <h1 style="color: #00f076; font-size: 24px; margin-bottom: 4px;">SaaS Radar Opportunity</h1>
         <p style="color: #4b5563; font-size: 14px; margin-top: 0;">Your premium B2B SaaS blueprint is ready.</p>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
-        
-        <h2 style="font-size: 18px; margin-bottom: 8px; color: #111827;">${idea.name}</h2>
-        <p style="font-style: italic; color: #4b5563; margin-top: 0;">"${idea.tagline}"</p>
-        
+
+        <h2 style="font-size: 18px; margin-bottom: 8px; color: #111827;">${e(idea.name)}</h2>
+        <p style="font-style: italic; color: #4b5563; margin-top: 0;">"${e(idea.tagline)}"</p>
+
         <div style="margin-top: 16px;">
-          <p><strong>Problem:</strong> ${idea.problem}</p>
-          <p><strong>Solution:</strong> ${idea.solution}</p>
-          <p><strong>Target Customer:</strong> ${idea.targetAudience}</p>
-          <p><strong>Pain Solved:</strong> ${idea.painSolved || ""}</p>
-          ${idea.buildComplexity ? `<p><strong>Build Complexity:</strong> ${idea.buildComplexity.toUpperCase()}</p>` : ""}
-          ${idea.roi?.realisticMRRMonth1USD ? `<p><strong>MRR Target:</strong> ${idea.roi.realisticMRRMonth1USD}</p>` : ""}
+          <p><strong>Problem:</strong> ${e(idea.problem)}</p>
+          <p><strong>Solution:</strong> ${e(idea.solution)}</p>
+          <p><strong>Target Customer:</strong> ${e(idea.targetAudience)}</p>
+          <p><strong>Pain Solved:</strong> ${e(idea.painSolved || "")}</p>
+          ${idea.buildComplexity ? `<p><strong>Build Complexity:</strong> ${e(String(idea.buildComplexity).toUpperCase())}</p>` : ""}
+          ${idea.roi?.realisticMRRMonth1USD ? `<p><strong>MRR Target:</strong> ${e(idea.roi.realisticMRRMonth1USD)}</p>` : ""}
         </div>
-        
+
         ${
           hasKit
             ? `
           <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">Lovable Vibe-Coding Prompt</h3>
-          <pre style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-all; color: #1f2937;">${kit.lovablePrompt || ""}</pre>
-          
+          <pre style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-all; color: #1f2937;">${e(kit.lovablePrompt || "")}</pre>
+
           <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">4-Week Roadmap</h3>
           <ul style="padding-left: 20px; color: #1f2937;">
             ${(kit.buildRoadmap || [])
               .map(
                 (week: any) => `
               <li style="margin-bottom: 12px;">
-                <strong>${week.week}: ${week.title}</strong>
+                <strong>${e(week.week)}: ${e(week.title)}</strong>
                 <ul style="padding-left: 15px; margin-top: 4px; color: #4b5563;">
-                  ${(week.tasks || []).map((t: string) => `<li>${t}</li>`).join("")}
+                  ${(week.tasks || []).map((t: string) => `<li>${e(t)}</li>`).join("")}
                 </ul>
               </li>
             `,
@@ -676,12 +716,12 @@ export async function sendLaunchKitEmail(
 
           <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">Marketing & Outreach</h3>
           <div style="color: #1f2937;">
-            <p><strong>Landing Page Headline:</strong> ${kit.marketingAssets?.landingHeadline || ""}</p>
-            <p><strong>Elevator Pitch:</strong> ${kit.marketingAssets?.elevatorPitch || ""}</p>
-            <p><strong>Cold Email Subject:</strong> ${kit.marketingAssets?.coldEmail?.subject || ""}</p>
+            <p><strong>Landing Page Headline:</strong> ${e(kit.marketingAssets?.landingHeadline || "")}</p>
+            <p><strong>Elevator Pitch:</strong> ${e(kit.marketingAssets?.elevatorPitch || "")}</p>
+            <p><strong>Cold Email Subject:</strong> ${e(kit.marketingAssets?.coldEmail?.subject || "")}</p>
           </div>
           <div style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; font-size: 12px; font-style: italic; color: #374151;">
-            ${(kit.marketingAssets?.coldEmail?.body || "").replace(/\n/g, "<br />")}
+            ${e(kit.marketingAssets?.coldEmail?.body || "").replace(/\n/g, "<br />")}
           </div>
 
           <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">Pricing Tiers</h3>
@@ -690,9 +730,9 @@ export async function sendLaunchKitEmail(
               .map(
                 (tier: any) => `
               <div style="margin-bottom: 12px;">
-                <strong>${tier.name} - ${tier.price}</strong>
+                <strong>${e(tier.name)} - ${e(tier.price)}</strong>
                 <ul style="padding-left: 15px; margin-top: 4px; color: #4b5563;">
-                  ${(tier.features || []).map((f: string) => `<li>${f}</li>`).join("")}
+                  ${(tier.features || []).map((f: string) => `<li>${e(f)}</li>`).join("")}
                 </ul>
               </div>
             `,
@@ -719,7 +759,10 @@ export async function sendLaunchKitEmail(
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        from: "SaaS Radar <onboarding@resend.dev>",
+        // Note: the default onboarding@resend.dev sandbox sender only
+        // delivers to the Resend account owner's address. Set RESEND_FROM
+        // to a verified domain sender for real delivery.
+        from: process.env.RESEND_FROM || "SaaS Radar <onboarding@resend.dev>",
         to: [userEmail],
         subject: subject,
         html: html,
@@ -742,6 +785,21 @@ export async function sendLaunchKitEmail(
 
 export async function addToSupabaseAction(idea: any, kit: any = null) {
   try {
+    const userEmail = await getSessionEmail();
+    if (!userEmail) {
+      return {
+        success: false,
+        reason: "AUTH_REQUIRED",
+        error: "You must be logged in to save ideas to Supabase.",
+      };
+    }
+    if (!rateLimit(`supabase:${userEmail}`, 10, 60_000)) {
+      return {
+        success: false,
+        error: "Rate limit exceeded. Please wait a minute and try again.",
+      };
+    }
+
     const settings = getSettings();
     const { supabaseUrl, supabaseAnonKey } = settings;
 
@@ -764,7 +822,7 @@ export async function addToSupabaseAction(idea: any, kit: any = null) {
       build_complexity: idea.buildComplexity,
       mrr_target: idea.roi?.realisticMRRMonth1USD || "",
       build_cost: idea.roi?.buildCostUSD || "",
-      user_email: (kit && kit.user_email) || "anonymous", // fallback or we can accept it in params
+      user_email: userEmail, // always the authenticated session user
       created_at: new Date().toISOString(),
       launch_kit: kit ? JSON.stringify(kit) : null,
     };
@@ -816,10 +874,12 @@ CREATE TABLE IF NOT EXISTS saved_ideas (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable Row Level Security (or allow anon write inserts)
+-- Enable Row Level Security. The app writes with the public anon key, so
+-- inserts are allowed — but do NOT grant anon SELECT, or every visitor could
+-- read all users' saved ideas and email addresses. Read the table from the
+-- Supabase dashboard or with the service-role key instead.
 ALTER TABLE saved_ideas ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow anon insert" ON saved_ideas FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "Allow anon select" ON saved_ideas FOR SELECT TO anon USING (true);`;
+CREATE POLICY "Allow anon insert" ON saved_ideas FOR INSERT TO anon WITH CHECK (true);`;
 
         return {
           success: false,
@@ -847,8 +907,16 @@ CREATE POLICY "Allow anon select" ON saved_ideas FOR SELECT TO anon USING (true)
   }
 }
 
-export async function syncToSupabaseAction(userEmail: string, items: any[]) {
+export async function syncToSupabaseAction(items: any[]) {
   try {
+    const userEmail = await getSessionEmail();
+    if (!userEmail) {
+      return { success: false, reason: "AUTH_REQUIRED" };
+    }
+    if (!rateLimit(`sync:${userEmail}`, 4, 60_000)) {
+      return { success: false, error: "Rate limit exceeded." };
+    }
+
     const settings = getSettings();
     const { supabaseUrl, supabaseAnonKey } = settings;
 
@@ -876,7 +944,9 @@ export async function syncToSupabaseAction(userEmail: string, items: any[]) {
     const cleanUrl = supabaseUrl.replace(/\/$/, "");
     const url = `${cleanUrl}/rest/v1/saved_ideas`;
 
-    // Fetch existing names for this user to avoid duplicates
+    // Best-effort server-side dedupe. With the recommended RLS (no anon
+    // SELECT) this returns nothing — the client also tracks synced items
+    // locally, which is the primary duplicate guard.
     const getUrl = `${url}?user_email=eq.${encodeURIComponent(userEmail)}&select=name`;
     const getRes = await fetch(getUrl, {
       headers: {
@@ -920,6 +990,10 @@ export async function syncToSupabaseAction(userEmail: string, items: any[]) {
 }
 
 export async function checkDomainAvailabilityAction(domain: string) {
+  const client = await getClientKey();
+  if (!rateLimit(`domain:${client}`, 30, 60_000)) {
+    return { success: false, error: "Rate limit exceeded. Try again shortly." };
+  }
   try {
     const settings = getSettings();
     const apiKey = settings.godaddyApiKey;
