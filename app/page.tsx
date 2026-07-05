@@ -1425,15 +1425,17 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       LEGACY_NICHES.find((n) => n.id === selectedNiche)?.name ||
       selectedNiche;
     try {
-      const data = await searchSaaSIdeas(finalNiche, additionalContext);
-      if (data && data.saasIdeas) {
-        setGeneratedIdeas(data.saasIdeas);
+      const res = await searchSaaSIdeas(finalNiche, additionalContext);
+      if (res.success && res.data?.saasIdeas) {
+        setGeneratedIdeas(res.data.saasIdeas);
         setTerminalLogs((prev) => [
           `[SUCCESS] 3 Premium B2B blueprints successfully loaded and validated! 🎉`,
           ...prev,
         ]);
       } else {
-        throw new Error("Invalid output received. Please try again.");
+        throw new Error(
+          res.error || "Invalid output received. Please try again.",
+        );
       }
     } catch (err: any) {
       console.error(err);
@@ -1619,7 +1621,11 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     setActiveIdeaIndex(index);
 
     try {
-      const data = await generateLaunchKit(idea);
+      const res = await generateLaunchKit(idea);
+      if (!res.success || !res.data) {
+        throw new Error(res.error || "Failed to generate Launch Kit.");
+      }
+      const data = res.data;
       setLaunchKits((prev) => ({
         ...prev,
         [index]: { loading: false, data: data, error: null },

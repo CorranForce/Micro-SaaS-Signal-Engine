@@ -163,7 +163,7 @@ A full-codebase review was conducted covering every source file (`app/actions.ts
 - **B3** — Terminal log rows use stable identities (distance from array end) so prepending a log no longer replays every row's typewriter animation.
 - **B4** — Suggestion loading state only appears once the debounced call actually fires, and stale responses are discarded (cancellation guard), eliminating flicker and out-of-order overwrites.
 - **B5** — The Compare tab is labeled **"Simulated Data"** with an explanatory subtitle, and the terminal panel is now titled "Scan Activity Feed *(simulated visualization)*".
-- **B6** — `loginUser`/`registerUser` return structured `{ success, email?, error? }` results instead of throwing, so real error messages survive production builds.
+- **B6** — `loginUser`/`registerUser` return structured `{ success, email?, error? }` results instead of throwing, so real error messages survive production builds. Extended in the 2026-07-04 follow-up: `searchSaaSIdeas`/`generateLaunchKit` also return structured results, so actionable hints (e.g., a missing `GEMINI_API_KEY`) reach the UI in production instead of being redacted, and the missing-key message now covers both local `.env` and AI Studio setups.
 - **B7** — GoDaddy prices render as proper dollars (`toFixed(2)`); the Resend sandbox-sender restriction is documented and overridable via `RESEND_FROM`.
 
 **Quality**

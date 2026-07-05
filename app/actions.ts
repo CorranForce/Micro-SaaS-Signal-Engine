@@ -62,7 +62,7 @@ function getAIClient(): GoogleGenAI {
     const key = process.env.GEMINI_API_KEY;
     if (!key) {
       throw new Error(
-        "GEMINI_API_KEY is not configured. Please add your Gemini API Key in the Settings > Secrets panel of AI Studio.",
+        "GEMINI_API_KEY is not configured. Add it to your .env file (local development) or the Settings > Secrets panel in AI Studio (hosted).",
       );
     }
     aiClient = new GoogleGenAI({
@@ -77,10 +77,25 @@ function getAIClient(): GoogleGenAI {
   return aiClient;
 }
 
-export async function searchSaaSIdeas(niche: string, context: string) {
+// Generation actions return structured results instead of throwing:
+// Next.js redacts thrown error messages in production, which would hide
+// actionable hints like a missing GEMINI_API_KEY from the user.
+export interface GenerationResult<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
+export async function searchSaaSIdeas(
+  niche: string,
+  context: string,
+): Promise<GenerationResult<{ saasIdeas: any[] }>> {
   const client = await getClientKey();
   if (!rateLimit(`search:${client}`, 10, 60_000)) {
-    throw new Error("Rate limit exceeded. Please wait a minute and try again.");
+    return {
+      success: false,
+      error: "Rate limit exceeded. Please wait a minute and try again.",
+    };
   }
   try {
     const ai = getAIClient();
@@ -188,13 +203,15 @@ Return ONLY a valid JSON object matching the requested schema. Ensure the ideas 
     if (!text) {
       throw new Error("No response received from Gemini API");
     }
-    return JSON.parse(text);
+    return { success: true, data: JSON.parse(text) };
   } catch (error: any) {
     console.error("Error in searchSaaSIdeas Server Action:", error);
-    throw new Error(
-      error.message ||
+    return {
+      success: false,
+      error:
+        error.message ||
         "Failed to search SaaS ideas. Please verify your GEMINI_API_KEY.",
-    );
+    };
   }
 }
 
@@ -205,10 +222,13 @@ export async function generateLaunchKit(idea: {
   solution: string;
   targetAudience: string;
   painSolved: string;
-}) {
+}): Promise<GenerationResult<any>> {
   const client = await getClientKey();
   if (!rateLimit(`kit:${client}`, 6, 60_000)) {
-    throw new Error("Rate limit exceeded. Please wait a minute and try again.");
+    return {
+      success: false,
+      error: "Rate limit exceeded. Please wait a minute and try again.",
+    };
   }
   try {
     const ai = getAIClient();
@@ -404,10 +424,13 @@ Ensure:
     if (!text) {
       throw new Error("No response received from Gemini API");
     }
-    return JSON.parse(text);
+    return { success: true, data: JSON.parse(text) };
   } catch (error: any) {
     console.error("Error in generateLaunchKit Server Action:", error);
-    throw new Error(error.message || "Failed to generate Launch Kit.");
+    return {
+      success: false,
+      error: error.message || "Failed to generate Launch Kit.",
+    };
   }
 }
 
