@@ -111,26 +111,35 @@ export function verifyPassword(
   password: string,
   storedHash: string,
 ): { valid: boolean; needsUpgrade: boolean } {
-  if (storedHash.startsWith("scrypt$")) {
-    const [, nStr, salt, expected] = storedHash.split("$");
-    const derived = crypto
-      .scryptSync(password, salt, SCRYPT_KEYLEN, { N: parseInt(nStr, 10) })
-      .toString("hex");
-    const valid = crypto.timingSafeEqual(
-      Buffer.from(derived, "hex"),
-      Buffer.from(expected, "hex"),
-    );
-    return { valid, needsUpgrade: false };
-  }
+  // A malformed stored hash (hand-edited users.json, truncated write) must
+  // read as "wrong password", never crash the login action.
+  try {
+    if (storedHash.startsWith("scrypt$")) {
+      const parts = storedHash.split("$");
+      if (parts.length !== 4) return { valid: false, needsUpgrade: false };
+      const [, nStr, salt, expected] = parts;
+      const expectedBuf = Buffer.from(expected, "hex");
+      if (expectedBuf.length !== SCRYPT_KEYLEN) {
+        return { valid: false, needsUpgrade: false };
+      }
+      const derived = crypto.scryptSync(password, salt, SCRYPT_KEYLEN, {
+        N: parseInt(nStr, 10),
+      });
+      const valid = crypto.timingSafeEqual(derived, expectedBuf);
+      return { valid, needsUpgrade: false };
+    }
 
-  // Legacy: unsalted SHA-256 hex digest
-  if (/^[0-9a-f]{64}$/i.test(storedHash)) {
-    const legacy = crypto.createHash("sha256").update(password).digest("hex");
-    const valid = crypto.timingSafeEqual(
-      Buffer.from(legacy, "hex"),
-      Buffer.from(storedHash.toLowerCase(), "hex"),
-    );
-    return { valid, needsUpgrade: valid };
+    // Legacy: unsalted SHA-256 hex digest
+    if (/^[0-9a-f]{64}$/i.test(storedHash)) {
+      const legacy = crypto.createHash("sha256").update(password).digest();
+      const valid = crypto.timingSafeEqual(
+        legacy,
+        Buffer.from(storedHash.toLowerCase(), "hex"),
+      );
+      return { valid, needsUpgrade: valid };
+    }
+  } catch {
+    // fall through
   }
 
   return { valid: false, needsUpgrade: false };

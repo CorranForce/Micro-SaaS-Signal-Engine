@@ -350,6 +350,17 @@ function generateSqlFallback(
   return sql.trim();
 }
 
+// Client-side HTML escaper for the PDF builder (app/security.ts is
+// server-only). Model output must never reach innerHTML unescaped.
+function escapeHtmlClient(value: unknown): string {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function TypewriterLog({ text, color }: { text: string; color: string }) {
   const [displayedText, setDisplayedText] = useState("");
   const [isTyping, setIsTyping] = useState(true);
@@ -1222,39 +1233,43 @@ export default function MicroSaaSSignalEngine() {
       container.style.lineHeight = "1.6";
       container.style.width = "800px";
 
+      // Escape everything — kit content is model-generated and must not
+      // reach innerHTML raw (same rule as the email builder in actions.ts).
+      const esc = escapeHtmlClient;
+
       let html = `
         <div style="margin-bottom: 30px; border-bottom: 2px solid #00f076; padding-bottom: 20px;">
-          <h1 style="font-size: 28px; margin: 0 0 10px 0; color: #111;">${idea.name}</h1>
-          <p style="font-size: 16px; margin: 0; color: #555; font-style: italic;">"${idea.tagline}"</p>
+          <h1 style="font-size: 28px; margin: 0 0 10px 0; color: #111;">${esc(idea.name)}</h1>
+          <p style="font-size: 16px; margin: 0; color: #555; font-style: italic;">"${esc(idea.tagline)}"</p>
         </div>
 
         <h2 style="font-size: 20px; color: #222; margin-top: 20px;">Opportunity Spec</h2>
-        <p><strong>Problem:</strong> ${idea.problem}</p>
-        <p><strong>Solution:</strong> ${idea.solution}</p>
-        <p><strong>Target Customer:</strong> ${idea.targetAudience}</p>
-        <p><strong>Pain Solved:</strong> ${idea.painSolved || ""}</p>
-        <p><strong>Build Complexity:</strong> ${idea.buildComplexity}</p>
-        <p><strong>MRR Target:</strong> ${idea.roi?.realisticMRRMonth1USD || ""}</p>
-        <p><strong>Estimated Build Cost:</strong> ${idea.roi?.buildCostUSD || ""}</p>
-        <p><strong>Projected 1-Month ROI:</strong> ${idea.roi?.roiMonth1Pct || ""}</p>
+        <p><strong>Problem:</strong> ${esc(idea.problem)}</p>
+        <p><strong>Solution:</strong> ${esc(idea.solution)}</p>
+        <p><strong>Target Customer:</strong> ${esc(idea.targetAudience)}</p>
+        <p><strong>Pain Solved:</strong> ${esc(idea.painSolved || "")}</p>
+        <p><strong>Build Complexity:</strong> ${esc(idea.buildComplexity)}</p>
+        <p><strong>MRR Target:</strong> ${esc(idea.roi?.realisticMRRMonth1USD || "")}</p>
+        <p><strong>Estimated Build Cost:</strong> ${esc(idea.roi?.buildCostUSD || "")}</p>
+        <p><strong>Projected 1-Month ROI:</strong> ${esc(idea.roi?.roiMonth1Pct || "")}</p>
 
         <div style="page-break-before: always;"></div>
 
         <h2 style="font-size: 20px; color: #222; margin-bottom: 10px;">1. Vibe-Coding Prompt</h2>
-        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; white-space: pre-wrap;">${kit.lovablePrompt}</div>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; white-space: pre-wrap;">${esc(kit.lovablePrompt)}</div>
 
         <div style="page-break-before: always;"></div>
 
         <h2 style="font-size: 20px; color: #222; margin-bottom: 10px;">2. Build Roadmap</h2>
       `;
 
-      kit.buildRoadmap.forEach((week: any) => {
+      kit.buildRoadmap.forEach((week) => {
         html += `
           <div style="margin-bottom: 15px;">
-            <h3 style="font-size: 16px; margin: 0 0 5px 0;">${week.week}</h3>
-            <p style="margin: 0; font-size: 14px; font-weight: bold;">${week.title}</p>
+            <h3 style="font-size: 16px; margin: 0 0 5px 0;">${esc(week.week)}</h3>
+            <p style="margin: 0; font-size: 14px; font-weight: bold;">${esc(week.title)}</p>
             <ul style="margin: 5px 0 0 20px; font-size: 13px;">
-              ${week.tasks.map((f: string) => `<li>${f}</li>`).join("")}
+              ${week.tasks.map((f: string) => `<li>${esc(f)}</li>`).join("")}
             </ul>
           </div>
         `;
@@ -1275,11 +1290,11 @@ export default function MicroSaaSSignalEngine() {
           <tbody>
             ${kit.noCodeStack
               .map(
-                (stack: any) => `
+                (stack) => `
               <tr style="border-bottom: 1px solid #eee;">
-                <td style="padding: 8px; font-weight: bold;">${stack.role}</td>
-                <td style="padding: 8px;">${stack.tool}</td>
-                <td style="padding: 8px; color: #555;">${stack.cost}</td>
+                <td style="padding: 8px; font-weight: bold;">${esc(stack.role)}</td>
+                <td style="padding: 8px;">${esc(stack.tool)}</td>
+                <td style="padding: 8px; color: #555;">${esc(stack.cost)}</td>
               </tr>
             `,
               )
@@ -1289,22 +1304,22 @@ export default function MicroSaaSSignalEngine() {
 
         <h2 style="font-size: 20px; color: #222; margin-top: 30px; margin-bottom: 10px;">4. Marketing & Outreach</h2>
         <h3 style="font-size: 16px; margin: 0 0 5px 0;">Landing Page Headline</h3>
-        <p style="font-size: 18px; font-weight: bold; background: #f0fdf4; padding: 10px; border-left: 4px solid #00f076;">${kit.marketingAssets.landingHeadline}</p>
-        
-        <h3 style="font-size: 16px; margin: 15px 0 5px 0;">Cold Email Template</h3>
-        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; font-size: 14px; white-space: pre-wrap;"><strong>Subject:</strong> ${kit.marketingAssets.coldEmail.subject}
+        <p style="font-size: 18px; font-weight: bold; background: #f0fdf4; padding: 10px; border-left: 4px solid #00f076;">${esc(kit.marketingAssets.landingHeadline)}</p>
 
-${kit.marketingAssets.coldEmail.body}</div>
+        <h3 style="font-size: 16px; margin: 15px 0 5px 0;">Cold Email Template</h3>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; font-size: 14px; white-space: pre-wrap;"><strong>Subject:</strong> ${esc(kit.marketingAssets.coldEmail.subject)}
+
+${esc(kit.marketingAssets.coldEmail.body)}</div>
 
         <div style="page-break-before: always;"></div>
 
         <h2 style="font-size: 20px; color: #222; margin-bottom: 10px;">5. Database Schema</h2>
-        <p style="font-size: 14px;">${kit.databaseRequirements.schemaDescription}</p>
+        <p style="font-size: 14px;">${esc(kit.databaseRequirements.schemaDescription)}</p>
       `;
 
       if (kit.databaseRequirements.sqlSchema) {
         html += `
-          <div style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap;">${kit.databaseRequirements.sqlSchema}</div>
+          <div style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap;">${esc(kit.databaseRequirements.sqlSchema)}</div>
         `;
       } else if (kit.databaseRequirements.tables) {
         // Fallback for older kits
@@ -1312,7 +1327,7 @@ ${kit.marketingAssets.coldEmail.body}</div>
           kit.databaseRequirements.tables,
         );
         html += `
-          <div style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap;">${fallbackSql}</div>
+          <div style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap;">${esc(fallbackSql)}</div>
         `;
       }
 
