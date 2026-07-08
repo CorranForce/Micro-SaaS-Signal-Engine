@@ -70,6 +70,7 @@ export interface LaunchKit {
     redFlags: string[];
   };
   preSellChecklist?: string[];
+  validationChecklist?: string[];
   databaseRequirements: {
     schemaDescription: string;
     sqlSchema?: string;

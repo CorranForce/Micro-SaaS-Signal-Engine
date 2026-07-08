@@ -888,7 +888,8 @@ export default function MicroSaaSSignalEngine() {
       } catch (err: any) {
         if (
           err?.message === "Failed to fetch" ||
-          err?.message?.includes("fetch")
+          err?.message?.includes("fetch") ||
+          err?.message?.includes("unexpected response")
         ) {
           // Ignore harmless network drop during dev rebuilds
         } else {
@@ -2434,12 +2435,22 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                                               {status.checking ? (
                                                 <div className="w-3 h-3 rounded-full border border-ms-text-muted border-t-transparent animate-spin" />
                                               ) : status.available ? (
-                                                <span className="text-[10px] font-ms font-bold text-ms-green uppercase">
-                                                  Avail{" "}
-                                                  {status.price
-                                                    ? `($${(status.price / 1000000).toFixed(2)})`
-                                                    : ""}
-                                                </span>
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-[10px] font-ms font-bold text-ms-green uppercase">
+                                                    Avail{" "}
+                                                    {status.price
+                                                      ? `($${(status.price / 1000000).toFixed(2)})`
+                                                      : ""}
+                                                  </span>
+                                                  <a
+                                                    href={`https://www.godaddy.com/domainsearch/find?checkAvail=1&domainToCheck=${encodeURIComponent(dom.domain)}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-[10px] font-ms font-bold text-ms-bg bg-ms-green hover:bg-green-400 uppercase px-2 py-0.5 rounded transition-colors whitespace-nowrap"
+                                                  >
+                                                    Buy
+                                                  </a>
+                                                </div>
                                               ) : (
                                                 <span
                                                   className="text-[10px] font-ms font-bold text-ms-yellow uppercase"

@@ -111,7 +111,7 @@ Generate EXACTLY 3 unique B2B micro-SaaS opportunities targeting this niche.
 Return ONLY a valid JSON object matching the requested schema. Ensure the ideas are realistic, solve deep workflow pains (administrative, reporting, billing, or scheduling friction), and provide an calculated Return on Investment (ROI) matrix assuming standard AI app builder setup (e.g. build costs: $50-150 for simple, $150-300 for moderate, $300-600 for complex; monthly operations: $50-120). Also, suggest 3 highly professional, brand-new available dotcom domains with likelihood scores.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.1-flash-lite",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -257,10 +257,11 @@ Ensure:
 6. databaseRequirements outlines actual database schema tables with field types, descriptions, AND a complete valid PostgreSQL / Supabase SQL schema script in 'sqlSchema' that creates all these tables, relationships, and relevant indexes with comments.
 7. pricingTiers defines the saas pricing plans.
 8. marketValidation provides a go/no-go score out of 100, proof of demand, and any red flags.
-9. preSellChecklist gives a list of action items before launching.`;
+9. preSellChecklist gives a list of action items before launching.
+10. validationChecklist gives a step-by-step list of actions to verify market demand before building.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.1-flash-lite",
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -380,6 +381,10 @@ Ensure:
               required: ["goNoGoScore", "proofOfDemand", "redFlags"],
             },
             preSellChecklist: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            validationChecklist: {
               type: Type.ARRAY,
               items: { type: Type.STRING },
             },
@@ -565,7 +570,7 @@ export async function chatWithAgent(
   try {
     const ai = getAIClient();
 
-    let model = "gemini-3.5-flash";
+    let model = "gemini-3.1-flash-lite";
     let config: any = {
       systemInstruction:
         "You are an expert SaaS advisor and micro-SaaS ideation assistant. You help users refine their startup ideas, understand market dynamics, and build production-ready launch kits.",
@@ -623,7 +628,7 @@ Return ONLY a JSON object with this exact structure:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+      model: "gemini-3.1-flash-lite",
       contents: prompt,
       config: {
         responseMimeType: "application/json",

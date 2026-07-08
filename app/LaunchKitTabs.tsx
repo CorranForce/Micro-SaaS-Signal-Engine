@@ -27,6 +27,24 @@ export function LaunchKitTabs({
 
   if (!kit) return null;
 
+  const renderValidation = () => (
+    <div className="space-y-4">
+      <h4 className="text-xs font-bold font-ms text-ms-yellow tracking-wider uppercase mb-2">Market Validation Checklist</h4>
+      {kit.validationChecklist && kit.validationChecklist.length > 0 ? (
+        <ul className="space-y-2">
+          {kit.validationChecklist.map((item, i) => (
+            <li key={i} className="bg-ms-bg border border-ms-border p-3 rounded text-xs text-ms-text-muted flex items-start gap-2">
+              <Check className="w-4 h-4 text-ms-green shrink-0 mt-0.5" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-ms-text-muted">No validation checklist available. Try regenerating the LaunchKit.</p>
+      )}
+    </div>
+  );
+
   const renderPrompt = () => (
     <div className="space-y-4">
       <div className="flex justify-between items-center bg-ms-bg/50 border border-ms-border px-4 py-3 rounded">
@@ -323,6 +341,7 @@ export function LaunchKitTabs({
           { id: "marketing", label: "📢 MARKETING", icon: <Mail className="w-3.5 h-3.5" /> },
           { id: "sales", label: "💼 OUTREACH", icon: <Users className="w-3.5 h-3.5" /> },
           { id: "database", label: "🗄️ DATABASE", icon: <Database className="w-3.5 h-3.5" /> },
+          { id: "validation", label: "✅ VALIDATION", icon: <Check className="w-3.5 h-3.5" /> },
         ].map((t) => (
           <button
             key={t.id}
@@ -347,6 +366,7 @@ export function LaunchKitTabs({
         {kitTab === "marketing" && renderMarketing()}
         {kitTab === "sales" && renderSales()}
         {kitTab === "database" && renderDatabase()}
+        {kitTab === "validation" && renderValidation()}
       </div>
     </div>
   );
