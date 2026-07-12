@@ -467,26 +467,31 @@ export async function loginUser(
     };
   }
 
-  const users = getUsers();
-  const user = users.find((u) => u.email.toLowerCase() === normalized);
-  // Same message whether the account exists or not — no user enumeration.
-  if (!user) {
-    return { success: false, error: "Invalid email or password." };
+  const settings = getSettings();
+  const { supabaseUrl, supabaseAnonKey } = settings;
+  
+  if (supabaseUrl && supabaseAnonKey) {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalized,
+      password: password,
+    });
+    
+    if (error) {
+      return { success: false, error: "Invalid email or password." };
+    }
+  } else {
+    // Fallback to local
+    const users = getUsers();
+    const user = users.find((u) => u.email.toLowerCase() === normalized);
+    if (!user) return { success: false, error: "Invalid email or password." };
+    const { valid } = verifyPassword(password, user.passwordHash);
+    if (!valid) return { success: false, error: "Invalid email or password." };
   }
 
-  const { valid, needsUpgrade } = verifyPassword(password, user.passwordHash);
-  if (!valid) {
-    return { success: false, error: "Invalid email or password." };
-  }
-
-  if (needsUpgrade) {
-    // Transparently migrate legacy SHA-256 hashes to salted scrypt.
-    user.passwordHash = hashPassword(password);
-    saveUsers(users);
-  }
-
-  await setSessionCookie(user.email);
-  return { success: true, email: user.email };
+  await setSessionCookie(normalized);
+  return { success: true, email: normalized };
 }
 
 export async function registerUser(
@@ -512,20 +517,39 @@ export async function registerUser(
     };
   }
 
-  const users = getUsers();
-  if (users.some((u) => u.email.toLowerCase() === normalized)) {
-    return {
-      success: false,
-      error: "An account with this email already exists.",
-    };
-  }
+  const settings = getSettings();
+  const { supabaseUrl, supabaseAnonKey } = settings;
 
-  users.push({
-    email: normalized,
-    passwordHash: hashPassword(password),
-    createdAt: new Date().toISOString(),
-  });
-  saveUsers(users);
+  if (supabaseUrl && supabaseAnonKey) {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+    const { data, error } = await supabase.auth.signUp({
+      email: normalized,
+      password: password,
+    });
+    
+    if (error) {
+      if (error.message.includes("already registered")) {
+         return { success: false, error: "An account with this email already exists." };
+      }
+      return { success: false, error: error.message };
+    }
+  } else {
+    const users = getUsers();
+    if (users.some((u) => u.email.toLowerCase() === normalized)) {
+      return {
+        success: false,
+        error: "An account with this email already exists.",
+      };
+    }
+  
+    users.push({
+      email: normalized,
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString(),
+    });
+    saveUsers(users);
+  }
 
   await setSessionCookie(normalized);
   return { success: true, email: normalized };
