@@ -34,8 +34,9 @@ async function setSessionCookie(email: string) {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, createSessionToken(email), {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: true,
+    sameSite: "none",
+    partitioned: true,
     maxAge: 60 * 60 * 24 * 30, // 30 days, matches token max age
     path: "/",
   });
@@ -544,7 +545,7 @@ export async function getSessionUser(): Promise<string | null> {
 export async function loadApiSettings() {
   const email = await getSessionEmail();
   if (!email || email.toLowerCase() !== OPERATOR_EMAIL) {
-    throw new Error("Access denied.");
+    return { error: "Access denied." };
   }
   return getSettings();
 }
@@ -552,7 +553,7 @@ export async function loadApiSettings() {
 export async function updateApiSettings(settings: ApiSettings) {
   const email = await getSessionEmail();
   if (!email || email.toLowerCase() !== OPERATOR_EMAIL) {
-    throw new Error("Access denied.");
+    return { error: "Access denied." };
   }
   saveSettings(settings);
   return { success: true };

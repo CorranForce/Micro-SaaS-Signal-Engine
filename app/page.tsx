@@ -1050,7 +1050,11 @@ export default function MicroSaaSSignalEngine() {
     if (currentUser?.toLowerCase() === "corranforce@gmail.com") {
       setIsLoadingSettings(true);
       loadApiSettings()
-        .then((settings) => {
+        .then((settings: any) => {
+          if (settings.error) {
+            setSettingsMessage({ type: "error", text: settings.error });
+            return;
+          }
           setApiSettings({
             ...settings,
             compactMode: settings.compactMode ?? false,
@@ -1140,11 +1144,16 @@ export default function MicroSaaSSignalEngine() {
     setSettingsMessage(null);
 
     try {
-      const res = await updateApiSettings(apiSettings);
+      const res: any = await updateApiSettings(apiSettings);
       if (res.success) {
         setSettingsMessage({
           type: "success",
           text: "API configurations successfully integrated.",
+        });
+      } else if (res.error) {
+        setSettingsMessage({
+          type: "error",
+          text: res.error,
         });
       }
     } catch (err: any) {
@@ -1373,6 +1382,27 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     LEGACY_NICHES.find((n) => n.id === selectedNiche)?.name ||
     selectedNiche ||
     "General B2B";
+
+  const exportNichesToCSV = () => {
+    const headers = ["ID", "Name", "Description"];
+    const rows = LEGACY_NICHES.map((n) => [
+      n.id,
+      `"${n.name.replace(/"/g, '""')}"`,
+      `"${n.desc.replace(/"/g, '""')}"`
+    ].join(","));
+    
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", "boring-b2b-niches.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   // Run the crawler simulator and request ideas from Gemini
   const handleDiscover = async () => {
@@ -2210,6 +2240,12 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                       </button>
                     ))}
                   </div>
+                  <button
+                    onClick={exportNichesToCSV}
+                    className="mt-8 flex items-center justify-center gap-2 px-5 py-2 border border-ms-border rounded text-xs font-bold font-ms text-ms-text-muted hover:text-white hover:border-ms-border-active transition-colors"
+                  >
+                    <Download size={14} /> EXPORT NICHES CSV
+                  </button>
                 </div>
               )}
 
