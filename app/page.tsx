@@ -352,7 +352,7 @@ function generateSqlFallback(
 
 // Client-side HTML escaper for the PDF builder (app/security.ts is
 // server-only). Model output must never reach innerHTML unescaped.
-function escapeHtmlClient(value: unknown): string {
+function escapeHtmlC(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -1198,7 +1198,7 @@ export default function MicroSaaSSignalEngine() {
             syncedKey,
             JSON.stringify([...synced, ...unsynced.map((s) => s.idea.name)]),
           );
-          if ((res.count ?? 0) > 0) {
+          if (('count' in res) && (res.count ?? 0) > 0) {
             console.log(
               `Synced ${res.count} saved ideas to Supabase in the background.`,
             );
@@ -1245,7 +1245,7 @@ export default function MicroSaaSSignalEngine() {
 
       // Escape everything — kit content is model-generated and must not
       // reach innerHTML raw (same rule as the email builder in actions.ts).
-      const esc = escapeHtmlClient;
+      const esc = escapeHtmlC;
 
       let html = `
         <div style="margin-bottom: 30px; border-bottom: 2px solid #00f076; padding-bottom: 20px;">
@@ -1259,6 +1259,8 @@ export default function MicroSaaSSignalEngine() {
         <p><strong>Target Customer:</strong> ${esc(idea.targetAudience)}</p>
         <p><strong>Pain Solved:</strong> ${esc(idea.painSolved || "")}</p>
         <p><strong>Build Complexity:</strong> ${esc(idea.buildComplexity)}</p>
+        ${idea.hotnessScore ? `<p><strong>Hotness Score:</strong> ${esc(idea.hotnessScore.toString())}/5 Flames</p>` : ''}
+        ${idea.marketDemandScore ? `<p><strong>Market Demand Score:</strong> ${esc(idea.marketDemandScore.toString())}/10</p>` : ''}
         <p><strong>MRR Target:</strong> ${esc(idea.roi?.realisticMRRMonth1USD || "")}</p>
         <p><strong>Estimated Build Cost:</strong> ${esc(idea.roi?.buildCostUSD || "")}</p>
         <p><strong>Projected 1-Month ROI:</strong> ${esc(idea.roi?.roiMonth1Pct || "")}</p>
@@ -1560,7 +1562,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
           },
         }));
       } else {
-        if (res.reason === "SUPABASE_CONFIG_MISSING") {
+        if (('reason' in res) && res.reason === "SUPABASE_CONFIG_MISSING") {
           setSupabaseCardStatus((prev) => ({
             ...prev,
             [index]: {
@@ -1569,7 +1571,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                 "Supabase config missing! Save your URL/Key under Settings first.",
             },
           }));
-        } else if (res.reason === "TABLE_NOT_FOUND") {
+        } else if (('reason' in res) && res.reason === "TABLE_NOT_FOUND") {
           setSupabaseCardStatus((prev) => ({
             ...prev,
             [index]: {
@@ -1577,7 +1579,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
               message:
                 res.error ||
                 "Table 'saved_ideas' not found (or schema cache needs reload). Click copy below to see the required SQL schema.",
-              sql: res.sql,
+              sql: ('sql' in res) ? res.sql : undefined,
             },
           }));
         } else {
@@ -2283,11 +2285,23 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                           >
                             <div className="flex-1">
                               <div className="flex justify-between items-center gap-2 mb-2">
-                                <span
-                                  className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/30 px-2 py-0.5 rounded font-ms font-bold uppercase`}
-                                >
-                                  {idea.buildComplexity} BUILD
-                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/30 px-2 py-0.5 rounded font-ms font-bold uppercase`}
+                                  >
+                                    {idea.buildComplexity} BUILD
+                                  </span>
+                                  {idea.hotnessScore && (
+                                    <span
+                                      className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-orange-400 bg-orange-900/30 border border-orange-500/30 px-2 py-0.5 rounded font-ms font-bold uppercase flex items-center gap-1`}
+                                      title={`Market Demand: ${idea.marketDemandScore}/10`}
+                                    >
+                                      HOTNESS {Array.from({ length: idea.hotnessScore }).map((_, i) => (
+                                        <span key={i} className="text-orange-500 text-sm leading-none -mt-[2px]">🔥</span>
+                                      ))}
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="flex items-center gap-2.5 md:hidden">
                                   <button
                                     onClick={() => handleEmailCard(idea, index)}
@@ -2833,11 +2847,23 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                       <div
                         className={`flex justify-between items-start gap-4 ${apiSettings.compactMode ? "mb-2" : "mb-3"}`}
                       >
-                        <span
-                          className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/20 px-2 py-0.5 rounded font-ms font-bold uppercase`}
-                        >
-                          {saved.idea.buildComplexity} BUILD
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/20 px-2 py-0.5 rounded font-ms font-bold uppercase`}
+                          >
+                            {saved.idea.buildComplexity} BUILD
+                          </span>
+                          {saved.idea.hotnessScore && (
+                            <span
+                              className={`${apiSettings.compactMode ? "text-[10px]" : "text-xs"} text-orange-400 bg-orange-900/30 border border-orange-500/30 px-2 py-0.5 rounded font-ms font-bold uppercase flex items-center gap-1`}
+                              title={`Market Demand: ${saved.idea.marketDemandScore}/10`}
+                            >
+                              HOTNESS {Array.from({ length: saved.idea.hotnessScore }).map((_, i) => (
+                                <span key={i} className="text-orange-500 text-sm leading-none -mt-[2px]">🔥</span>
+                              ))}
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[10px] text-ms-text-muted font-ms">
                           Saved {saved.savedAt}
                         </span>

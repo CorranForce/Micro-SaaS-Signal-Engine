@@ -11,6 +11,8 @@ export interface SaasIdea {
   gtmChannel: string;
   buildComplexity: "simple" | "moderate" | "complex";
   integrationComplexity: "simple" | "moderate" | "complex";
+  marketDemandScore: number;
+  hotnessScore: number;
   roi: {
     buildCostUSD: string;
     monthlyExpensesUSD: string;

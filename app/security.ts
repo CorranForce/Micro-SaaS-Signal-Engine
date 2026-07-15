@@ -180,7 +180,7 @@ export function rateLimit(
 // HTML escaping for anything interpolated into email/PDF markup
 // ---------------------------------------------------------------------------
 
-export function escapeHtml(value: unknown): string {
+export function escapeH(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
