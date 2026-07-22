@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/check-router.mjs",
     "dev": "next dev -p 3000",
     "start": "next start -p 3000",
     "lint": "next lint",
-    "build": "next build"
+    "prebuild": "node scripts/check-router.mjs",
+    "build": "next build",
+    "check:router": "node scripts/check-router.mjs",
+    "create-operator": "node scripts/create-operator.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.10.0",

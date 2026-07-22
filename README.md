@@ -84,6 +84,15 @@ Ensure you have Node.js and npm installed.
 
 5. Open your browser and navigate to `http://localhost:3000` to access the application.
 
+## Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Start the dev server on http://localhost:3000 (runs the router guardrail first). |
+| `npm run build` | Production build (runs the router guardrail first). |
+| `npm run check:router` | Guardrail: fails if a `pages/` directory or a `next/document` import exists (App Router only — see BugReport.md). Runs automatically before `dev` and `build`. |
+| `npm run create-operator -- <email>` | Provision/update the operator (or any) account in the local `data/users.json` using the app's salted-scrypt format. Prompts for a hidden password. Needed because operator self-registration is intentionally blocked. Skip this if you use Supabase Auth. |
+
 ## Usage
 
 1. **Find Ideas:** Start by selecting a niche or typing in a custom one. Set your parameters and click **"SCAN LEGACY MARKETS"**.

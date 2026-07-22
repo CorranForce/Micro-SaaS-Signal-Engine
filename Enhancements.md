@@ -8,32 +8,37 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 
 ## 🔴 P0 — Do before any public/shared deployment
 
-### 1. Rotate and purge previously committed credentials
-- **Why:** Earlier commits tracked `data/users.json` (an unsalted SHA-256 operator hash) and a hard-coded fallback encryption key lived in the now-deleted `app/lib/encryption.ts`. Deleting files does **not** remove them from git history on GitHub — they remain retrievable.
-- **Do:**
-  - Rotate the operator password and every key ever entered in Settings (Supabase anon + service-role, Resend, GoDaddy) and `GEMINI_API_KEY`.
-  - Rewrite history to drop the sensitive blobs, e.g. `git filter-repo --invert-paths --path data/users.json --path app/lib/encryption.ts`, then force-push and re-clone anywhere it lives.
-- **Effort:** S (but coordinate — history rewrite affects all clones).
+### 1. Rotate and purge previously committed credentials — ⚠️ *needs owner action*
+- **Why:** Deleting a file does **not** remove it from git history on GitHub — it stays retrievable at old commits.
+- **Audit (2026-07-22):**
+  - `data/users.json` (operator password hash) is in history at commits `1e9dafa` and `22518be`; not tracked at HEAD.
+  - `app/lib/encryption.ts` (hard-coded fallback key `a-default-secret-key-…`) is in history through `ff8d849`; not present at HEAD.
+- **This one can't be automated away** — it requires (a) rotating real credentials on accounts only you control, and (b) a history rewrite + `--force` push, which is irreversible and breaks every existing clone. Runbook:
+  1. **Rotate** the operator password (re-provision with `npm run create-operator`) and every key ever entered in Settings (Supabase anon + service-role, Resend, GoDaddy) and `GEMINI_API_KEY`.
+  2. **Install the tool** (not currently present): `pip install git-filter-repo`.
+  3. **Rewrite history:** `git filter-repo --invert-paths --path data/users.json --path app/lib/encryption.ts`
+  4. **Re-add the remote & force-push:** filter-repo drops `origin`, so `git remote add origin <url>`, then `git push --force --all` and `git push --force --tags`.
+  5. **Re-clone** everywhere the repo lives; old clones still contain the secrets and must be discarded.
+- **Effort:** S — but destructive; do it deliberately. (Alternatives if you can't install filter-repo: BFG Repo-Cleaner, or `git filter-branch`.)
 
 ### 2. Confirm the Gemini model IDs for your key *(largely resolved)*
 - **Status:** Defaults now use the stable aliases `gemini-flash-latest` / `gemini-pro-latest`, verified working end-to-end against a live key (idea generation + realtime suggestions returned real output). One caveat: `gemini-pro-latest` (chatbot "Pro / High Thinking" mode only) hit a **429 quota** on a free-tier key — a billing limit, not a code issue.
 - **Do (if needed):** List what your key can access with `curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"` and override `GEMINI_MODEL` / `GEMINI_MODEL_PRO` in `.env`. If you need the Pro chat mode on free tier, point `GEMINI_MODEL_PRO` at a flash model or enable billing.
 - **Effort:** S.
 
-### 3. Provision the operator account out-of-band
+### 3. Provision the operator account out-of-band ✅ *(tooling delivered 2026-07-22)*
 - **Why:** Self-registration of the operator email is now blocked (closed the escalation hole). The account must be created another way or the Settings panel is unreachable.
-- **Do:** Create the operator user in Supabase Auth (if using the Supabase path) or add it to `data/users.json` via a one-off script using the app's scrypt hasher (`hashPassword` in `app/security.ts`). Document the chosen method.
-- **Effort:** S.
-
-### 4. Add a router guardrail to CI / prebuild
-- **Why:** The App/Pages Router conflict has now recurred once and broke the hosted build. Convention alone didn't hold.
-- **Do:** Fail the build if `pages/` reappears or `next/document` is imported. Minimal `prebuild` script:
+- **Done:** Added `scripts/create-operator.mjs` (npm script `create-operator`) — it writes to the local `data/users.json` using the exact salted-scrypt format `app/security.ts` expects (verified: the produced hash validates with the app's `verifyPassword` logic; the script merges rather than clobbering existing users). Run it yourself with your own password:
   ```bash
-  test ! -d pages || { echo "ERROR: pages/ dir must not exist (App Router only)"; exit 1; }
-  ! grep -rq "next/document" app || { echo "ERROR: do not import next/document"; exit 1; }
+  npm run create-operator -- corranforce@gmail.com   # prompts for a hidden password
   ```
-  Also prefer `npm ci` (honors the committed lockfile) over `npm install` in build environments.
-- **Effort:** S.
+  If you use Supabase Auth instead of the local store, create the operator in Supabase.
+- **Remaining:** You run it once with a password you choose (I can't set that for you).
+
+### 4. Add a router guardrail to CI / prebuild ✅ *(resolved 2026-07-22)*
+- **Why:** The App/Pages Router conflict has now recurred once and broke the hosted build. Convention alone didn't hold.
+- **Done:** Added `scripts/check-router.mjs` (portable Node, no bash dependency) wired into `package.json` as `prebuild` **and** `predev`, so a `pages/` directory or a real `next/document` import fails `npm run build`/`npm run dev` before Next ever runs. It strips comments first (so guard-comments mentioning `next/document` don't false-positive) and is also runnable directly via `npm run check:router`. Verified: passes clean, fails on both a `pages/` dir and a real import.
+- **CI note:** also run `npm run check:router` (or just `npm ci && npm run build`) in CI, and prefer `npm ci` over `npm install` in build environments to honor the committed lockfile.
 
 ---
 
