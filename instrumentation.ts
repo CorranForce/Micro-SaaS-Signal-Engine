@@ -1,23 +1,11 @@
+// Scheduling for the /api/cron/agent route is handled by Vercel Cron via
+// vercel.json ("crons"), which invokes the route with the CRON_SECRET bearer
+// token. The previous in-process node-cron job here did not work on serverless
+// (functions are ephemeral) and fetched http://localhost:3000, so it has been
+// removed to avoid a duplicate, always-failing hourly call.
+//
+// If you need a scheduled job in a long-running (non-serverless) self-host,
+// call the route with the Authorization: Bearer <CRON_SECRET> header.
 export async function register() {
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const cron = await import('node-cron');
-
-    if (!(global as any).__cron_started) {
-      (global as any).__cron_started = true;
-      
-      // Schedule task to run at the top of every hour (0 * * * *)
-      cron.schedule('0 * * * *', async () => {
-        console.log('⏰ Running hourly security agent...');
-        try {
-          const res = await fetch('http://localhost:3000/api/cron/agent');
-          const data = await res.json();
-          console.log('✅ Agent Report Generated:', data.report);
-        } catch (err) {
-          console.error('❌ Agent cron failed:', err);
-        }
-      });
-      
-      console.log('⚙️ Hourly security agent cron registered.');
-    }
-  }
+  // no-op
 }

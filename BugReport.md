@@ -5,6 +5,8 @@
 **Environment analyzed:** Windows 10 Pro, Node v22.14.0, npm 11.16.0
 **Status:** ✅ Both issues resolved and verified (clean `npm install`, clean `next build` 4/4 pages, app + 404 page verified running in browser with zero console errors)
 
+> ⚠️ **UPDATE 2026-07-22 — Issue 2 RECURRED and was re-fixed.** After this report was written, `pages/_document.tsx` and `pages/_app.tsx` were re-created **and committed to `main`**, reintroducing the exact Pages/App Router conflict described in Issue 2 below. The `app/global-error.tsx` file this report claims was added was **not present** in the repo. Both have now been corrected — see [the recurrence section at the end of this document](#update-2026-07-22--issue-2-recurred). Treat the "Fixes applied" and "Verification" sections below as the *original* 2026-07-03 state, not the current one.
+
 ---
 
 ## Executive Summary
@@ -112,3 +114,50 @@ The root gap that invited the bad workaround: **the project had no App Router 40
 2. **Migrate `recharts` 2.x → 3.x** when convenient; the 2.x branch is EOL. Only three symbols are used (`LineChart`, `Line`, `ResponsiveContainer`), so migration is low-risk.
 3. **Re-enable type checking** — `next.config.ts` currently sets `typescript.ignoreBuildErrors: true` and `eslint.ignoreDuringBuilds: true`, which can mask real regressions.
 4. **Security:** `app/db.ts` seeds a default admin account (`corranforce@gmail.com`) with an unsalted SHA-256 hash of a known default password into `data/users.json`. Replace with bcrypt/argon2 hashing and remove the hard-coded default credential before any public deployment.
+
+---
+
+## Update 2026-07-22 — Issue 2 recurred
+
+**Environment:** Windows 10 Pro, Node v22.14.0, npm 11.16.0
+**Status:** ✅ Re-fixed and verified (`next build` → compiled successfully, 4/4 static pages generated, type checking + linting pass). Fixes are on branch `fix/router-conflict-and-security`.
+
+### What was found
+
+A follow-up review (triggered by the app repeatedly resetting in the hosted AI Studio sandbox and only loading the client UI) found that **Issue 2 had come back** and, unlike the original occurrence, this time the offending files were **committed to `main`**:
+
+| File | State on `main` (2026-07-22) | Problem |
+|---|---|---|
+| `pages/_document.tsx` | Present, committed | Imports `<Html>`/`<Head>`/`<Main>`/`<NextScript>` from `next/document` — the illegal-import + mixed-router conflict this report's Issue 2 is entirely about. |
+| `pages/_app.tsx` | Present, committed | Re-activates the Pages Router pipeline alongside `app/`. |
+| `app/global-error.tsx` | **Absent** | This report (Issue 2, fix #2) states it was added. It was not in the repo. |
+
+This is the most likely explanation for the hosted-sandbox behavior: `next build` fails during static generation of the error pages, and the tool responds by regenerating the project and serving only the pre-built client bundle.
+
+### Root cause
+
+The original 2026-07-03 fix relied on *social convention* ("never import from `next/document`") plus files (`app/global-error.tsx`) that were never actually committed. Nothing in the repo **enforced** single-router structure, so a later hosted-tool edit re-created the Pages Router files and they were committed unchecked.
+
+### Fixes applied
+
+1. **Deleted `pages/_document.tsx` and `pages/_app.tsx`.** The project is App Router only; these files exist solely as conflict surface. `app/layout.tsx` is the document shell.
+2. **Added `app/global-error.tsx`** — the App-Router-native global error boundary (the only file allowed to render its own `<html>`/`<body>`), with a guard comment restating the "never recreate `pages/_document.tsx`" rule.
+3. **Uncovered and fixed a latent build crash** that the router conflict had been masking: `app/lib/supabase.ts` created the Supabase service-role client at *module import time* with empty build-time env, throwing `Error: supabaseUrl is required` during "Collecting page data". Converted to a lazy `getSupabaseAdmin()` created inside the request handler.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `npm ci` (from committed lockfile) | ✅ Installed |
+| `npm run build` (`next build`) | ✅ Compiled successfully; **4/4 static pages generated** (`/`, `/_not-found`, `/api/cron/agent` as dynamic); no `<Html>` error, no `supabaseUrl` error |
+| Type checking + linting | ✅ Pass (they are enabled — `next.config.ts` no longer sets `ignoreBuildErrors`/`ignoreDuringBuilds`) |
+
+### Recommendation to stop this recurring
+
+Add a CI check (or a `predev`/`prebuild` script) that fails if a `pages/` directory or any `next/document` import reappears, e.g.:
+
+```bash
+test ! -d pages || { echo "ERROR: pages/ router dir must not exist (App Router only)"; exit 1; }
+```
+
+This turns the "never do this" convention into an enforced guardrail. Security and other findings from the same review are tracked in [README.md](./README.md#second-code-review--remediation--2026-07-22) and [Enhancements.md](./Enhancements.md).

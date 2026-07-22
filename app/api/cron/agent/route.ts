@@ -1,11 +1,27 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseAdmin } from '@/app/lib/supabase';
 import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Never statically evaluated; always runs per-request.
+export const dynamic = 'force-dynamic';
 
-export async function GET() {
+// This route hits Supabase and the paid Gemini API, so it must never be
+// publicly invocable. Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`
+// when CRON_SECRET is set in the project env; require it here. Fail closed:
+// if CRON_SECRET is not configured, deny every request.
+function isAuthorized(req: NextRequest): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return false;
+  return req.headers.get('authorization') === `Bearer ${secret}`;
+}
+
+export async function GET(req: NextRequest) {
+  if (!isAuthorized(req)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
   try {
+    const supabase = getSupabaseAdmin();
+
     // 1. Fetch the secret keys
     const { data: keys, error } = await supabase.from('secret_keys').select('*');
 
@@ -41,8 +57,9 @@ export async function GET() {
       Respond in clear text.
     `;
 
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite",
+      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       contents: prompt,
     });
 

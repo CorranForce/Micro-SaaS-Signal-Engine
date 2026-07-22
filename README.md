@@ -62,10 +62,19 @@ Ensure you have Node.js and npm installed.
    GEMINI_API_KEY=your_gemini_api_key_here
    # Required in production — signs session cookies & encrypts stored credentials:
    SESSION_SECRET=<output of: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
-   # Optional: operator account for the API Settings panel (defaults to project owner)
+   # Optional: operator account for the API Settings panel (defaults to project owner).
+   # NOTE: this account cannot be self-registered from the login modal — provision
+   # it out-of-band (create it in Supabase Auth, or add it to data/users.json).
    OPERATOR_EMAIL=you@yourdomain.com
    # Optional: verified Resend sender for real email delivery
    RESEND_FROM="SaaS Radar <radar@yourdomain.com>"
+   # Optional: override the Gemini model IDs (defaults: gemini-2.5-flash / gemini-2.5-pro).
+   # Set these to the exact IDs your API key can access.
+   GEMINI_MODEL=
+   GEMINI_MODEL_PRO=
+   # Required for the hourly cron route (/api/cron/agent) to run — it fails closed
+   # (returns 401) when unset. Vercel Cron sends it automatically as a Bearer token.
+   CRON_SECRET=<output of: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
    ```
 
 4. Start the development server:
@@ -178,6 +187,33 @@ A full-codebase review was conducted covering every source file (`app/actions.ts
 1. **Purge `data/users.json` from git history and rotate credentials.** The file is untracked going forward, but the old password hash remains in prior commits on GitHub until history is rewritten. Rotate the operator password and any keys ever stored in settings, then run e.g. `git filter-repo --invert-paths --path data/users.json` and force-push (coordinate with any clones).
 2. **Move users/settings/saved-ideas to Supabase** (with Supabase Auth + per-user RLS). The JSON-file store now writes atomically but still won't survive serverless/multi-instance deployments with ephemeral filesystems.
 3. **Decompose `page.tsx`** (~3,100 lines after cleanup) into components (`IdeaCard`, `SavedKits`, `SettingsPanel`, `AuthModal`, `FloatingChatbot`), and trim the seven up-front Google font families if the font switcher isn't essential.
+
+## Second Code Review & Remediation — 2026-07-22
+
+A follow-up full-codebase review was conducted after the app began failing in the hosted AI Studio environment (repo repeatedly reset; only the client UI would load). It surfaced a mix of **regressions of previously-fixed issues** and new findings. All items below are **FIXED** on branch `fix/router-conflict-and-security` and verified with a clean production build (`next build` → 4/4 pages generated, type checking + linting pass).
+
+### 🔴 Critical
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| R1 | **App Router / Pages Router conflict recommitted.** `pages/_document.tsx` (importing `<Html>` from `next/document`) and `pages/_app.tsx` were committed to `main`, reintroducing the exact build failure documented and "fixed" in [BugReport.md](./BugReport.md) Issue 2. This breaks `next build` during static generation of the error pages — the most likely cause of the hosted sandbox wiping/reloading the repo. `app/global-error.tsx` (claimed present in BugReport) was **missing**. | `pages/_document.tsx`, `pages/_app.tsx` | Deleted both `pages/` files; added the real `app/global-error.tsx`. |
+| R2 | **Operator privilege escalation → API-key disclosure.** The Settings gate is `email === OPERATOR_EMAIL`, but the session email came from `registerUser` with **no proof of ownership**. Anyone could register the operator address (if not already claimed) and become admin, then `loadApiSettings()` returned the **decrypted** Supabase/Resend/GoDaddy keys to the browser. This is a new path around the S1 fix from the first review. | `app/actions.ts` | Registration now refuses the operator email; Supabase auth only grants a session when a real `session` is returned; `loadApiSettings` no longer returns secret values (blanked + `configured` flag), and `updateApiSettings` treats a blank secret field as "keep existing". |
+| R3 | **Two unauthenticated API routes.** `POST /api/secrets/seed` (no auth) read env secrets and wrote them to Supabase via the **service-role** client; `GET /api/cron/agent` (no auth) hit the paid Gemini API and read the `secret_keys` table on every call. | `app/api/secrets/seed/route.ts`, `app/api/cron/agent/route.ts` | Deleted the seed route; the cron route now requires `Authorization: Bearer <CRON_SECRET>` and **fails closed** when unset; marked `force-dynamic`. |
+
+### 🟠 High
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| R4 | **Email feature could never send.** `sendLaunchKitEmail` used `from: userEmail`, which Resend rejects (sender must be a verified-domain address); the documented `RESEND_FROM` env var was **never referenced in code**. | `app/actions.ts` | `from` now uses `RESEND_FROM` (fallback to the `onboarding@resend.dev` sandbox sender); the user's address is only the recipient. |
+| R5 | **Invalid Gemini model IDs.** All generation used `gemini-3.1-flash-lite` / `gemini-3.1-pro-preview` (not valid published model names), which 404 every idea/kit/chat generation. | `app/actions.ts`, `app/api/cron/agent/route.ts` | Replaced with env-overridable constants (`GEMINI_MODEL` / `GEMINI_MODEL_PRO`, defaulting to `gemini-2.5-flash` / `gemini-2.5-pro`). **Verify the exact IDs your API key can access.** |
+| R6 | **Two competing crypto modules; the weaker guarded real secrets.** `app/lib/encryption.ts` used AES-256-**CBC** (no auth tag) with a **hard-coded fallback key committed in the repo**, while `app/security.ts` correctly used AES-256-GCM. The weak module backed the (now-deleted) seed route. | `app/lib/encryption.ts` | Deleted; the app standardizes on `app/security.ts`. |
+| R7 | **Broken in-process cron.** `instrumentation.ts` ran `node-cron` and `fetch('http://localhost:3000/...')` — a no-op on serverless that also duplicated the `vercel.json` cron (and would now 401 hourly against the protected route). | `instrumentation.ts` | Removed the self-invoking cron; scheduling is handled solely by Vercel Cron via `vercel.json`. |
+
+### Latent build bug uncovered
+With the router conflict removed, the build progressed further and hit a pre-existing crash: `app/lib/supabase.ts` created the service-role client **at import time** with empty build-time env (`Error: supabaseUrl is required`). Fixed by making the client lazy (`getSupabaseAdmin()`), created inside the request handler.
+
+### Still open after this round
+See [Enhancements.md](./Enhancements.md) for the forward-looking backlog (Supabase-backed persistence, serverless-safe rate limiting, `page.tsx` decomposition, retiring the half-built `secret_keys`/cron "security agent" feature, and rotating/purging any previously committed credentials).
 
 ## License
 

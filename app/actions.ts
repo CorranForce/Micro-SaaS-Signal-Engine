@@ -16,12 +16,20 @@ import {
   getUsers,
   saveUsers,
   ApiSettings,
+  SECRET_FIELDS,
 } from "./db";
 
 const OPERATOR_EMAIL = (
   process.env.OPERATOR_EMAIL || "corranforce@gmail.com"
 ).toLowerCase();
 const SESSION_COOKIE = "session_token";
+
+// Gemini model IDs. The previous hard-coded "gemini-3.1-*" values are not valid
+// published model names and cause every generation call to 404. Defaults below
+// are known-good; override per environment without code changes via env vars.
+// Verify the exact IDs for your API access at https://ai.google.dev/gemini-api/docs/models
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-2.5-pro";
 
 // Identity comes from the signed session cookie — never from client-supplied
 // parameters. Returns null for anonymous/invalid/expired sessions.
@@ -113,7 +121,7 @@ Return ONLY a valid JSON object matching the requested schema. Ensure the ideas 
 Additionally, assign a marketDemandScore (1-10) evaluating the strength of market demand based on the provided context, and calculate a hotnessScore (1-5) representing the ratio between market demand and build complexity (e.g., high demand + simple build = 5 flames).`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -267,7 +275,7 @@ Ensure:
 10. validationChecklist gives a step-by-step list of actions to verify market demand before building.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -482,8 +490,11 @@ export async function loginUser(
       email: normalized,
       password: password,
     });
-    
-    if (error) {
+
+    // Only trust the login if Supabase actually returned an authenticated
+    // session. Without this check the app session is granted purely on the
+    // client-supplied email, which is an impersonation vector.
+    if (error || !data?.session) {
       return { success: false, error: "Invalid email or password." };
     }
   } else {
@@ -522,6 +533,16 @@ export async function registerUser(
     };
   }
 
+  // The operator account is privileged (it can read stored API credentials).
+  // It must never be self-provisioned through public registration — otherwise
+  // anyone can claim it and gain admin access. Provision it out-of-band.
+  if (normalized === OPERATOR_EMAIL) {
+    return {
+      success: false,
+      error: "This email address is reserved and cannot be registered.",
+    };
+  }
+
   const settings = getSettings();
   const { supabaseUrl, supabaseAnonKey } = settings;
 
@@ -532,12 +553,23 @@ export async function registerUser(
       email: normalized,
       password: password,
     });
-    
+
     if (error) {
       if (error.message.includes("already registered")) {
          return { success: false, error: "An account with this email already exists." };
       }
       return { success: false, error: error.message };
+    }
+
+    // If the Supabase project requires email confirmation, signUp succeeds but
+    // returns no session. Do NOT grant an app session in that case — the caller
+    // hasn't proven ownership of the address yet.
+    if (!data?.session) {
+      return {
+        success: false,
+        error:
+          "Account created. Check your email to confirm your address, then log in.",
+      };
     }
   } else {
     const users = getUsers();
@@ -547,7 +579,7 @@ export async function registerUser(
         error: "An account with this email already exists.",
       };
     }
-  
+
     users.push({
       email: normalized,
       passwordHash: hashPassword(password),
@@ -576,7 +608,19 @@ export async function loadApiSettings() {
   if (!email || email.toLowerCase() !== OPERATOR_EMAIL) {
     return { error: "Access denied." };
   }
-  return getSettings();
+  // Never send raw credential values to the browser. Return the non-secret
+  // fields as-is, blank out the secrets, and expose only a per-field "is this
+  // configured?" flag so the UI can show a saved/empty state. The client saves
+  // a secret back only when the operator types a new value (see
+  // updateApiSettings, which preserves the stored value on a blank field).
+  const full = getSettings() as unknown as Record<string, unknown>;
+  const configured: Record<string, boolean> = {};
+  const masked: Record<string, unknown> = { ...full };
+  for (const field of SECRET_FIELDS) {
+    configured[field] = Boolean(full[field]);
+    masked[field] = "";
+  }
+  return { ...(masked as unknown as ApiSettings), configured };
 }
 
 export async function updateApiSettings(settings: ApiSettings) {
@@ -584,7 +628,19 @@ export async function updateApiSettings(settings: ApiSettings) {
   if (!email || email.toLowerCase() !== OPERATOR_EMAIL) {
     return { error: "Access denied." };
   }
-  saveSettings(settings);
+  // The client receives blanked secrets from loadApiSettings, so an unchanged
+  // secret field arrives empty. Treat empty as "keep the existing value" rather
+  // than wiping the stored credential.
+  const existing = getSettings();
+  const merged = { ...settings } as unknown as Record<string, unknown>;
+  const incomingSettings = settings as unknown as Record<string, unknown>;
+  for (const field of SECRET_FIELDS) {
+    const incoming = incomingSettings[field];
+    if (typeof incoming !== "string" || incoming.trim() === "") {
+      merged[field] = (existing as unknown as Record<string, unknown>)[field];
+    }
+  }
+  saveSettings(merged as unknown as ApiSettings);
   return { success: true };
 }
 
@@ -600,17 +656,17 @@ export async function chatWithAgent(
   try {
     const ai = getAIClient();
 
-    let model = "gemini-3.1-flash-lite";
+    let model = GEMINI_MODEL;
     let config: any = {
       systemInstruction:
         "You are an expert SaaS advisor and micro-SaaS ideation assistant. You help users refine their startup ideas, understand market dynamics, and build production-ready launch kits.",
     };
 
     if (taskType === "complex") {
-      model = "gemini-3.1-pro-preview";
+      model = GEMINI_MODEL_PRO;
       config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
     } else if (taskType === "fast") {
-      model = "gemini-3.1-flash-lite";
+      model = GEMINI_MODEL;
     }
 
     const contents = [...history, { role: "user", parts: [{ text: message }] }];
@@ -658,7 +714,7 @@ Return ONLY a JSON object with this exact structure:
 }`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite",
+      model: GEMINI_MODEL,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -816,8 +872,13 @@ export async function sendLaunchKitEmail(idea: any, kit: any = null) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
+      // `from` MUST be an address on a domain verified in your Resend account.
+      // Using the logged-in user's address here makes Resend reject the send.
+      // The sandbox sender onboarding@resend.dev only delivers to the Resend
+      // account owner's own email; set RESEND_FROM to a verified sender for
+      // real delivery.
       body: JSON.stringify({
-        from: userEmail,
+        from: process.env.RESEND_FROM || "onboarding@resend.dev",
         to: [userEmail],
         subject: subject,
         html: html,

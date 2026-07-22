@@ -3132,7 +3132,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                         </label>
                         <input
                           type="password"
-                          placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                          placeholder="Leave blank to keep the saved key"
                           value={apiSettings.supabaseAnonKey}
                           onChange={(e) =>
                             setApiSettings({
@@ -3158,7 +3158,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                       </label>
                       <input
                         type="password"
-                        placeholder="re_123456789..."
+                        placeholder="Leave blank to keep the saved key"
                         value={apiSettings.resendApiKey}
                         onChange={(e) =>
                           setApiSettings({
@@ -3184,7 +3184,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                         </label>
                         <input
                           type="password"
-                          placeholder="GoDaddy Key"
+                          placeholder="Leave blank to keep saved"
                           value={apiSettings.godaddyApiKey}
                           onChange={(e) =>
                             setApiSettings({
@@ -3201,7 +3201,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                         </label>
                         <input
                           type="password"
-                          placeholder="GoDaddy Secret"
+                          placeholder="Leave blank to keep saved"
                           value={apiSettings.godaddyApiSecret}
                           onChange={(e) =>
                             setApiSettings({

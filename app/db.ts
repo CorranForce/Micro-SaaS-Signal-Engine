@@ -55,7 +55,7 @@ export interface ApiSettings {
 }
 
 // Credential fields are encrypted at rest with the app secret.
-const SECRET_FIELDS = [
+export const SECRET_FIELDS = [
   "supabaseAnonKey",
   "resendApiKey",
   "godaddyApiKey",
