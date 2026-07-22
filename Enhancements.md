@@ -15,9 +15,9 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
   - Rewrite history to drop the sensitive blobs, e.g. `git filter-repo --invert-paths --path data/users.json --path app/lib/encryption.ts`, then force-push and re-clone anywhere it lives.
 - **Effort:** S (but coordinate — history rewrite affects all clones).
 
-### 2. Confirm the Gemini model IDs
-- **Why:** The old `gemini-3.1-*` IDs were invalid and 404'd every generation. Defaults are now `gemini-2.5-flash` / `gemini-2.5-pro`, but the exact IDs your key can access must be verified.
-- **Do:** Check https://ai.google.dev/gemini-api/docs/models against your API access; set `GEMINI_MODEL` / `GEMINI_MODEL_PRO` if the defaults aren't available. Smoke-test one idea generation, one launch kit, and one chat message end-to-end.
+### 2. Confirm the Gemini model IDs for your key *(largely resolved)*
+- **Status:** Defaults now use the stable aliases `gemini-flash-latest` / `gemini-pro-latest`, verified working end-to-end against a live key (idea generation + realtime suggestions returned real output). One caveat: `gemini-pro-latest` (chatbot "Pro / High Thinking" mode only) hit a **429 quota** on a free-tier key — a billing limit, not a code issue.
+- **Do (if needed):** List what your key can access with `curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"` and override `GEMINI_MODEL` / `GEMINI_MODEL_PRO` in `.env`. If you need the Pro chat mode on free tier, point `GEMINI_MODEL_PRO` at a flash model or enable billing.
 - **Effort:** S.
 
 ### 3. Provision the operator account out-of-band
@@ -77,10 +77,9 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Why:** The 2.x line is EOL/deprecated. Only three symbols are used (`LineChart`, `Line`, `ResponsiveContainer`), so the migration is low-risk.
 - **Effort:** S.
 
-### 12. Local-dev session cookie
-- **Why:** The session cookie is `secure: true; sameSite: "none"; partitioned: true` — correct for the AI Studio iframe, but browsers drop it on plain `http://localhost`, so login silently fails in local dev.
-- **Do:** Relax cookie attributes when `NODE_ENV !== "production"` (e.g. `sameSite: "lax"`, `secure: false`) so local login works, keeping the strict settings in production.
-- **Effort:** S.
+### 12. Local-dev session cookie ✅ *(resolved 2026-07-22)*
+- **Why:** The session cookie was `secure: true; sameSite: "none"; partitioned: true` — correct for the AI Studio iframe, but browsers drop it on plain `http://localhost`, so login silently failed in local dev.
+- **Done:** `setSessionCookie` (`app/actions.ts`) now relaxes to `secure: false; sameSite: "lax"; partitioned: false` when `NODE_ENV !== "production"`, keeping the strict cross-site settings in production.
 
 ---
 

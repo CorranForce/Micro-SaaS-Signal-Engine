@@ -24,12 +24,15 @@ const OPERATOR_EMAIL = (
 ).toLowerCase();
 const SESSION_COOKIE = "session_token";
 
-// Gemini model IDs. The previous hard-coded "gemini-3.1-*" values are not valid
-// published model names and cause every generation call to 404. Defaults below
-// are known-good; override per environment without code changes via env vars.
-// Verify the exact IDs for your API access at https://ai.google.dev/gemini-api/docs/models
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-2.5-pro";
+// Gemini model IDs. Model availability varies by API account — pinned versions
+// (e.g. gemini-2.5-flash) can become unavailable to newer keys, and the old
+// hard-coded "gemini-3.1-*" values are brittle for the same reason. Default to
+// the stable "-latest" aliases, which resolve to a current model and won't get
+// deprecated out from under you. Override per environment via env vars.
+// List what a given key can access at:
+//   GET https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
+const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-pro-latest";
 
 // Identity comes from the signed session cookie — never from client-supplied
 // parameters. Returns null for anonymous/invalid/expired sessions.
@@ -40,11 +43,16 @@ async function getSessionEmail(): Promise<string | null> {
 
 async function setSessionCookie(email: string) {
   const cookieStore = await cookies();
+  // Embedding the app in the AI Studio iframe (cross-site) requires
+  // Secure + SameSite=None + Partitioned. But browsers drop such cookies on
+  // plain http://localhost, which silently breaks login in local dev. Relax
+  // the attributes when not in production so local login works.
+  const isProd = process.env.NODE_ENV === "production";
   cookieStore.set(SESSION_COOKIE, createSessionToken(email), {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",
-    partitioned: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+    partitioned: isProd,
     maxAge: 60 * 60 * 24 * 30, // 30 days, matches token max age
     path: "/",
   });
