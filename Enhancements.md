@@ -44,9 +44,10 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 
 ## 🟠 P1 — Correctness & durability on real hosting
 
-### 5. Move users / settings / saved-ideas off the JSON file store
+### 5. Move users / settings / saved-ideas off the JSON file store — 📋 *plan delivered 2026-07-23*
 - **Why:** `data/*.json` (via `app/db.ts`) does not survive serverless or multi-instance deployments — Vercel's filesystem is ephemeral/read-only, so login, settings, and the app secret silently fail or reset. Atomic writes don't help when the disk itself is gone.
-- **Do:** Persist users, settings, and saved ideas in Supabase with **Supabase Auth + per-user RLS**. This also subsumes the ad-hoc session/HMAC layer and the `saved_ideas` anon-insert workaround.
+- **Plan:** Full design (schema, RLS policies, code-change list, data migration, rollout steps, risks) is in [SUPABASE_MIGRATION.md](./SUPABASE_MIGRATION.md). Recommends adopting Supabase Auth + per-user RLS, which also subsumes the ad-hoc session/HMAC layer and the `saved_ideas` anon-insert workaround.
+- **Blocked on you:** a Supabase project (URL + keys) and confirmation to adopt Supabase Auth, before implementation.
 - **Effort:** L.
 
 ### 6. Serverless-safe rate limiting and app secret
@@ -54,10 +55,9 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Do:** Back rate limiting with a shared store (Upstash Redis / Vercel KV), and require `SESSION_SECRET` from env in production (fail fast if missing) rather than generating one to disk.
 - **Effort:** M.
 
-### 7. Decide the fate of the `secret_keys` / cron "AI security agent" feature
-- **Why:** This subsystem is half-built: the seed route (deleted) wrote secrets nothing ever reads, the cron route only pattern-matches an encryption format and asks an LLM to comment on it, and `secret_keys` is populated by nothing now. It adds attack surface (service-role access, paid LLM calls) for no delivered value.
-- **Do:** Either (a) remove it entirely (`app/api/cron/agent`, the `secret_keys` table in `supabase_schema.sql`, the `vercel.json` cron, and `instrumentation.ts`), or (b) redesign it into a real, useful scheduled job. Recommendation: remove until there's a concrete use case.
-- **Effort:** S (remove) / L (redesign).
+### 7. Retire the `secret_keys` / cron "AI security agent" feature ✅ *(removed 2026-07-23)*
+- **Why:** This subsystem was half-built: the seed route (already deleted) wrote secrets nothing ever read, the cron route only pattern-matched an encryption format and asked an LLM to comment on it, and `secret_keys` was populated by nothing. It added attack surface (service-role access, paid LLM calls) for no delivered value.
+- **Done:** Removed `app/api/cron/agent/route.ts`, `app/lib/supabase.ts` (its only consumer), `instrumentation.ts`, and `vercel.json` (contained only the cron). Rewrote `supabase_schema.sql` to the canonical `saved_ideas` table the app actually uses (with anon-insert-only RLS), and dropped the now-unused `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` env vars. Build verified after removal.
 
 ---
 

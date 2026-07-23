@@ -68,13 +68,10 @@ Ensure you have Node.js and npm installed.
    OPERATOR_EMAIL=you@yourdomain.com
    # Optional: verified Resend sender for real email delivery
    RESEND_FROM="SaaS Radar <radar@yourdomain.com>"
-   # Optional: override the Gemini model IDs (defaults: gemini-2.5-flash / gemini-2.5-pro).
+   # Optional: override the Gemini model IDs (defaults: gemini-flash-latest / gemini-pro-latest).
    # Set these to the exact IDs your API key can access.
    GEMINI_MODEL=
    GEMINI_MODEL_PRO=
-   # Required for the hourly cron route (/api/cron/agent) to run — it fails closed
-   # (returns 401) when unset. Vercel Cron sends it automatically as a Bearer token.
-   CRON_SECRET=<output of: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
    ```
 
 4. Start the development server:
@@ -207,7 +204,7 @@ A follow-up full-codebase review was conducted after the app began failing in th
 |---|---------|----------|-----|
 | R1 | **App Router / Pages Router conflict recommitted.** `pages/_document.tsx` (importing `<Html>` from `next/document`) and `pages/_app.tsx` were committed to `main`, reintroducing the exact build failure documented and "fixed" in [BugReport.md](./BugReport.md) Issue 2. This breaks `next build` during static generation of the error pages — the most likely cause of the hosted sandbox wiping/reloading the repo. `app/global-error.tsx` (claimed present in BugReport) was **missing**. | `pages/_document.tsx`, `pages/_app.tsx` | Deleted both `pages/` files; added the real `app/global-error.tsx`. |
 | R2 | **Operator privilege escalation → API-key disclosure.** The Settings gate is `email === OPERATOR_EMAIL`, but the session email came from `registerUser` with **no proof of ownership**. Anyone could register the operator address (if not already claimed) and become admin, then `loadApiSettings()` returned the **decrypted** Supabase/Resend/GoDaddy keys to the browser. This is a new path around the S1 fix from the first review. | `app/actions.ts` | Registration now refuses the operator email; Supabase auth only grants a session when a real `session` is returned; `loadApiSettings` no longer returns secret values (blanked + `configured` flag), and `updateApiSettings` treats a blank secret field as "keep existing". |
-| R3 | **Two unauthenticated API routes.** `POST /api/secrets/seed` (no auth) read env secrets and wrote them to Supabase via the **service-role** client; `GET /api/cron/agent` (no auth) hit the paid Gemini API and read the `secret_keys` table on every call. | `app/api/secrets/seed/route.ts`, `app/api/cron/agent/route.ts` | Deleted the seed route; the cron route now requires `Authorization: Bearer <CRON_SECRET>` and **fails closed** when unset; marked `force-dynamic`. |
+| R3 | **Two unauthenticated API routes.** `POST /api/secrets/seed` (no auth) read env secrets and wrote them to Supabase via the **service-role** client; `GET /api/cron/agent` (no auth) hit the paid Gemini API and read the `secret_keys` table on every call. | `app/api/secrets/seed/route.ts`, `app/api/cron/agent/route.ts` | Deleted the seed route; the cron route was hardened with `CRON_SECRET` + `force-dynamic`, then **removed entirely** on 2026-07-23 along with `secret_keys`, `instrumentation.ts`, and the `vercel.json` cron (half-built, no delivered value — see Enhancements.md #7). |
 
 ### 🟠 High
 
