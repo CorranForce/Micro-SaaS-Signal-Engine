@@ -81,9 +81,10 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Remaining:** replace remaining `any` payloads on server actions with the shared `SaasIdea`/`LaunchKit` types, and stop returning raw Supabase error text to the client (`handleSupabaseError`). Deferred to the #8 decomposition, which touches the same call sites.
 - **Effort:** M.
 
-### 11. Migrate `recharts` 2.x → 3.x
-- **Why:** The 2.x line is EOL/deprecated. Only three symbols are used (`LineChart`, `Line`, `ResponsiveContainer`), so the migration is low-risk.
-- **Effort:** S.
+### 11. Migrate `recharts` 2.x → 3.x ✅ *(resolved 2026-07-23)*
+- **Why:** The 2.x line is EOL/deprecated. Only three symbols are used (`LineChart`, `Line`, `ResponsiveContainer`), so the migration was low-risk.
+- **Done:** Bumped to `recharts@^3.10.0`; no code changes needed (the three symbols are API-stable across the major). Build passes and the Compare-tab sparklines render correctly under v3; the main route's First Load JS dropped ~178 kB → ~163 kB. Also removed the now-orphaned `node-cron` dependency (its only consumer was the deleted `instrumentation.ts`).
+- **Note:** `package-lock.json` was updated; `bun.lock` is now stale (regenerate with `bun install` if you use Bun).
 
 ### 12. Local-dev session cookie ✅ *(resolved 2026-07-22)*
 - **Why:** The session cookie was `secure: true; sameSite: "none"; partitioned: true` — correct for the AI Studio iframe, but browsers drop it on plain `http://localhost`, so login silently failed in local dev.
