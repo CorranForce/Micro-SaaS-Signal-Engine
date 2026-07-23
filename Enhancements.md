@@ -64,9 +64,11 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 
 ## 🟡 P2 — Maintainability & UX
 
-### 8. Decompose `app/page.tsx` (~3,500 lines)
-- **Why:** The ideas grid, saved kits, compare view, settings, auth modal, chatbot, and PDF export all live in one component with ~40 `useState` hooks. This is where the crash-on-search bug (first review, B1) hid.
-- **Do:** Continue the extraction started with `LaunchKitTabs`: `IdeaCard`, `SavedKits`, `SettingsPanel`, `AuthModal`, `FloatingChatbot`, and the PDF builder are natural seams. Consider `useReducer` or a small store for the shared state.
+### 8. Decompose `app/page.tsx` — 🟡 *first pass done 2026-07-23 (~3,510 → 2,737 lines)*
+- **Why:** The ideas grid, saved kits, compare view, settings, auth modal, chatbot, and PDF export all lived in one component with ~40 `useState` hooks. This is where the crash-on-search bug (first review, B1) hid.
+- **Done (self-contained pieces, verified at runtime):** extracted `LEGACY_NICHES` → `app/lib/niches.ts`; `generateSqlFallback` + `escapeHtmlC` → `app/lib/launchkit-utils.ts`; and the standalone components `TypewriterLog`, `VisualSchemaDiagram` (+ `TableNode`), `CompareNichesView`, and `FloatingChatbot` → `app/components/*`. Charts, chatbot, and schema diagram confirmed rendering after the split.
+- **Remaining:** the state-coupled sections still inline in the main component — `IdeaCard`, `SavedKits`, `SettingsPanel`, `AuthModal`, and the PDF builder. These read ~40 shared `useState` values, so extracting them needs prop threading or a `useReducer`/store first; deferred to keep this pass regression-free.
+- **Do next:** introduce a small store or `useReducer` for the shared idea/kit/auth state, then lift the remaining sections out.
 - **Effort:** L.
 
 ### 9. Trim up-front font loading ✅ *(resolved 2026-07-23)*
