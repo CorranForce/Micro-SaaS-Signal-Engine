@@ -50,9 +50,10 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Blocked on you:** a Supabase project (URL + keys) and confirmation to adopt Supabase Auth, before implementation.
 - **Effort:** L.
 
-### 6. Serverless-safe rate limiting and app secret
+### 6. Serverless-safe rate limiting and app secret — 🟡 *partially done 2026-07-23*
 - **Why:** The rate limiter (`app/security.ts`) is an in-memory `Map` per process — it resets on every cold start and isn't shared across instances, so limits are effectively unenforced on Vercel. The auto-generated app secret persisted under `data/` has the same ephemerality problem, which would rotate session/encryption keys unexpectedly.
-- **Do:** Back rate limiting with a shared store (Upstash Redis / Vercel KV), and require `SESSION_SECRET` from env in production (fail fast if missing) rather than generating one to disk.
+- **Done:** `getAppSecret` now **throws in production** if `SESSION_SECRET` is missing/short, instead of silently generating a disk secret that rotates on every cold start (which would log everyone out and make stored settings undecryptable). The dev disk-fallback is unchanged.
+- **Remaining (needs a provider choice):** back the rate limiter with a shared store — **Upstash Redis** or **Vercel KV**. Both are callable over HTTP with no heavy dependency. Blocked on which provider you want + its credentials; the current in-memory limiter still works correctly on single-instance/local.
 - **Effort:** M.
 
 ### 7. Retire the `secret_keys` / cron "AI security agent" feature ✅ *(removed 2026-07-23)*
@@ -68,14 +69,14 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Do:** Continue the extraction started with `LaunchKitTabs`: `IdeaCard`, `SavedKits`, `SettingsPanel`, `AuthModal`, `FloatingChatbot`, and the PDF builder are natural seams. Consider `useReducer` or a small store for the shared state.
 - **Effort:** L.
 
-### 9. Trim up-front font loading
-- **Why:** `app/layout.tsx` loads **seven** Google font families on every page just to power a font-switcher setting most users never touch — wasted bytes and requests.
-- **Do:** Load only the default (Inter/JetBrains Mono) up front; lazy-load the others when the operator actually selects them.
-- **Effort:** S.
+### 9. Trim up-front font loading ✅ *(resolved 2026-07-23)*
+- **Why:** `app/layout.tsx` loaded **seven** Google font families on every page just to power a font-switcher setting most users never touch — wasted bytes and requests.
+- **Done:** Reduced to the two families the switcher actually offers — **Inter** (default sans) and **JetBrains Mono** (mono). Removed Roboto, Open Sans, Lato, Poppins, and Playfair from `layout.tsx`, the dynamic font `<style>` block, and the Settings dropdown (a stale saved value now falls back to Inter). Five fewer font downloads per page.
 
-### 10. Tighten remaining type boundaries and error surfacing
-- **Why:** Server actions and several handlers still accept/return `any`; `chatWithAgent` still `throw`s (Next redacts the message in production, so the chatbot shows a generic error), inconsistent with the structured-result pattern used elsewhere.
-- **Do:** Replace `any` payloads with the shared `SaasIdea`/`LaunchKit` types; make `chatWithAgent` return `{ success, text?, error? }`; stop returning raw Supabase error text to the client (`handleSupabaseError`).
+### 10. Tighten remaining type boundaries and error surfacing — 🟡 *partially done 2026-07-23*
+- **Why:** Server actions and several handlers still accept/return `any`; `chatWithAgent` used to `throw` (Next redacts the message in production, so the chatbot showed a generic error).
+- **Done:** `chatWithAgent` now returns a structured `GenerationResult<string>` (`{ success, data?, error? }`) and the chatbot surfaces the real error message.
+- **Remaining:** replace remaining `any` payloads on server actions with the shared `SaasIdea`/`LaunchKit` types, and stop returning raw Supabase error text to the client (`handleSupabaseError`). Deferred to the #8 decomposition, which touches the same call sites.
 - **Effort:** M.
 
 ### 11. Migrate `recharts` 2.x → 3.x

@@ -23,6 +23,20 @@ export function getAppSecret(): Buffer {
     return cachedSecret;
   }
 
+  // In production a missing SESSION_SECRET must be a hard error. The disk
+  // fallback below regenerates on every serverless cold start (ephemeral
+  // filesystem), which would rotate the session-signing and settings-encryption
+  // keys unexpectedly — logging everyone out and making stored credentials
+  // undecryptable. Fail loudly instead of failing silently.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "SESSION_SECRET must be set (at least 16 characters) in production. " +
+        'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"',
+    );
+  }
+
+  // Development only: generate and persist a secret under data/ so local
+  // sessions survive restarts.
   const secretPath = path.join(DATA_DIR, ".app-secret");
   try {
     const existing = Buffer.from(

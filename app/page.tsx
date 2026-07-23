@@ -711,12 +711,20 @@ function FloatingChatbot() {
         parts: [{ text: m.text }] as [{ text: string }],
       }));
 
-      const reply = await chatWithAgent(history, userMessage, taskType);
-      setMessages((prev) => [...prev, { role: "model", text: reply }]);
+      const res = await chatWithAgent(history, userMessage, taskType);
+      const text =
+        res.success && res.data
+          ? res.data
+          : "Sorry, I encountered an error: " +
+            (res.error || "Unknown error. Please try again.");
+      setMessages((prev) => [...prev, { role: "model", text }]);
     } catch (e: any) {
       setMessages((prev) => [
         ...prev,
-        { role: "model", text: "Sorry, I encountered an error: " + e.message },
+        {
+          role: "model",
+          text: "Sorry, I encountered an error: " + (e?.message || "Unknown error"),
+        },
       ]);
     } finally {
       setIsLoading(false);
@@ -1779,21 +1787,9 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
               ? `
             body, .font-sans, .font-ms {
               font-family: ${
-                apiSettings.fontFamily === "inter"
-                  ? "var(--font-inter), sans-serif"
-                  : apiSettings.fontFamily === "roboto"
-                    ? "var(--font-roboto), sans-serif"
-                    : apiSettings.fontFamily === "opensans"
-                      ? "var(--font-opensans), sans-serif"
-                      : apiSettings.fontFamily === "lato"
-                        ? "var(--font-lato), sans-serif"
-                        : apiSettings.fontFamily === "poppins"
-                          ? "var(--font-poppins), sans-serif"
-                          : apiSettings.fontFamily === "playfair"
-                            ? "var(--font-playfair), serif"
-                            : apiSettings.fontFamily === "mono"
-                              ? "var(--font-mono), monospace"
-                              : "var(--font-inter), sans-serif"
+                apiSettings.fontFamily === "mono"
+                  ? "var(--font-mono), monospace"
+                  : "var(--font-inter), sans-serif"
               } !important;
             }
           `
@@ -3261,13 +3257,6 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                         className="w-full bg-ms-card border border-ms-border rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-ms-green transition-colors font-sans"
                       >
                         <option value="inter">Inter (Sans Serif)</option>
-                        <option value="roboto">Roboto (Sans Serif)</option>
-                        <option value="opensans">Open Sans (Sans Serif)</option>
-                        <option value="lato">Lato (Sans Serif)</option>
-                        <option value="poppins">Poppins (Sans Serif)</option>
-                        <option value="playfair">
-                          Playfair Display (Serif)
-                        </option>
                         <option value="mono">JetBrains Mono (Monospace)</option>
                       </select>
                     </div>

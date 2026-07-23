@@ -656,10 +656,17 @@ export async function chatWithAgent(
   history: { role: "user" | "model"; parts: [{ text: string }] }[],
   message: string,
   taskType: "complex" | "general" | "fast" = "general",
-): Promise<string> {
+): Promise<GenerationResult<string>> {
+  // Return structured results instead of throwing: Next.js redacts thrown
+  // server-action error messages in production, so a throw would show the
+  // chatbot a generic error instead of the real reason (rate limit, missing
+  // GEMINI_API_KEY, etc.).
   const client = await getClientKey();
   if (!rateLimit(`chat:${client}`, 20, 60_000)) {
-    throw new Error("Rate limit exceeded. Please slow down and try again.");
+    return {
+      success: false,
+      error: "Rate limit exceeded. Please slow down and try again.",
+    };
   }
   try {
     const ai = getAIClient();
@@ -685,12 +692,17 @@ export async function chatWithAgent(
       config,
     });
 
-    return (
-      response.text ?? "Sorry — no response was generated. Please try again."
-    );
+    return {
+      success: true,
+      data:
+        response.text ?? "Sorry — no response was generated. Please try again.",
+    };
   } catch (error: any) {
     console.error("Error in chatWithAgent Server Action:", error);
-    throw new Error(error.message || "Failed to generate chat response.");
+    return {
+      success: false,
+      error: error.message || "Failed to generate chat response.",
+    };
   }
 }
 
