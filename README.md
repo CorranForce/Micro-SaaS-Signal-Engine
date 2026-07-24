@@ -88,7 +88,7 @@ Ensure you have Node.js and npm installed.
 | `npm run dev` | Start the dev server on http://localhost:3000 (runs the router guardrail first). |
 | `npm run build` | Production build (runs the router guardrail first). |
 | `npm run check:router` | Guardrail: fails if a `pages/` directory or a `next/document` import exists (App Router only — see BugReport.md). Runs automatically before `dev` and `build`. |
-| `npm run create-operator -- <email>` | Provision/update the operator (or any) account in the local `data/users.json` using the app's salted-scrypt format. Prompts for a hidden password. Needed because operator self-registration is intentionally blocked. Skip this if you use Supabase Auth. |
+| `npm run create-operator -- <email>` | Provision/update the operator (or any) account in the local `data/users.json` using the app's salted-scrypt format. Prompts for a hidden password. Needed because operator self-registration is intentionally blocked. Skip this if you use Supabase Auth. For a non-interactive run (CI, or if your terminal misbehaves): `OPERATOR_PASSWORD=... npm run create-operator -- <email>`. |
 
 ## Usage
 

@@ -33,6 +33,7 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
   npm run create-operator -- corranforce@gmail.com   # prompts for a hidden password
   ```
   If you use Supabase Auth instead of the local store, create the operator in Supabase.
+- **Fix 2026-07-23:** the interactive prompt hung when launched via `npm run`, because npm's shell wrapper can leave `process.stdin.isTTY` false in a real terminal — the script then waited on stdin end-of-stream that never came. It now distinguishes *redirected* stdin (pipe/file) from a *masked* TTY, reads the console device directly in the latter case, accepts an `OPERATOR_PASSWORD` env var as a non-interactive fallback, and fails fast with guidance instead of hanging.
 - **Remaining:** You run it once with a password you choose (I can't set that for you).
 
 ### 4. Add a router guardrail to CI / prebuild ✅ *(resolved 2026-07-22)*
