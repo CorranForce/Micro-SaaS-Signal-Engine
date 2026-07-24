@@ -61,6 +61,19 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Why:** This subsystem was half-built: the seed route (already deleted) wrote secrets nothing ever read, the cron route only pattern-matched an encryption format and asked an LLM to comment on it, and `secret_keys` was populated by nothing. It added attack surface (service-role access, paid LLM calls) for no delivered value.
 - **Done:** Removed `app/api/cron/agent/route.ts`, `app/lib/supabase.ts` (its only consumer), `instrumentation.ts`, and `vercel.json` (contained only the cron). Rewrote `supabase_schema.sql` to the canonical `saved_ideas` table the app actually uses (with anon-insert-only RLS), and dropped the now-unused `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` env vars. Build verified after removal.
 
+### 13. Sessions are never revoked when a user is deleted or disabled
+> Numbered 13 (out of positional order) so existing cross-references to #1–#12 in README.md and BugReport.md stay valid.
+
+- **Why:** `verifySessionToken` (`app/security.ts`) validates only the HMAC signature and the 30-day `iat` expiry — it never re-checks that the account still exists or is still allowed in. Consequences:
+  - Deleting a user from `data/users.json` leaves their signed cookie valid for up to **30 days**; they keep full access.
+  - Because the operator gate is `email === OPERATOR_EMAIL`, an operator session stays privileged even after the operator account is removed or its password is rotated.
+  - There is no way to force-logout a single compromised session. The only lever is rotating `SESSION_SECRET`, which logs *everyone* out **and** makes stored settings undecryptable (they're encrypted under the same secret) — so it's not a usable revocation tool.
+- **Do:**
+  1. After signature/expiry validation, re-check the subject on each request — a cheap lookup in the user store now, or `supabase.auth.getUser()` after the #5 migration.
+  2. Optionally add a per-user `tokenVersion` (or `sessionsValidAfter` timestamp) stored alongside the account and embedded in the token, so bumping it invalidates just that user's sessions without a global secret rotation.
+- **Found:** 2026-07-23, while debugging the operator login (a session from a deleted test account was still active).
+- **Effort:** S for the local store. Largely subsumed by #5 — Supabase Auth handles revocation natively, so if you're doing the migration, fold this in rather than building it twice.
+
 ---
 
 ## 🟡 P2 — Maintainability & UX
