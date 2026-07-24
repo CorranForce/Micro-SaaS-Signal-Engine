@@ -74,20 +74,31 @@ function hiddenFromStream(stream, promptText, onDone) {
       if (exit) process.exit(1);
       resolve(value);
     };
+    // A single 'data' event can carry several characters — Windows delivers
+    // Enter as "\r\n" in one chunk, and typing fast or pasting batches input.
+    // Process the buffer character by character, or Enter is never recognised
+    // and the prompt appears frozen.
     const onData = (buf) => {
-      const ch = buf.toString("utf8");
-      if (ch === "\n" || ch === "\r" || ch === CTRL_D) {
-        finish(pass, false);
-      } else if (ch === CTRL_C) {
-        finish("", true);
-      } else if (ch === DEL || ch === "\b") {
-        if (pass.length) {
-          pass = pass.slice(0, -1);
-          process.stdout.write("\b \b");
+      for (const ch of buf.toString("utf8")) {
+        if (ch === "\n" || ch === "\r" || ch === CTRL_D) {
+          finish(pass, false);
+          return;
         }
-      } else if (ch >= " ") {
-        pass += ch;
-        process.stdout.write("*");
+        if (ch === CTRL_C) {
+          finish("", true);
+          return;
+        }
+        if (ch === DEL || ch === "\b") {
+          if (pass.length) {
+            pass = pass.slice(0, -1);
+            process.stdout.write("\b \b");
+          }
+          continue;
+        }
+        if (ch >= " ") {
+          pass += ch;
+          process.stdout.write("*");
+        }
       }
     };
     stream.on("data", onData);
