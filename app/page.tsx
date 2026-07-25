@@ -50,6 +50,9 @@ import { TypewriterLog } from "./components/TypewriterLog";
 import { VisualSchemaDiagram } from "./components/SchemaDiagram";
 import { CompareNichesView } from "./components/CompareNichesView";
 import { FloatingChatbot } from "./components/FloatingChatbot";
+import { AboutTab } from "./components/AboutTab";
+import { AuthModal } from "./components/AuthModal";
+import { ClearConfirmModal } from "./components/ClearConfirmModal";
 
 export default function MicroSaaSSignalEngine() {
   const [mounted, setMounted] = useState<boolean>(false);
@@ -2195,86 +2198,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
         )}
 
         {/* ABOUT / METHODOLOGY TAB */}
-        {activeTab === "about" && (
-          <div className="bg-ms-card border border-ms-border p-8 rounded-lg max-w-3xl mx-auto space-y-6">
-            <div className="border-b border-ms-border pb-4">
-              <h2 className="text-xl font-bold text-white">
-                The Boring B2B SaaS Philosophy
-              </h2>
-              <p className="text-sm text-ms-text-muted mt-1">
-                Why legacy, offline sectors produce the highest retention,
-                easiest sales, and lowest churn startups.
-              </p>
-            </div>
-
-            <div className="space-y-4 text-sm leading-relaxed text-ms-text-muted">
-              <p>
-                In the modern SaaS landscape, 95% of builders compete for
-                consumer tools, productivity widgets, or generic AI playgrounds.
-                This leads to heavy competition, high customer acquisition costs
-                (CAC), and extreme customer churn.
-              </p>
-
-              <div className="bg-ms-bg p-4 rounded-lg border border-ms-border space-y-3">
-                <h4 className="text-xs font-bold text-ms-yellow font-ms uppercase">
-                  Legacy Industries Are Different:
-                </h4>
-                <ul className="space-y-2 text-xs">
-                  <li className="flex items-start gap-2">
-                    <span className="text-ms-green font-bold">✔</span>
-                    <span>
-                      <strong>High Retention:</strong> B2B companies in roofing,
-                      dry cleaning, or pest control do not switch platforms
-                      often once integrated.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-ms-green font-bold">✔</span>
-                    <span>
-                      <strong>Willingness to Pay:</strong> A dry cleaner losing
-                      $1,000/mo in lost inventory easily pays $100-$300/mo to
-                      solve it.
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-ms-green font-bold">✔</span>
-                    <span>
-                      <strong>Direct Outreach is Free:</strong> Finding roofing
-                      contractors takes minutes on Google Maps, and you can
-                      contact them directly. No expensive ad spend.
-                    </span>
-                  </li>
-                </ul>
-              </div>
-
-              <h4 className="text-base font-bold text-white mt-6">
-                How Signal Engine Operates:
-              </h4>
-              <p>
-                Signal Engine is powered by advanced Gemini 3.5 reasoning. It
-                scans and calculates:
-              </p>
-              <ul className="list-disc pl-5 space-y-2 text-xs">
-                <li>
-                  <strong>GTM Channel Validation:</strong> Where and how to
-                  reach these offline business owners directly (phone, direct
-                  mail, or local associations).
-                </li>
-                <li>
-                  <strong>ROI Matrices:</strong> Estimating development costs
-                  using AI tools and showing clear financial break-even
-                  projections.
-                </li>
-                <li>
-                  <strong>Vibe-Coding Prompts:</strong> Custom, detailed prompts
-                  to build high-fidelity applications with dynamic state, local
-                  mock persistence, database designs, Stripe billing
-                  integrations, and automated emails.
-                </li>
-              </ul>
-            </div>
-          </div>
-        )}
+        {activeTab === "about" && <AboutTab />}
 
         {/* API SETTINGS TAB: RESTRICTED ACCESS FOR corranforce@gmail.com */}
         {activeTab === "settings" &&
@@ -2578,157 +2502,38 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
 
       {/* AUTHENTICATION OVERLAY DIALOG */}
       {showAuthModal && (
-        <div className="fixed inset-0 bg-ms-bg/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-ms-card border border-ms-border w-full max-w-sm rounded-lg overflow-hidden shadow-2xl relative">
-            <div className="absolute top-0 right-0 p-3">
-              <button
-                onClick={() => {
-                  setShowAuthModal(false);
-                  setAuthError(null);
-                  setAuthSuccess(null);
-                }}
-                className="text-ms-text-muted hover:text-white text-xs font-ms p-1 transition-colors"
-              >
-                [✕] CLOSE
-              </button>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <div className="text-center">
-                <div className="w-10 h-10 bg-ms-green-dark border border-ms-green rounded flex items-center justify-center font-ms text-ms-green text-lg font-bold mx-auto mb-2">
-                  🔐
-                </div>
-                <h3 className="text-base font-bold text-white font-ms">
-                  {isAuthRegister
-                    ? "REGISTER TERMINAL"
-                    : "AUTHENTICATE SESSION"}
-                </h3>
-                <p className="text-[10px] text-ms-text-muted mt-1 font-ms">
-                  {isAuthRegister
-                    ? "Create a new local operator credential"
-                    : "Verify operator code-keys to launch system"}
-                </p>
-              </div>
-
-              {authError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded font-ms flex items-start gap-1.5">
-                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-red-400" />
-                  <span>{authError}</span>
-                </div>
-              )}
-
-              {authSuccess && (
-                <div className="p-3 bg-ms-green/10 border border-ms-green/20 text-ms-green text-xs rounded font-ms flex items-start gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5 text-ms-green" />
-                  <span>{authSuccess}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleAuthSubmit} className="space-y-3">
-                <div>
-                  <label className="block text-[9px] font-ms text-ms-text-muted uppercase mb-1">
-                    Email Terminal Address
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="operator@domain.com"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    className="w-full bg-ms-bg border border-ms-border rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-ms-green font-ms font-sans"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[9px] font-ms text-ms-text-muted uppercase mb-1">
-                    Secret Access Cipher
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    className="w-full bg-ms-bg border border-ms-border rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-ms-green font-ms font-sans"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isSubmittingAuth}
-                  className="w-full py-2.5 bg-ms-green hover:bg-[#00d066] text-ms-bg font-bold text-xs rounded transition-all font-ms flex items-center justify-center gap-1.5 mt-2 disabled:opacity-50"
-                >
-                  {isSubmittingAuth ? (
-                    <>
-                      <div className="w-3.5 h-3.5 rounded-full border-2 border-ms-bg border-t-transparent animate-spin"></div>
-                      PROCESSING...
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-3.5 h-3.5" />
-                      {isAuthRegister ? "PROVISION USER" : "VERIFY SECURITY"}
-                    </>
-                  )}
-                </button>
-              </form>
-
-              <div className="text-center pt-2 border-t border-ms-border">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAuthRegister(!isAuthRegister);
-                    setAuthError(null);
-                    setAuthSuccess(null);
-                  }}
-                  className="text-[10px] text-ms-green hover:underline font-ms"
-                >
-                  {isAuthRegister
-                    ? "Already configured? Verify security cipher"
-                    : "Need to establish terminal? Provision user"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <AuthModal
+          isRegister={isAuthRegister}
+          email={authEmail}
+          setEmail={setAuthEmail}
+          password={authPassword}
+          setPassword={setAuthPassword}
+          error={authError}
+          success={authSuccess}
+          isSubmitting={isSubmittingAuth}
+          onSubmit={handleAuthSubmit}
+          onClose={() => {
+            setShowAuthModal(false);
+            setAuthError(null);
+            setAuthSuccess(null);
+          }}
+          onToggleMode={() => {
+            setIsAuthRegister(!isAuthRegister);
+            setAuthError(null);
+            setAuthSuccess(null);
+          }}
+        />
       )}
 
       {/* CLEAR ALL CONFIRMATION MODAL */}
       {showClearConfirmModal && (
-        <div className="fixed inset-0 bg-ms-bg/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-ms-card border border-red-500/30 w-full max-w-sm rounded-lg overflow-hidden shadow-2xl relative">
-            <div className="p-6 space-y-4">
-              <div className="text-center">
-                <div className="w-10 h-10 bg-red-950/30 border border-red-500/30 rounded flex items-center justify-center font-ms text-red-400 text-lg font-bold mx-auto mb-2">
-                  <AlertCircle className="w-5 h-5 text-red-500" />
-                </div>
-                <h3 className="text-base font-bold text-white font-ms">
-                  CLEAR ALL SAVED KITS?
-                </h3>
-                <p className="text-[10px] text-ms-text-muted mt-1 font-ms">
-                  This action is irreversible. All saved specs and development
-                  prompts will be permanently deleted from local storage.
-                </p>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setShowClearConfirmModal(false)}
-                  className="flex-1 py-2.5 bg-ms-bg border border-ms-border hover:bg-ms-border text-white text-xs font-ms font-bold rounded transition-all"
-                >
-                  CANCEL
-                </button>
-                <button
-                  onClick={() => {
-                    saveToLocalStorage([]);
-                    setShowClearConfirmModal(false);
-                  }}
-                  className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 text-white text-xs font-ms font-bold rounded transition-all"
-                >
-                  CONFIRM DELETE
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ClearConfirmModal
+          onCancel={() => setShowClearConfirmModal(false)}
+          onConfirm={() => {
+            saveToLocalStorage([]);
+            setShowClearConfirmModal(false);
+          }}
+        />
       )}
 
       <FloatingChatbot />
