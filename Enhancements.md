@@ -1,8 +1,10 @@
 # Enhancements & Backlog — Micro-SaaS Signal Engine
 
-**Last updated:** 2026-07-22
+**Last updated:** 2026-07-25
 
-This is the forward-looking backlog: work that is **not yet done**. Completed remediation is recorded in [README.md](./README.md) (two code-review sections) and [BugReport.md](./BugReport.md) (build/router failures). Items are grouped by priority; each has the *why* and a suggested approach.
+This is the forward-looking backlog: work that is **not yet done**. Completed remediation is recorded in [README.md](./README.md) (three code-review / backlog-completion sections) and [BugReport.md](./BugReport.md) (build/router failures). Items are grouped by priority; each has the *why* and a suggested approach.
+
+**Status as of 2026-07-25:** all P0/P1/P2 items are done or have a delivered plan except #1 (rotate/purge credentials — owner action), #5 (Supabase migration — needs a project), and #6 (distributed rate limiter — needs a provider choice). See README.md's "Backlog Completion & Decomposition" section for the full summary.
 
 ---
 

@@ -1,30 +1,21 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { LaunchKitTabs } from "./LaunchKitTabs";
 import {
   Search,
   Sparkles,
   TrendingUp,
   Coins,
-  ArrowRight,
   Copy,
   Check,
   Code,
   Database,
-  Mail,
-  Users,
   Info,
-  Globe,
   Wrench,
-  Calendar,
   AlertCircle,
-  CheckCircle2,
   Bookmark,
-  ChevronDown,
   Lock,
   Download,
-  ChevronUp,
 } from "lucide-react";
 import {
   searchSaaSIdeas,
@@ -35,7 +26,6 @@ import {
   getSessionUser,
   loadApiSettings,
   updateApiSettings,
-  chatWithAgent,
   getRealtimeSuggestions,
   sendLaunchKitEmail,
   addToSupabaseAction,

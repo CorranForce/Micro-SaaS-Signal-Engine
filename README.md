@@ -234,6 +234,18 @@ With the router conflict removed, the build progressed further and hit a pre-exi
 ### Still open after this round
 See [Enhancements.md](./Enhancements.md) for the forward-looking backlog (Supabase-backed persistence, serverless-safe rate limiting, `page.tsx` decomposition, retiring the half-built `secret_keys`/cron "security agent" feature, and rotating/purging any previously committed credentials).
 
+## Backlog Completion & Decomposition — 2026-07-23 to 2026-07-25
+
+Worked through the [Enhancements.md](./Enhancements.md) backlog in priority order. Summary (see that file for full detail on each item):
+
+- **P0:** router guardrail (`scripts/check-router.mjs`, wired into `predev`/`prebuild`) and an operator-provisioning CLI (`scripts/create-operator.mjs`) shipped and verified end-to-end; credential rotation/history-purge remains an owner action.
+- **P1:** the half-built `secret_keys`/cron "AI security agent" subsystem was removed entirely (dead code, no delivered value, real attack surface); a full Supabase migration plan was written ([SUPABASE_MIGRATION.md](./SUPABASE_MIGRATION.md)); `SESSION_SECRET` now fails closed in production.
+- **P2:** `recharts` upgraded 2.x → 3.x; up-front font loading trimmed 7 families → 2; `chatWithAgent` and the client/server action payloads were fully typed (no more `any` at the trust boundary); **`app/page.tsx` was decomposed from 3,510 → 1,651 lines (−53%)** into 11 components under `app/components/` plus two `app/lib/` helper modules.
+
+**Decomposition verification.** Because prop-threading a large stateful component carries real regression risk, every extracted component was verified twice: once at runtime in-browser (login, settings save, saved-kit search/expand/delete, idea-card render/expand/save/domain-check — all exercised live) immediately after extraction, and again via a line-by-line adversarial diff against the pre-extraction code (`git show <baseline>:app/page.tsx`) for every component, specifically hunting for dropped props, inverted conditions, or changed defaults. No behavioral drift was found in any of the 11 extracted pieces.
+
+**Follow-up quick review (2026-07-25).** A post-decomposition sweep (ESLint, a manual unused-import check, and a runtime smoke test) found 10 dead imports left in `app/page.tsx` after their JSX moved into the new components: the `LaunchKitTabs` import and the `ArrowRight`, `Mail`, `Users`, `Globe`, `Calendar`, `CheckCircle2`, `ChevronDown`, `ChevronUp` icons, and the `chatWithAgent` action — all now imported directly by the components that use them (`IdeaCard`, `SavedKitsTab`, `SettingsPanel`, `AuthModal`, `FloatingChatbot`). Removed; build and lint clean, zero console errors at runtime.
+
 ## License
 
 This project is licensed under the MIT License.
