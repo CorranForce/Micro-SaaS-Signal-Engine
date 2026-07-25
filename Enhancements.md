@@ -26,15 +26,18 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Do (if needed):** List what your key can access with `curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"` and override `GEMINI_MODEL` / `GEMINI_MODEL_PRO` in `.env`. If you need the Pro chat mode on free tier, point `GEMINI_MODEL_PRO` at a flash model or enable billing.
 - **Effort:** S.
 
-### 3. Provision the operator account out-of-band ✅ *(tooling delivered 2026-07-22)*
+### 3. Provision the operator account out-of-band ✅ *(delivered 2026-07-22; verified end-to-end 2026-07-25)*
 - **Why:** Self-registration of the operator email is now blocked (closed the escalation hole). The account must be created another way or the Settings panel is unreachable.
-- **Done:** Added `scripts/create-operator.mjs` (npm script `create-operator`) — it writes to the local `data/users.json` using the exact salted-scrypt format `app/security.ts` expects (verified: the produced hash validates with the app's `verifyPassword` logic; the script merges rather than clobbering existing users). Run it yourself with your own password:
+- **Done:** Added `scripts/create-operator.mjs` (npm script `create-operator`) — it writes to the local `data/users.json` using the exact salted-scrypt format `app/security.ts` expects (the produced hash validates with the app's `verifyPassword` logic; the script merges rather than clobbering existing users). Verified end-to-end 2026-07-25: provisioned the operator, logged in through the app, and confirmed operator access + the API Settings tab.
   ```bash
-  npm run create-operator -- corranforce@gmail.com   # prompts for a hidden password
+  npm run create-operator -- corranforce@gmail.com          # interactive (hidden prompt)
+  OPERATOR_PASSWORD=... npm run create-operator -- <email>  # non-interactive (CI / reliable)
   ```
-  If you use Supabase Auth instead of the local store, create the operator in Supabase.
-- **Fix 2026-07-23:** the interactive prompt hung when launched via `npm run`, because npm's shell wrapper can leave `process.stdin.isTTY` false in a real terminal — the script then waited on stdin end-of-stream that never came. It now distinguishes *redirected* stdin (pipe/file) from a *masked* TTY, reads the console device directly in the latter case, accepts an `OPERATOR_PASSWORD` env var as a non-interactive fallback, and fails fast with guidance instead of hanging.
-- **Remaining:** You run it once with a password you choose (I can't set that for you).
+  Password sources are tried in order: CLI arg → `OPERATOR_PASSWORD` env → prompt. If you use Supabase Auth instead of the local store, create the operator in Supabase.
+- **Interactive-prompt fixes (2026-07-23):** the hidden prompt initially failed two ways when launched via `npm run`:
+  1. **Masked TTY** — npm's shell wrapper can leave `process.stdin.isTTY` false in a real terminal, so the script took the "piped input" branch and waited on a stdin end-of-stream that never arrives interactively (appeared frozen). Fixed by distinguishing *redirected* stdin (fstat FIFO/file) from a *masked* TTY, reading the console device directly (`\\.\CONIN$` / `/dev/tty`) in the latter case, and adding the `OPERATOR_PASSWORD` fallback + fail-fast guidance.
+  2. **Multi-character input chunks** — the keystroke handler assumed one char per `data` event, but Windows delivers Enter as `\r\n` in a single chunk (and paste/fast-typing batch input), so Enter was silently dropped. Fixed by iterating each buffer character-by-character (unit-tested against 6 input shapes).
+- **Note:** the non-interactive `OPERATOR_PASSWORD` path is the most reliable across terminals; the interactive prompt is best-effort. The change does **not** revoke existing sessions (see #13).
 
 ### 4. Add a router guardrail to CI / prebuild ✅ *(resolved 2026-07-22)*
 - **Why:** The App/Pages Router conflict has now recurred once and broke the hosted build. Convention alone didn't hold.

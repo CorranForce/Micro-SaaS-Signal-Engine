@@ -90,6 +90,15 @@ Ensure you have Node.js and npm installed.
 | `npm run check:router` | Guardrail: fails if a `pages/` directory or a `next/document` import exists (App Router only — see BugReport.md). Runs automatically before `dev` and `build`. |
 | `npm run create-operator -- <email>` | Provision/update the operator (or any) account in the local `data/users.json` using the app's salted-scrypt format. Prompts for a hidden password. Needed because operator self-registration is intentionally blocked. Skip this if you use Supabase Auth. For a non-interactive run (CI, or if your terminal misbehaves): `OPERATOR_PASSWORD=... npm run create-operator -- <email>`. |
 
+## Local development notes
+
+A few gotchas that are easy to trip over (all learned the hard way):
+
+- **Run commands from the repo root.** The local JSON store resolves as `path.join(process.cwd(), "data")` (`app/db.ts`), and the app secret / rate limiter are process-relative too. If a launcher starts the dev server from a *different* directory (e.g. `npm --prefix ...` run from a parent folder), the server reads a **different** `data/users.json` than your CLI writes to — so a freshly provisioned operator will appear "invalid" at login. Symptom: `create-operator` succeeds but login fails. Fix: ensure the server's working directory is this repo (use an absolute path in any launch config).
+- **One checkout only.** Keep a single working copy. Duplicate checkouts (a second clone, or an extracted ZIP) combined with the point above are the classic cause of "my changes/logins aren't taking" — the server may be serving the other copy.
+- **Clear `.next` when switching between `build` and `dev`.** `next build` writes production artifacts into `.next`; starting `next dev` on top of them can throw `Invariant: Expected clientReferenceManifest to be defined` or similar. `rm -rf .next` (delete the `.next` folder) and restart.
+- **Local login needs the dev cookie relaxation.** The session cookie is `Secure; SameSite=None` in production (for the AI Studio iframe) but relaxes to `SameSite=Lax; Secure=false` when `NODE_ENV !== "production"`, so it works over `http://localhost`. Changing a password does **not** invalidate existing sessions (see Enhancements.md #13) — click **Terminate Session** to clear one.
+
 ## Usage
 
 1. **Find Ideas:** Start by selecting a niche or typing in a custom one. Set your parameters and click **"SCAN LEGACY MARKETS"**.
