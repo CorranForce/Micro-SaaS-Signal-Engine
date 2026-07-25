@@ -18,6 +18,7 @@ import {
   ApiSettings,
   SECRET_FIELDS,
 } from "./db";
+import type { SaasIdea, LaunchKit, SavedIdea } from "./types";
 
 const OPERATOR_EMAIL = (
   process.env.OPERATOR_EMAIL || "corranforce@gmail.com"
@@ -106,7 +107,7 @@ export interface GenerationResult<T> {
 export async function searchSaaSIdeas(
   niche: string,
   context: string,
-): Promise<GenerationResult<{ saasIdeas: any[] }>> {
+): Promise<GenerationResult<{ saasIdeas: SaasIdea[] }>> {
   const client = await getClientKey();
   if (!rateLimit(`search:${client}`, 10, 60_000)) {
     return {
@@ -237,14 +238,12 @@ Additionally, assign a marketDemandScore (1-10) evaluating the strength of marke
   }
 }
 
-export async function generateLaunchKit(idea: {
-  name: string;
-  tagline: string;
-  problem: string;
-  solution: string;
-  targetAudience: string;
-  painSolved: string;
-}): Promise<GenerationResult<any>> {
+export async function generateLaunchKit(
+  idea: Pick<
+    SaasIdea,
+    "name" | "tagline" | "problem" | "solution" | "targetAudience" | "painSolved"
+  >,
+): Promise<GenerationResult<LaunchKit>> {
   const client = await getClientKey();
   if (!rateLimit(`kit:${client}`, 6, 60_000)) {
     return {
@@ -770,7 +769,10 @@ Return ONLY a JSON object with this exact structure:
   }
 }
 
-export async function sendLaunchKitEmail(idea: any, kit: any = null) {
+export async function sendLaunchKitEmail(
+  idea: SaasIdea,
+  kit: LaunchKit | null = null,
+) {
   // Recipient is always the logged-in user — this endpoint must never be
   // usable as an open relay to arbitrary addresses.
   const userEmail = await getSessionEmail();
@@ -924,12 +926,10 @@ export async function sendLaunchKitEmail(idea: any, kit: any = null) {
 }
 
 function handleSupabaseError(errText: string) {
-  let parsedErr;
-  try {
-    parsedErr = JSON.parse(errText);
-  } catch {
-    parsedErr = { message: errText };
-  }
+  // The full Supabase/PostgREST error text can include schema and query
+  // details — log it server-side, but only return actionable, non-sensitive
+  // guidance to the client.
+  console.error("Supabase error:", errText);
   if (
     (errText.includes("relation") && errText.includes("does not exist")) ||
     errText.includes("schema cache") ||
@@ -975,10 +975,14 @@ CREATE POLICY "Allow anon insert" ON saved_ideas FOR INSERT TO anon WITH CHECK (
   return {
     success: false,
     reason: "SUPABASE_API_ERROR",
-    error: parsedErr.message || "Failed to interact with Supabase.",
+    error:
+      "Failed to save to Supabase. Check your Supabase URL/key in Settings and the table policies. (Details logged server-side.)",
   };
 }
-export async function addToSupabaseAction(idea: any, kit: any = null) {
+export async function addToSupabaseAction(
+  idea: SaasIdea,
+  kit: LaunchKit | null = null,
+) {
   try {
     const userEmail = await getSessionEmail();
     if (!userEmail) {
@@ -1052,7 +1056,7 @@ export async function addToSupabaseAction(idea: any, kit: any = null) {
   }
 }
 
-export async function syncToSupabaseAction(items: any[]) {
+export async function syncToSupabaseAction(items: SavedIdea[]) {
   try {
     const userEmail = await getSessionEmail();
     if (!userEmail) {

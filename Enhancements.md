@@ -92,11 +92,13 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Why:** `app/layout.tsx` loaded **seven** Google font families on every page just to power a font-switcher setting most users never touch — wasted bytes and requests.
 - **Done:** Reduced to the two families the switcher actually offers — **Inter** (default sans) and **JetBrains Mono** (mono). Removed Roboto, Open Sans, Lato, Poppins, and Playfair from `layout.tsx`, the dynamic font `<style>` block, and the Settings dropdown (a stale saved value now falls back to Inter). Five fewer font downloads per page.
 
-### 10. Tighten remaining type boundaries and error surfacing — 🟡 *partially done 2026-07-23*
-- **Why:** Server actions and several handlers still accept/return `any`; `chatWithAgent` used to `throw` (Next redacts the message in production, so the chatbot showed a generic error).
-- **Done:** `chatWithAgent` now returns a structured `GenerationResult<string>` (`{ success, data?, error? }`) and the chatbot surfaces the real error message.
-- **Remaining:** replace remaining `any` payloads on server actions with the shared `SaasIdea`/`LaunchKit` types, and stop returning raw Supabase error text to the client (`handleSupabaseError`). Deferred to the #8 decomposition, which touches the same call sites.
-- **Effort:** M.
+### 10. Tighten remaining type boundaries and error surfacing ✅ *(resolved 2026-07-25)*
+- **Why:** Server actions and several handlers accepted/returned `any`; `chatWithAgent` used to `throw` (Next redacts the message in production, so the chatbot showed a generic error).
+- **Done:**
+  - `chatWithAgent` returns a structured `GenerationResult<string>` and the chatbot surfaces the real error message (2026-07-23).
+  - The client/server payload boundaries are now typed with the shared `SaasIdea` / `LaunchKit` / `SavedIdea` types: `searchSaaSIdeas` → `GenerationResult<{ saasIdeas: SaasIdea[] }>`, `generateLaunchKit` → `GenerationResult<LaunchKit>` (param is a `Pick<SaasIdea, …>`), and `sendLaunchKitEmail` / `addToSupabaseAction` / `syncToSupabaseAction` take `SaasIdea` / `LaunchKit | null` / `SavedIdea[]` (2026-07-25).
+  - `handleSupabaseError` no longer echoes raw Supabase/PostgREST error text to the client — the full detail is logged server-side and the client gets an actionable, non-sensitive message.
+- **Note:** a handful of internal `any`s remain by design (catch clauses, the third-party Gemini `config` object) — those aren't client/server trust boundaries.
 
 ### 11. Migrate `recharts` 2.x → 3.x ✅ *(resolved 2026-07-23)*
 - **Why:** The 2.x line is EOL/deprecated. Only three symbols are used (`LineChart`, `Line`, `ResponsiveContainer`), so the migration was low-risk.
