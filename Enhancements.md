@@ -81,12 +81,16 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 
 ## 🟡 P2 — Maintainability & UX
 
-### 8. Decompose `app/page.tsx` — 🟡 *first pass done 2026-07-23 (~3,510 → 2,737 lines)*
+### 8. Decompose `app/page.tsx` ✅ *(done 2026-07-25 — 3,510 → 1,651 lines, −53%)*
 - **Why:** The ideas grid, saved kits, compare view, settings, auth modal, chatbot, and PDF export all lived in one component with ~40 `useState` hooks. This is where the crash-on-search bug (first review, B1) hid.
-- **Done (self-contained pieces, verified at runtime):** extracted `LEGACY_NICHES` → `app/lib/niches.ts`; `generateSqlFallback` + `escapeHtmlC` → `app/lib/launchkit-utils.ts`; and the standalone components `TypewriterLog`, `VisualSchemaDiagram` (+ `TableNode`), `CompareNichesView`, and `FloatingChatbot` → `app/components/*`. Charts, chatbot, and schema diagram confirmed rendering after the split.
-- **Remaining:** the state-coupled sections still inline in the main component — `IdeaCard`, `SavedKits`, `SettingsPanel`, `AuthModal`, and the PDF builder. These read ~40 shared `useState` values, so extracting them needs prop threading or a `useReducer`/store first; deferred to keep this pass regression-free.
-- **Do next:** introduce a small store or `useReducer` for the shared idea/kit/auth state, then lift the remaining sections out.
-- **Effort:** L.
+- **Pass 1 (2026-07-23):** extracted the self-contained pieces — `LEGACY_NICHES` → `app/lib/niches.ts`; `generateSqlFallback` + `escapeHtmlC` → `app/lib/launchkit-utils.ts`; and `TypewriterLog`, `VisualSchemaDiagram` (+ `TableNode`), `CompareNichesView`, `FloatingChatbot` → `app/components/*`.
+- **Pass 2 (2026-07-25):** lifted the state-coupled sections out via typed, prop-threaded components (explicit props rather than a global store — lower regression risk, verified each at runtime):
+  - `AboutTab`, `AuthModal`, `ClearConfirmModal` (batch 1)
+  - `SettingsPanel` — owns the `ApiSettingsState` type; handles operator form + access-denied (batch 2)
+  - `SavedKitsTab` — grid, search, per-card view/copy/delete/export + inline `LaunchKitTabs` (batch 3)
+  - `IdeaCard` — the ~500-line repeated card, flattened to per-index scalar props (batch 4)
+  Each was verified in the browser: auth login, settings save, saved-kit render/search/expand/delete, and idea-card render/expand/save/domain-check all work; build passes with zero console errors.
+- **Optional future polish:** the per-index callback closures in the `generatedIdeas.map` could move to a `useReducer`/context if the prop lists ever feel heavy, but the component is now readable and each section is independently testable.
 
 ### 9. Trim up-front font loading ✅ *(resolved 2026-07-23)*
 - **Why:** `app/layout.tsx` loaded **seven** Google font families on every page just to power a font-switcher setting most users never touch — wasted bytes and requests.
