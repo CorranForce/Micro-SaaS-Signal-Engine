@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Code, Wrench, Calendar, Mail, Users, Database, Copy, Check } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Code, Wrench, Calendar, Mail, Users, Database, Copy, Check, RotateCcw, Edit3 } from "lucide-react";
 import type { LaunchKit } from "./types";
 
 type SchemaTable = { name: string; fields: string[]; purpose: string };
@@ -24,6 +24,36 @@ export function LaunchKitTabs({
   inlineMode,
 }: LaunchKitTabsProps) {
   const [kitTab, setKitTab] = useState("prompt");
+
+  const defaultSql = useMemo(() => {
+    if (!kit) return "-- No SQL provided";
+    return (
+      kit.databaseRequirements?.sqlSchema ||
+      (kit.databaseRequirements?.tables && generateSqlFallback
+        ? generateSqlFallback(kit.databaseRequirements.tables)
+        : "-- No SQL provided")
+    );
+  }, [kit, generateSqlFallback]);
+
+  const [customSql, setCustomSql] = useState<string>("");
+  const [userHasEdited, setUserHasEdited] = useState<boolean>(false);
+
+  useEffect(() => {
+    setCustomSql(defaultSql);
+    setUserHasEdited(false);
+  }, [defaultSql]);
+
+  const isModified = userHasEdited && customSql !== defaultSql;
+
+  const handleResetSql = () => {
+    setCustomSql(defaultSql);
+    setUserHasEdited(false);
+  };
+
+  const handleSqlChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setCustomSql(e.target.value);
+    setUserHasEdited(e.target.value !== defaultSql);
+  };
 
   if (!kit) return null;
 
@@ -228,30 +258,61 @@ export function LaunchKitTabs({
           <h4 className="text-xs font-bold font-ms text-ms-yellow tracking-wider uppercase mb-1">Database Schema Requirements</h4>
           <p className="text-xs text-ms-text-muted">{kit.databaseRequirements?.schemaDescription}</p>
         </div>
-        <button
-          onClick={() => {
-            const sqlCode =
-              kit.databaseRequirements?.sqlSchema ||
-              (kit.databaseRequirements?.tables && generateSqlFallback
-                ? generateSqlFallback(kit.databaseRequirements.tables)
-                : "");
-            onCopy(sqlCode, "sql-schema");
-          }}
-          className="px-3 py-1.5 bg-ms-bg border border-ms-border text-ms-green hover:text-white hover:border-ms-green transition-colors text-xs font-ms font-bold rounded flex items-center justify-center gap-1.5 w-full sm:w-auto"
-        >
-          {copiedText === "sql-schema" ? <Check className="w-3.5 h-3.5" /> : <Database className="w-3.5 h-3.5" />}
-          {copiedText === "sql-schema" ? "COPIED SQL" : "COPY SQL SCRIPT"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isModified && (
+            <button
+              onClick={handleResetSql}
+              className="px-3 py-1.5 bg-ms-bg border border-ms-yellow/60 text-ms-yellow hover:bg-ms-yellow/10 transition-colors text-xs font-ms font-bold rounded flex items-center justify-center gap-1.5"
+              title="Reset database schema to AI suggestion"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              RESET TO AI SUGGESTION
+            </button>
+          )}
+          <button
+            onClick={() => onCopy(customSql, "sql-schema")}
+            className="px-3 py-1.5 bg-ms-bg border border-ms-border text-ms-green hover:text-white hover:border-ms-green transition-colors text-xs font-ms font-bold rounded flex items-center justify-center gap-1.5 w-full sm:w-auto"
+          >
+            {copiedText === "sql-schema" ? <Check className="w-3.5 h-3.5" /> : <Database className="w-3.5 h-3.5" />}
+            {copiedText === "sql-schema" ? "COPIED SQL" : "COPY SQL SCRIPT"}
+          </button>
+        </div>
       </div>
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-4">
-          <span className="text-[10px] text-ms-green font-ms uppercase font-bold block tracking-wider">PostgreSQL Setup Script</span>
-          <div className="p-4 bg-black/40 font-mono text-[11px] text-ms-green leading-relaxed overflow-x-auto max-h-[500px] custom-scrollbar whitespace-pre rounded border border-ms-border">
-            {kit.databaseRequirements?.sqlSchema ||
-              (kit.databaseRequirements?.tables && generateSqlFallback
-                ? generateSqlFallback(kit.databaseRequirements.tables)
-                : "-- No SQL provided")}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-ms-green font-ms uppercase font-bold tracking-wider flex items-center gap-1.5">
+              <Edit3 className="w-3 h-3 text-ms-green" />
+              Editable PostgreSQL Setup Script
+            </span>
+            {isModified ? (
+              <span className="text-[10px] bg-ms-yellow/20 text-ms-yellow border border-ms-yellow/40 px-2 py-0.5 rounded font-mono font-bold uppercase">
+                Custom Modified
+              </span>
+            ) : (
+              <span className="text-[10px] text-ms-text-muted font-mono uppercase">
+                AI Original
+              </span>
+            )}
+          </div>
+          <textarea
+            value={customSql}
+            onChange={handleSqlChange}
+            placeholder="-- Edit PostgreSQL schema here for custom model prototyping..."
+            className="w-full h-[400px] p-4 bg-black/60 font-mono text-[11px] text-ms-green leading-relaxed rounded border border-ms-border focus:border-ms-green focus:outline-none focus:ring-1 focus:ring-ms-green custom-scrollbar resize-y transition-all"
+            spellCheck={false}
+          />
+          <div className="flex items-center justify-between text-[10px] text-ms-text-muted font-ms">
+            <span>💡 Edit fields, add custom tables or constraints directly above.</span>
+            {isModified && (
+              <button
+                onClick={handleResetSql}
+                className="text-ms-yellow hover:underline flex items-center gap-1 font-bold"
+              >
+                <RotateCcw className="w-3 h-3" /> Reset to AI Suggestion
+              </button>
+            )}
           </div>
         </div>
         <div className="space-y-4">

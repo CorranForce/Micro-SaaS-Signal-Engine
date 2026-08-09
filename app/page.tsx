@@ -1577,7 +1577,10 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                 </p>
               </div>
             </div>
-            <CompareNichesView />
+            <CompareNichesView
+              generatedIdeas={generatedIdeas}
+              savedIdeas={savedIdeas}
+            />
           </div>
         )}
 
