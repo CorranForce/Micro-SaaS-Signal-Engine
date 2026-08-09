@@ -256,8 +256,12 @@ interface CompareNichesViewProps {
 }
 
 export function CompareNichesView({ generatedIdeas = [], savedIdeas = [] }: CompareNichesViewProps) {
-  const [niche1, setNiche1] = useState<string>("Dental Practices");
-  const [niche2, setNiche2] = useState<string>("HVAC Services");
+  // Defaults must exist in LEGACY_NICHES. Free-text names that aren't in the
+  // option list leave each <select> displaying its first option while state
+  // holds something else entirely, so the dropdowns disagree with the table
+  // they drive.
+  const [niche1, setNiche1] = useState<string>(LEGACY_NICHES[0].name);
+  const [niche2, setNiche2] = useState<string>(LEGACY_NICHES[1].name);
   const [chartMode, setChartMode] = useState<"histogram" | "individual">("histogram");
 
   // Niche hash comparison logic
@@ -293,7 +297,7 @@ export function CompareNichesView({ generatedIdeas = [], savedIdeas = [] }: Comp
   const metrics1 = getMetrics(niche1);
   const metrics2 = getMetrics(niche2);
 
-  // Extract last 10 SaaS ideas (using actual generated/saved ideas, filling with DEFAULT_SAMPLE_IDEAS if needed)
+  // Ideas the user has actually generated or saved, most recent last.
   const poolOfIdeas = [...generatedIdeas];
   savedIdeas.forEach((s) => {
     if (s.idea && !poolOfIdeas.some((i) => i.name === s.idea.name)) {
@@ -301,23 +305,26 @@ export function CompareNichesView({ generatedIdeas = [], savedIdeas = [] }: Comp
     }
   });
 
-  let combined10 = [...poolOfIdeas];
-  if (combined10.length < 10) {
-    DEFAULT_SAMPLE_IDEAS.forEach((sample) => {
-      if (combined10.length < 10 && !combined10.some((i) => i.name === sample.name)) {
-        combined10.push(sample);
-      }
-    });
-  }
-
-  const last10Ideas = combined10.slice(-10);
+  // Real and sample ideas are never mixed. Padding a short run of real ideas
+  // with canned ones silently folds invented scores into the user's own
+  // averages, and the panel would still call the result "ideas tracked". With
+  // nothing generated yet we show the canned set on its own, badged as a
+  // preview; as soon as there is real data the samples disappear entirely.
+  const isSampleData = poolOfIdeas.length === 0;
+  const last10Ideas = isSampleData
+    ? DEFAULT_SAMPLE_IDEAS.slice(0, 10)
+    : poolOfIdeas.slice(-10);
 
   // Calculate statistics
   const totalHotness = last10Ideas.reduce((sum, idea) => sum + (idea.hotnessScore || 0), 0);
-  const avgHotness = (totalHotness / last10Ideas.length).toFixed(1);
+  const avgHotness = last10Ideas.length
+    ? (totalHotness / last10Ideas.length).toFixed(1)
+    : "—";
   const topIdea = [...last10Ideas].sort((a, b) => (b.hotnessScore || 0) - (a.hotnessScore || 0))[0];
   const highDemandCount = last10Ideas.filter((i) => (i.hotnessScore || 0) >= 80).length;
-  const highDemandRatio = Math.round((highDemandCount / last10Ideas.length) * 100);
+  const highDemandRatio = last10Ideas.length
+    ? Math.round((highDemandCount / last10Ideas.length) * 100)
+    : 0;
 
   // Construct Histogram Buckets data
   const histogramBuckets = [
@@ -390,14 +397,22 @@ export function CompareNichesView({ generatedIdeas = [], savedIdeas = [] }: Comp
       <div className="bg-ms-card border border-ms-border rounded-lg p-5 space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-ms-border pb-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Flame className="w-5 h-5 text-ms-green animate-pulse" />
               <h3 className="text-base font-bold text-white uppercase font-ms tracking-wider">
-                Hotness Score Distribution (Last 10 Ideas)
+                Hotness Score Distribution
+                {isSampleData ? "" : ` (Last ${last10Ideas.length})`}
               </h3>
+              {isSampleData && (
+                <span className="text-[10px] bg-ms-yellow/20 text-ms-yellow border border-ms-yellow/40 px-2 py-0.5 rounded font-mono font-bold uppercase">
+                  Example Data
+                </span>
+              )}
             </div>
             <p className="text-xs text-ms-text-muted mt-1 font-ms">
-              Visualizing market demand density to accelerate high-yield micro-SaaS niche selection.
+              {isSampleData
+                ? "You haven't generated any ideas yet — these are canned examples showing what this panel looks like. Scan a niche and they'll be replaced by your own results."
+                : "Visualizing market demand density to accelerate high-yield micro-SaaS niche selection."}
             </p>
           </div>
 
@@ -454,7 +469,9 @@ export function CompareNichesView({ generatedIdeas = [], savedIdeas = [] }: Comp
             <span className="text-[10px] text-ms-text-muted uppercase font-ms font-bold tracking-wider font-mono">Sample Size</span>
             <div className="flex items-baseline gap-1 mt-1">
               <span className="text-xl font-bold font-mono text-white">{last10Ideas.length}</span>
-              <span className="text-[10px] text-ms-text-muted font-ms">Ideas Tracked</span>
+              <span className="text-[10px] text-ms-text-muted font-ms">
+                {isSampleData ? "Example Ideas" : "Ideas Tracked"}
+              </span>
             </div>
           </div>
         </div>
@@ -515,7 +532,9 @@ export function CompareNichesView({ generatedIdeas = [], savedIdeas = [] }: Comp
         <div className="space-y-3">
           <h4 className="text-xs font-bold text-white uppercase font-ms tracking-wider flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-ms-green" />
-            Last 10 Generated Ideas Hotness Breakdown
+            {isSampleData
+              ? "Example Ideas Hotness Breakdown"
+              : `Last ${last10Ideas.length} Generated Ideas Hotness Breakdown`}
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {last10Ideas.map((idea, idx) => (

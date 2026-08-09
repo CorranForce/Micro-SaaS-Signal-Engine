@@ -304,7 +304,13 @@ export function LaunchKitTabs({
             spellCheck={false}
           />
           <div className="flex items-center justify-between text-[10px] text-ms-text-muted font-ms">
-            <span>💡 Edit fields, add custom tables or constraints directly above.</span>
+            {/* Edits live in this component only — saved kits, PDF export and
+                the launch-kit email all render kit.databaseRequirements.sqlSchema,
+                so say plainly that COPY SQL SCRIPT is the way to keep them. */}
+            <span>
+              💡 Edits apply to <strong className="text-ms-text">Copy SQL Script</strong> only — they
+              aren&apos;t saved to the kit, PDF, or email.
+            </span>
             {isModified && (
               <button
                 onClick={handleResetSql}

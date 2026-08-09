@@ -36,6 +36,7 @@ This project is built using modern web technologies:
 - **Charts:** [Recharts](https://recharts.org/) (niche comparison sparklines)
 - **Diagrams:** [@xyflow/react](https://reactflow.dev/) (visual database ER diagrams)
 - **PDF Export:** [html2pdf.js](https://ekoopmans.github.io/html2pdf.js/)
+- **Cloud persistence (optional):** [Supabase](https://supabase.com/) (`saved_ideas` push/sync; see [supabase_schema.sql](./supabase_schema.sql))
 
 ## Getting Started
 
@@ -245,6 +246,54 @@ Worked through the [Enhancements.md](./Enhancements.md) backlog in priority orde
 **Decomposition verification.** Because prop-threading a large stateful component carries real regression risk, every extracted component was verified twice: once at runtime in-browser (login, settings save, saved-kit search/expand/delete, idea-card render/expand/save/domain-check — all exercised live) immediately after extraction, and again via a line-by-line adversarial diff against the pre-extraction code (`git show <baseline>:app/page.tsx`) for every component, specifically hunting for dropped props, inverted conditions, or changed defaults. No behavioral drift was found in any of the 11 extracted pieces.
 
 **Follow-up quick review (2026-07-25).** A post-decomposition sweep (ESLint, a manual unused-import check, and a runtime smoke test) found 10 dead imports left in `app/page.tsx` after their JSX moved into the new components: the `LaunchKitTabs` import and the `ArrowRight`, `Mail`, `Users`, `Globe`, `Calendar`, `CheckCircle2`, `ChevronDown`, `ChevronUp` icons, and the `chatWithAgent` action — all now imported directly by the components that use them (`IdeaCard`, `SavedKitsTab`, `SettingsPanel`, `AuthModal`, `FloatingChatbot`). Removed; build and lint clean, zero console errors at runtime.
+
+## Third Code Review & Remediation — 2026-08-09
+
+A full review of three commits pushed to `main` after the 2026-07-25 sweep: `8a5d0ea` (secrets encryption + security agent), `2073f04` (font options), and `a131ec4` (SQL editor + compare-niches dashboard). `8a5d0ea` restored, byte-for-byte, the `secret_keys`/cron subsystem that R3/R6/R7 above record as removed — so most of that round's findings came back with it. All items below are **FIXED** and verified: `npm ci` clean, `next build` green **with no environment variables set at all**, `tsc --noEmit` and `next lint` clean, auth gates and UI behavior confirmed in a browser.
+
+### 🔴 Build blockers (`main` would not build)
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| T1 | **`npm ci` failed outright.** `node-cron` and `@types/node-cron` were added to `package.json` and `bun.lock` was regenerated, but `package-lock.json` was never updated — `npm error Missing: node-cron@4.6.0 from lock file`. Any npm-based CI or Vercel build died before compiling. | `package-lock.json` | `node-cron` removed entirely with `instrumentation.ts` (T6) and the lockfile regenerated; `npm ci` verified clean. |
+| T2 | **`next build` failed without `SUPABASE_URL`.** `app/lib/supabase.ts` called `createClient()` at module scope with `''` fallbacks; supabase-js throws `supabaseUrl is required.`, and Next imports every route module while collecting page data → `Failed to collect page data for /api/secrets/seed`. This is the identical latent bug called out under "Latent build bug uncovered" above, reintroduced. | `app/lib/supabase.ts` | Client is lazy again via `getServiceClient()`, built inside the request handler. Build now succeeds with zero env vars. |
+
+### 🔴 Critical (regressions of R3 / R6)
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| T3 | **`POST /api/secrets/seed` unauthenticated.** Verified live: anonymous POST returned `HTTP 200`. With credentials configured it reads `GEMINI_API_KEY`, `RESEND_API_KEY`, `GODADDY_API_KEY`, `GODADDY_API_SECRET` and `APOLLO_API_KEY` and writes them to the database. Even unconfigured, the per-key `skipped (not found)` vs `success` breakdown told an anonymous caller exactly which integrations the deployment holds. | `app/api/secrets/seed/route.ts` | Operator-gated via `isOperator()`; anonymous and non-operator callers both get an identical `403`. `force-dynamic` restored. Verified: anonymous POST → `403 {"error":"Not authorized"}`. |
+| T4 | **`GET /api/cron/agent` unauthenticated.** Reachable anonymously; each call billed a Gemini request and returned metadata about the `secret_keys` table. `vercel.json` scheduled it hourly with no secret check — the URL was the entire gate. | `app/api/cron/agent/route.ts` | Requires `Authorization: Bearer $CRON_SECRET`, compared in constant time, **failing closed when `CRON_SECRET` is unset**. Model id now follows `GEMINI_MODEL` instead of a hard-coded `gemini-3.1-flash-lite` (R5). Supabase errors are logged server-side, not returned. Verified: no header → `401`, wrong bearer → `401`, correct bearer → passes auth. |
+| T5 | **Hard-coded encryption fallback key returned.** `app/lib/encryption.ts` came back verbatim, including `'a-default-secret-key-that-is-at-least-32-chars-long'`. Demonstrated: a value encrypted with `SESSION_SECRET` unset is recoverable knowing only the repo. Still AES-256-**CBC** (unauthenticated), and its `sha256 → base64 → substring(0,32)` derivation yields **192 bits** of entropy, not 256. Because this is one of the two paths in the Enhancements.md #1 history-purge runbook, restoring it at HEAD also blocked that cleanup. | `app/lib/encryption.ts` | Deleted again. Both routes now use `encryptSecret`/`decryptSecret` from `app/security.ts` (AES-256-GCM, `enc:v1:` envelope, key from `getAppSecret()` which throws in production when `SESSION_SECRET` is missing). |
+
+### 🟠 High
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| T6 | **In-process cron returned, still broken.** `instrumentation.ts` re-registered `node-cron` against a hard-coded `http://localhost:3000`. Verified: on a server started on port 3113 it logged `⚙️ Hourly security agent cron registered.` while pointing at 3000. It also duplicated the `vercel.json` schedule and would now 401 hourly against the protected route. | `instrumentation.ts` | Deleted (again), along with the `node-cron` dependency. Scheduling is Vercel Cron only, via `vercel.json`. |
+| T7 | **`secret_keys` table existed nowhere.** `supabase_schema.sql` defines only `saved_ideas`, so both routes queried a table nothing creates — the cron route 500'd on every run. | `supabase_schema.sql` | Added `secret_keys` with **RLS enabled and no policies**, so PostgREST denies anon and authenticated entirely and only the service-role key can reach it, plus an `updated_at` trigger so the agent's staleness reporting means something. |
+| T8 | **Session cookie heuristic broke non-localhost dev.** `8a5d0ea` treated *any* host not starting with `localhost`/`127.0.0.1` as HTTPS, so `next dev` reached over a LAN IP or IPv6 `[::1]` got `Secure; SameSite=None`, the browser silently dropped the cookie, and login failed with no error — the exact failure the original comment existed to prevent. | `app/actions.ts` | `x-forwarded-proto` is now authoritative when present (covering Cloud Run/Vercel/nginx regardless of `NODE_ENV`); loopback — including `[::1]` — is always treated as plain http; `NODE_ENV` is only the fallback. Since the header can only *add* `Secure`, a spoofed value cannot downgrade a real HTTPS session. |
+
+### 🟡 Medium — dashboard correctness
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| T9 | **Fabricated ideas were counted as the user's own.** `DEFAULT_SAMPLE_IDEAS` (10 hard-coded ideas) padded any shorter run, then the panel reported them as `SAMPLE SIZE 10 · Ideas Tracked` under `LAST 10 GENERATED IDEAS`. On a clean session it showed `AVG HOTNESS 86.6` and `TOP SCORING IDEA Solar Permit Auto-Filer` — none of it generated. With a partial run the aggregates silently blended real and invented scores. | `app/components/CompareNichesView.tsx` | Real and sample ideas are never mixed. With nothing generated the canned set shows alone behind an `EXAMPLE DATA` badge and explanatory copy; the moment real ideas exist the samples disappear and every statistic is computed from real data only. Verified in-browser: two seeded ideas scoring 71 and 64 now yield `AVG HOTNESS 67.5`, `SAMPLE SIZE 2 Ideas Tracked`, and no canned entries. |
+| T10 | **Niche dropdowns disagreed with the table they drive** *(pre-existing, predates these commits — surfaced by the new dashboard)*. State defaulted to `"Dental Practices"` / `"HVAC Services"`, neither of which exists in `LEGACY_NICHES` (`"Dental Practice Ops"`, `"HVAC & Electrical"`). Both `<select>`s therefore displayed their first option, "Amazon FBA Sellers", while the comparison table below read DENTAL PRACTICES vs HVAC SERVICES. | `app/components/CompareNichesView.tsx` | Defaults are now `LEGACY_NICHES[0].name` / `[1].name`. Verified: selects and table columns agree. |
+| T11 | **SQL editor edits silently discarded on export.** The new editor shows a "CUSTOM MODIFIED" badge, but `customSql` is local component state — saved kits, the PDF export and the launch-kit email all render `kit.databaseRequirements.sqlSchema`, the unedited original. | `app/LaunchKitTabs.tsx` | Helper text now states plainly that edits apply to **Copy SQL Script** only and are not saved to the kit, PDF, or email. (The editor itself is copy-only by design — it never executes SQL.) |
+
+### 🔵 Low
+
+- **`"build": "NODE_ENV=production next build"`** reverted to `next build` — `next build` already sets `NODE_ENV=production`, and the inline assignment breaks on Windows `cmd`/PowerShell.
+- **`update_readme.py` / `update_readme_2.py`** deleted. Two committed one-off scripts that contradicted each other (Next.js `v16.2.10` vs `v15.1.0`, recharts `v2.15.4` vs `v3.10.0`), were both wrong about the actual versions, were never applied (`README.md` is untouched in those commits), and carried a greedy `re.sub(r'## Tech Stack.*## Getting Started', …, flags=DOTALL)` that would erase everything between the first and last occurrence of those headings.
+- **`.env.example`** now documents `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET` and `APOLLO_API_KEY`, each scoped to the routes that read it.
+
+### Reviewed and deliberately left alone
+
+- **`app/global-error.tsx` dropping its `<html>`/`<body>` wrapper is fine.** This looked like a re-run of BugReport Issue 2, so it was tested rather than assumed: a root-layout throw was forced, built for production, and loaded in Chromium. It renders correctly — one `<html>`, one `<body>`, "Something went wrong. / Try again", no nesting or hydration errors — because Next 15.5 supplies its own `__next_error__` document shell. It does diverge from Next's documented contract and from their builtin implementation, so it is worth revisiting on a major Next upgrade, but it is not a bug today.
+- **The session-refresh work in `app/page.tsx`** (`8a5d0ea`) is correct and was kept as-is: falling back to the server session instead of trusting client state, and clearing `localStorage` on an `AUTH_REQUIRED` response, is the right fix.
+- **Simulated niche metrics.** `getMetrics` still derives MRR/growth/trend from `hashCode(nicheName)`. That is pre-existing and honestly labeled by the `SIMULATED DATA` badge on the tab, so it was left alone — it is also why two different niches can show an identical growth figure.
+- **Font loading.** `2073f04` re-expanded up-front fonts from 2 families to 5 (Roboto at 3 weights), reversing Enhancements.md #9. That is a deliberate product choice, so it stands — but the `/` bundle is now 197 kB (299 kB first load), up from 164 kB, and the item is reopened in the backlog rather than silently dropped.
 
 ## License
 
