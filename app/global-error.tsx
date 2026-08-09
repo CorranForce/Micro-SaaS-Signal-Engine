@@ -19,39 +19,37 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <html lang="en">
-      <body
+    <div
+      style={{
+        minHeight: "100vh",
+        margin: 0,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "1rem",
+        background: "#0a0a0a",
+        color: "#e5e5e5",
+        fontFamily: "sans-serif",
+      }}
+    >
+      <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
+        Something went wrong.
+      </h2>
+      <button
+        onClick={() => reset()}
         style={{
-          minHeight: "100vh",
-          margin: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "1rem",
-          background: "#0a0a0a",
-          color: "#e5e5e5",
-          fontFamily: "sans-serif",
+          borderRadius: "0.5rem",
+          border: "1px solid rgba(255,255,255,0.2)",
+          padding: "0.5rem 1rem",
+          fontSize: "0.875rem",
+          background: "transparent",
+          color: "inherit",
+          cursor: "pointer",
         }}
       >
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 700 }}>
-          Something went wrong.
-        </h2>
-        <button
-          onClick={() => reset()}
-          style={{
-            borderRadius: "0.5rem",
-            border: "1px solid rgba(255,255,255,0.2)",
-            padding: "0.5rem 1rem",
-            fontSize: "0.875rem",
-            background: "transparent",
-            color: "inherit",
-            cursor: "pointer",
-          }}
-        >
-          Try again
-        </button>
-      </body>
-    </html>
+        Try again
+      </button>
+    </div>
   );
 }

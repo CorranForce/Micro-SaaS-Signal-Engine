@@ -44,16 +44,25 @@ async function getSessionEmail(): Promise<string | null> {
 
 async function setSessionCookie(email: string) {
   const cookieStore = await cookies();
-  // Embedding the app in the AI Studio iframe (cross-site) requires
-  // Secure + SameSite=None + Partitioned. But browsers drop such cookies on
-  // plain http://localhost, which silently breaks login in local dev. Relax
-  // the attributes when not in production so local login works.
-  const isProd = process.env.NODE_ENV === "production";
+  let isHttps = false;
+  try {
+    const h = await headers();
+    const proto = h.get("x-forwarded-proto") || "";
+    const host = h.get("host") || "";
+    isHttps =
+      proto === "https" ||
+      host.includes(".run.app") ||
+      process.env.NODE_ENV === "production" ||
+      (host !== "" && !host.startsWith("localhost") && !host.startsWith("127.0.0.1"));
+  } catch {
+    isHttps = process.env.NODE_ENV === "production";
+  }
+
   cookieStore.set(SESSION_COOKIE, createSessionToken(email), {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? "none" : "lax",
-    partitioned: isProd,
+    secure: isHttps,
+    sameSite: isHttps ? "none" : "lax",
+    partitioned: isHttps,
     maxAge: 60 * 60 * 24 * 30, // 30 days, matches token max age
     path: "/",
   });

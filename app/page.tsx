@@ -721,7 +721,17 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
   };
 
   const handleEmailCard = async (idea: SaasIdea, index: number) => {
-    if (!currentUser) {
+    // Check server-side session cookies first instead of relying solely on client state
+    let activeUser = currentUser;
+    if (!activeUser) {
+      activeUser = await getSessionUser();
+      if (activeUser) {
+        setCurrentUser(activeUser);
+        localStorage.setItem("session_user", activeUser);
+      }
+    }
+
+    if (!activeUser) {
       setShowAuthModal(true);
       return;
     }
@@ -738,11 +748,22 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
           ...prev,
           [index]: {
             success: true,
-            message: `Sent blueprint email to ${currentUser}! 📬`,
+            message: `Sent blueprint email to ${activeUser}! 📬`,
           },
         }));
       } else {
-        if (res.reason && res.reason.includes("RESEND_API_KEY")) {
+        if (res.reason === "AUTH_REQUIRED") {
+          setCurrentUser(null);
+          localStorage.removeItem("session_user");
+          setShowAuthModal(true);
+          setEmailCardStatus((prev) => ({
+            ...prev,
+            [index]: {
+              success: false,
+              message: res.error || "Session expired. Please log in again.",
+            },
+          }));
+        } else if (res.reason && res.reason.includes("RESEND_API_KEY")) {
           setEmailCardStatus((prev) => ({
             ...prev,
             [index]: {
@@ -894,7 +915,16 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
 
       // Trigger automatic email dispatch if user is logged in.
       // Status is surfaced through emailCardStatus, which the card renders.
-      if (currentUser) {
+      let activeUser = currentUser;
+      if (!activeUser) {
+        activeUser = await getSessionUser();
+        if (activeUser) {
+          setCurrentUser(activeUser);
+          localStorage.setItem("session_user", activeUser);
+        }
+      }
+
+      if (activeUser) {
         try {
           const emailRes = await sendLaunchKitEmail(idea, data);
           if (emailRes.success) {
@@ -902,11 +932,14 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
               ...prev,
               [index]: {
                 success: true,
-                message: `Launch Kit successfully emailed to ${currentUser}! 📬`,
+                message: `Launch Kit successfully emailed to ${activeUser}! 📬`,
               },
             }));
           } else {
-            if (emailRes.reason && emailRes.reason.includes("RESEND_API_KEY")) {
+            if (emailRes.reason === "AUTH_REQUIRED") {
+              setCurrentUser(null);
+              localStorage.removeItem("session_user");
+            } else if (emailRes.reason && emailRes.reason.includes("RESEND_API_KEY")) {
               setEmailCardStatus((prev) => ({
                 ...prev,
                 [index]: {
