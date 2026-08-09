@@ -260,8 +260,11 @@ export function SettingsPanel({
                 }
                 className="w-full bg-ms-card border border-ms-border rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-ms-green transition-colors font-sans"
               >
-                <option value="inter">Inter (Sans Serif)</option>
+                <option value="inter">Inter (Default Sans)</option>
+                <option value="jakarta">Plus Jakarta Sans (Modern Sans)</option>
+                <option value="roboto">Roboto (Clean Sans)</option>
                 <option value="mono">JetBrains Mono (Monospace)</option>
+                <option value="firaCode">Fira Code (Code Mono)</option>
               </select>
             </div>
 

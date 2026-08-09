@@ -1030,6 +1030,12 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
               font-family: ${
                 apiSettings.fontFamily === "mono"
                   ? "var(--font-mono), monospace"
+                  : apiSettings.fontFamily === "firaCode"
+                  ? "var(--font-fira-code), monospace"
+                  : apiSettings.fontFamily === "roboto"
+                  ? "var(--font-roboto), sans-serif"
+                  : apiSettings.fontFamily === "jakarta"
+                  ? "var(--font-jakarta), sans-serif"
                   : "var(--font-inter), sans-serif"
               } !important;
             }
