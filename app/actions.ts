@@ -19,11 +19,7 @@ import {
   SECRET_FIELDS,
 } from "./db";
 import type { SaasIdea, LaunchKit, SavedIdea } from "./types";
-
-const OPERATOR_EMAIL = (
-  process.env.OPERATOR_EMAIL || "corranforce@gmail.com"
-).toLowerCase();
-const SESSION_COOKIE = "session_token";
+import { OPERATOR_EMAIL, SESSION_COOKIE } from "./lib/auth-guard";
 
 // Gemini model IDs. Model availability varies by API account — pinned versions
 // (e.g. gemini-2.5-flash) can become unavailable to newer keys, and the old
@@ -44,18 +40,39 @@ async function getSessionEmail(): Promise<string | null> {
 
 async function setSessionCookie(email: string) {
   const cookieStore = await cookies();
-  let isHttps = false;
+
+  // Embedding the app in the AI Studio iframe (cross-site) requires
+  // Secure + SameSite=None + Partitioned. Browsers drop such cookies on plain
+  // http, which silently breaks login, so these are applied only when the
+  // request really is HTTPS.
+  //
+  // x-forwarded-proto is authoritative wherever a managed proxy terminates TLS
+  // (Vercel, Cloud Run, nginx), so it covers deployments regardless of what
+  // NODE_ENV happens to be. It can only ever *add* Secure here, so a spoofed
+  // value cannot downgrade a genuine HTTPS session. Only when that header is
+  // absent do we fall back to NODE_ENV — and loopback is always treated as
+  // plain http, so a LAN address or IPv6 [::1] in dev no longer gets a Secure
+  // cookie the browser will silently discard.
+  let isHttps = process.env.NODE_ENV === "production";
   try {
     const h = await headers();
-    const proto = h.get("x-forwarded-proto") || "";
-    const host = h.get("host") || "";
-    isHttps =
-      proto === "https" ||
-      host.includes(".run.app") ||
-      process.env.NODE_ENV === "production" ||
-      (host !== "" && !host.startsWith("localhost") && !host.startsWith("127.0.0.1"));
+    const proto = (h.get("x-forwarded-proto") || "").split(",")[0].trim();
+    const hostname = (h.get("host") || "")
+      .toLowerCase()
+      .replace(/:\d+$/, "")
+      .replace(/^\[|\]$/g, "");
+
+    if (proto) {
+      isHttps = proto === "https";
+    } else if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1"
+    ) {
+      isHttps = false;
+    }
   } catch {
-    isHttps = process.env.NODE_ENV === "production";
+    // headers() unavailable outside a request scope — keep the NODE_ENV default.
   }
 
   cookieStore.set(SESSION_COOKIE, createSessionToken(email), {

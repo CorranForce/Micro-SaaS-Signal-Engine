@@ -1,37 +1,61 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
-import { encrypt } from '@/app/lib/encryption';
+import { NextResponse } from "next/server";
+import { getServiceClient } from "@/app/lib/supabase";
+import { isOperator } from "@/app/lib/auth-guard";
+import { encryptSecret } from "@/app/security";
+
+// Reads server-side credentials and mirrors them (encrypted) into secret_keys.
+// Operator-only: an unauthenticated caller could otherwise trigger writes of
+// every configured credential, and even the per-key "configured / not found"
+// breakdown in the response discloses which integrations this deployment holds.
+export const dynamic = "force-dynamic";
+
+const SEEDED_KEYS = [
+  "GEMINI_API_KEY",
+  "RESEND_API_KEY",
+  "GODADDY_API_KEY",
+  "GODADDY_API_SECRET",
+  "APOLLO_API_KEY",
+] as const;
 
 export async function POST() {
-  const secrets = [
-    { name: 'GEMINI_API_KEY', value: process.env.GEMINI_API_KEY },
-    { name: 'RESEND_API_KEY', value: process.env.RESEND_API_KEY },
-    { name: 'GODADDY_API_KEY', value: process.env.GODADDY_API_KEY },
-    { name: 'GODADDY_API_SECRET', value: process.env.GODADDY_API_SECRET },
-    { name: 'APOLLO_API_KEY', value: process.env.APOLLO_API_KEY },
-  ];
+  if (!(await isOperator())) {
+    // Same body for anonymous and non-operator callers — distinguishing them
+    // would confirm which accounts exist.
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
-  const results = [];
+  let client;
+  try {
+    client = getServiceClient();
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Supabase unavailable" },
+      { status: 503 },
+    );
+  }
 
-  for (const secret of secrets) {
-    if (!secret.value) {
-      results.push({ name: secret.name, status: 'skipped (not found)' });
+  const results: { name: string; status: string; details?: string }[] = [];
+
+  for (const name of SEEDED_KEYS) {
+    const value = process.env[name];
+    if (!value) {
+      results.push({ name, status: "skipped (not configured)" });
       continue;
     }
 
-    const encryptedValue = encrypt(secret.value);
+    const { error } = await client
+      .from("secret_keys")
+      .upsert(
+        { name, encrypted_value: encryptSecret(value) },
+        { onConflict: "name" },
+      );
 
-    // Upsert the secret into the database
-    const { error } = await supabase
-      .from('secret_keys')
-      .upsert({ name: secret.name, encrypted_value: encryptedValue }, { onConflict: 'name' });
-
-    if (error) {
-      results.push({ name: secret.name, status: 'error', details: error.message });
-    } else {
-      results.push({ name: secret.name, status: 'success' });
-    }
+    results.push(
+      error
+        ? { name, status: "error", details: error.message }
+        : { name, status: "success" },
+    );
   }
 
-  return NextResponse.json({ message: 'Secrets seeded', results });
+  return NextResponse.json({ message: "Secrets seeded", results });
 }

@@ -5,6 +5,8 @@
 **Environment analyzed:** Windows 10 Pro, Node v22.14.0, npm 11.16.0
 **Status:** ✅ Both issues resolved and verified (clean `npm install`, clean `next build` 4/4 pages, app + 404 page verified running in browser with zero console errors)
 
+> ⚠️ **UPDATE 2026-08-09 — the build broke again, for two new reasons.** `npm ci` failed on desynced lockfiles, and `next build` crashed on a module-scope Supabase client (a recurrence of the 2026-07-22 latent bug). Both are fixed; see [the 2026-08-09 update at the end of this document](#update-2026-08-09--main-would-not-build-two-independent-causes).
+
 > ⚠️ **UPDATE 2026-07-22 — Issue 2 RECURRED and was re-fixed.** After this report was written, `pages/_document.tsx` and `pages/_app.tsx` were re-created **and committed to `main`**, reintroducing the exact Pages/App Router conflict described in Issue 2 below. The `app/global-error.tsx` file this report claims was added was **not present** in the repo. Both have now been corrected — see [the recurrence section at the end of this document](#update-2026-07-22--issue-2-recurred). Treat the "Fixes applied" and "Verification" sections below as the *original* 2026-07-03 state, not the current one.
 
 ---
@@ -161,3 +163,49 @@ test ! -d pages || { echo "ERROR: pages/ router dir must not exist (App Router o
 ```
 
 This turns the "never do this" convention into an enforced guardrail. Security and other findings from the same review are tracked in [README.md](./README.md#second-code-review--remediation--2026-07-22) and [Enhancements.md](./Enhancements.md).
+
+---
+
+## Update 2026-08-09 — `main` would not build (two independent causes)
+
+**Status:** ✅ Both fixed and verified — `npm ci` clean, and `next build` green **with no environment variables set at all** (4/4 static pages; `/api/cron/agent` and `/api/secrets/seed` as dynamic routes). `tsc --noEmit` and `next lint` also clean.
+
+The router guardrail added above did its job — it passed on every run, and no `pages/` directory or `next/document` import reappeared. These are different failures, both introduced by commit `8a5d0ea`.
+
+### Issue 3 — `npm ci` failed: lockfiles out of sync
+
+**Symptom**
+```
+npm error `npm ci` can only install packages when your package.json and
+npm error package-lock.json or npm-shrinkwrap.json are in sync.
+npm error Missing: @types/node-cron@3.0.11 from lock file
+npm error Missing: node-cron@4.6.0 from lock file
+```
+
+**Root cause.** `node-cron` and `@types/node-cron` were added to `package.json` and `bun.lock` was regenerated, but `package-lock.json` was not. The repo carries **two lockfiles**, and only one was updated. `npm install` silently repairs this locally, which is why it went unnoticed — but `npm ci`, which every CI and Vercel build uses, fails hard and never reaches the compile step.
+
+**Fix applied.** `node-cron` was removed entirely along with `instrumentation.ts` (its only consumer — see README T6), and `package-lock.json` was regenerated. Verified with a clean `rm -rf node_modules && npm ci`.
+
+**Recommendation.** Pick one lockfile and delete the other, or add `npm ci` to CI so a desync fails on the PR rather than at deploy. Tracked as a note under Enhancements.md #11.
+
+### Issue 4 — `next build` crashed on module-scope Supabase client
+
+**Symptom**
+```
+Collecting page data ...
+Error: supabaseUrl is required.
+    at 12683 (.next/server/app/api/secrets/seed/route.js:1:526)
+
+> Build error occurred
+[Error: Failed to collect page data for /api/secrets/seed]
+```
+
+**Root cause.** `app/lib/supabase.ts` called `createClient(supabaseUrl, supabaseKey)` at **module scope**, with `''` fallbacks when the env vars were unset. supabase-js throws on an empty URL, and Next.js imports every route module while collecting page data — so the whole build died on any machine without Supabase credentials. A fresh clone could not build.
+
+This is a **recurrence**: the same latent bug was found and fixed on 2026-07-22 (see README, "Latent build bug uncovered"), then reintroduced verbatim when `8a5d0ea` restored the file.
+
+**Fix applied.** The client is lazy again — `getServiceClient()` constructs it on first use inside the request handler, throws a clear, actionable error when `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are missing, and has no silent anon-key fallback. Routes translate that into a `503` instead of a build failure.
+
+**Why it kept recurring.** Both this and Issue 2 came back the same way: a file deleted for cause was later restored wholesale, carrying its original defects. The router guardrail only checks for `pages/` and `next/document`. A cheap way to catch this whole class is to run `next build` in CI **with no env vars set** — that single check would have caught Issue 4 and the R3/T3 unauthenticated-route regressions would still need review, but the build blockers would have surfaced on the PR.
+
+Full findings from this review round, including the security regressions, are in [README.md](./README.md#third-code-review--remediation--2026-08-09).

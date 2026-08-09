@@ -12,9 +12,10 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 
 ### 1. Rotate and purge previously committed credentials — ⚠️ *needs owner action*
 - **Why:** Deleting a file does **not** remove it from git history on GitHub — it stays retrievable at old commits.
-- **Audit (2026-07-22):**
+- **Audit (updated 2026-08-09):**
   - `data/users.json` (operator password hash) is in history at commits `1e9dafa` and `22518be`; not tracked at HEAD.
-  - `app/lib/encryption.ts` (hard-coded fallback key `a-default-secret-key-…`) is in history through `ff8d849`; not present at HEAD.
+  - `app/lib/encryption.ts` (hard-coded fallback key `a-default-secret-key-…`) is in history through `ff8d849`, **and again from `8a5d0ea` through `a131ec4`** — commit `8a5d0ea` restored the file verbatim before it was deleted a second time. Not present at HEAD.
+  - ⚠️ **The purge runbook below now has to cover that second range too.** A `filter-repo --path app/lib/encryption.ts` invocation still handles it (it strips the path across *all* commits), but any plan that assumed a single contiguous range is out of date. More importantly: re-adding a file after a history rewrite re-publishes it, so complete the rotation in step 1 before rewriting, and don't restore this module afterwards — `app/security.ts` is the supported crypto path.
 - **This one can't be automated away** — it requires (a) rotating real credentials on accounts only you control, and (b) a history rewrite + `--force` push, which is irreversible and breaks every existing clone. Runbook:
   1. **Rotate** the operator password (re-provision with `npm run create-operator`) and every key ever entered in Settings (Supabase anon + service-role, Resend, GoDaddy) and `GEMINI_API_KEY`.
   2. **Install the tool** (not currently present): `pip install git-filter-repo`.
@@ -62,9 +63,22 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Remaining (needs a provider choice):** back the rate limiter with a shared store — **Upstash Redis** or **Vercel KV**. Both are callable over HTTP with no heavy dependency. Blocked on which provider you want + its credentials; the current in-memory limiter still works correctly on single-instance/local.
 - **Effort:** M.
 
-### 7. Retire the `secret_keys` / cron "AI security agent" feature ✅ *(removed 2026-07-23)*
+### 7. `secret_keys` / cron "AI security agent" feature 🔄 *(removed 2026-07-23; restored by `8a5d0ea` and hardened 2026-08-09)*
+> **Status changed 2026-08-09.** Commit `8a5d0ea` ("feat: implement secrets encryption and security agent") restored this subsystem byte-for-byte, bringing back every issue the 2026-07-23 removal had resolved: two unauthenticated routes, the hard-coded-fallback-key CBC crypto module, the service-role client, and the broken in-process cron. Since the feature was clearly re-added on purpose, it has been **kept and secured** rather than deleted a second time:
+> - `POST /api/secrets/seed` is operator-gated; anonymous and non-operator callers get an identical `403`.
+> - `GET /api/cron/agent` requires `Authorization: Bearer $CRON_SECRET`, compared in constant time and **failing closed when `CRON_SECRET` is unset**.
+> - `app/lib/encryption.ts` is deleted again; both routes use the AES-256-GCM `encryptSecret`/`decryptSecret` from `app/security.ts`.
+> - `app/lib/supabase.ts` is lazy (`getServiceClient()`) with no anon fallback — this fixed a hard `next build` failure as well as the RLS-bypass concern.
+> - `instrumentation.ts` and the `node-cron` dependency are gone again; scheduling is Vercel Cron only.
+> - `secret_keys` now actually exists in `supabase_schema.sql`, with RLS on and **no policies**, so only the service-role key can reach it.
+>
+> **Decide what you want here.** The subsystem is now safe, but the original objection stands on its merits: nothing reads these rows back, so the seed route duplicates credentials you already hold in env, and the agent's only job is to confirm they match a regex an LLM was asked to comment on. If you want it, give it a consumer (something that actually reads `secret_keys`) — otherwise deleting it remains the cheapest option. Setting neither `SUPABASE_SERVICE_ROLE_KEY` nor `CRON_SECRET` leaves both routes inert.
+
+<details>
+<summary>Original 2026-07-23 removal rationale (kept for history)</summary>
 - **Why:** This subsystem was half-built: the seed route (already deleted) wrote secrets nothing ever read, the cron route only pattern-matched an encryption format and asked an LLM to comment on it, and `secret_keys` was populated by nothing. It added attack surface (service-role access, paid LLM calls) for no delivered value.
 - **Done:** Removed `app/api/cron/agent/route.ts`, `app/lib/supabase.ts` (its only consumer), `instrumentation.ts`, and `vercel.json` (contained only the cron). Rewrote `supabase_schema.sql` to the canonical `saved_ideas` table the app actually uses (with anon-insert-only RLS), and dropped the now-unused `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` env vars. Build verified after removal.
+</details>
 
 ### 13. Sessions are never revoked when a user is deleted or disabled
 > Numbered 13 (out of positional order) so existing cross-references to #1–#12 in README.md and BugReport.md stay valid.
@@ -94,9 +108,11 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
   Each was verified in the browser: auth login, settings save, saved-kit render/search/expand/delete, and idea-card render/expand/save/domain-check all work; build passes with zero console errors.
 - **Optional future polish:** the per-index callback closures in the `generatedIdeas.map` could move to a `useReducer`/context if the prop lists ever feel heavy, but the component is now readable and each section is independently testable.
 
-### 9. Trim up-front font loading ✅ *(resolved 2026-07-23)*
+### 9. Trim up-front font loading 🔁 *(resolved 2026-07-23; partially reopened by `2073f04`)*
 - **Why:** `app/layout.tsx` loaded **seven** Google font families on every page just to power a font-switcher setting most users never touch — wasted bytes and requests.
-- **Done:** Reduced to the two families the switcher actually offers — **Inter** (default sans) and **JetBrains Mono** (mono). Removed Roboto, Open Sans, Lato, Poppins, and Playfair from `layout.tsx`, the dynamic font `<style>` block, and the Settings dropdown (a stale saved value now falls back to Inter). Five fewer font downloads per page.
+- **Done (2026-07-23):** Reduced to the two families the switcher actually offers — **Inter** (default sans) and **JetBrains Mono** (mono). Removed Roboto, Open Sans, Lato, Poppins, and Playfair from `layout.tsx`, the dynamic font `<style>` block, and the Settings dropdown (a stale saved value now falls back to Inter). Five fewer font downloads per page.
+- **Reopened 2026-08-09:** `2073f04` added Plus Jakarta Sans, Roboto (3 weights) and Fira Code back to `layout.tsx` and the Settings dropdown — 5 families loaded up front again. This is a deliberate product choice and has been **left in place**; the entry is reopened so the cost stays visible rather than silently regressing a closed item. The `/` route is now 197 kB (299 kB First Load JS), up from 164 kB / 266 kB, though the dashboard in `a131ec4` accounts for part of that.
+- **If you want both:** load Inter + JetBrains Mono statically and pull the other three in via `next/font` only when the operator's saved `fontFamily` selects them, or move the switcher behind a dynamic import. **Effort:** S.
 
 ### 10. Tighten remaining type boundaries and error surfacing ✅ *(resolved 2026-07-25)*
 - **Why:** Server actions and several handlers accepted/returned `any`; `chatWithAgent` used to `throw` (Next redacts the message in production, so the chatbot showed a generic error).
@@ -110,10 +126,24 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Why:** The 2.x line is EOL/deprecated. Only three symbols are used (`LineChart`, `Line`, `ResponsiveContainer`), so the migration was low-risk.
 - **Done:** Bumped to `recharts@^3.10.0`; no code changes needed (the three symbols are API-stable across the major). Build passes and the Compare-tab sparklines render correctly under v3; the main route's First Load JS dropped ~178 kB → ~163 kB. Also removed the now-orphaned `node-cron` dependency (its only consumer was the deleted `instrumentation.ts`).
 - **Note:** `package-lock.json` was updated; `bun.lock` is now stale (regenerate with `bun install` if you use Bun).
+- ⚠️ **Two lockfiles, one repo — this has now broken CI once.** `8a5d0ea` added `node-cron` to `package.json` and regenerated `bun.lock` but not `package-lock.json`, so `npm ci` failed outright (`Missing: node-cron@4.6.0 from lock file`) and no npm-based build could run. Both lockfiles are back in sync as of 2026-08-09, but keeping both means every dependency change must touch both. **Pick one** (`package-lock.json` matches the documented `npm run` workflow) and delete the other, or add a CI step that runs `npm ci` on every PR so a desync fails fast instead of at deploy time.
 
-### 12. Local-dev session cookie ✅ *(resolved 2026-07-22)*
+### 12. Local-dev session cookie ✅ *(resolved 2026-07-22; reworked 2026-08-09)*
 - **Why:** The session cookie was `secure: true; sameSite: "none"; partitioned: true` — correct for the AI Studio iframe, but browsers drop it on plain `http://localhost`, so login silently failed in local dev.
-- **Done:** `setSessionCookie` (`app/actions.ts`) now relaxes to `secure: false; sameSite: "lax"; partitioned: false` when `NODE_ENV !== "production"`, keeping the strict cross-site settings in production.
+- **Done (2026-07-22):** `setSessionCookie` (`app/actions.ts`) relaxed to `secure: false; sameSite: "lax"; partitioned: false` when `NODE_ENV !== "production"`.
+- **Reworked (2026-08-09):** `8a5d0ea` replaced the `NODE_ENV` check with a host heuristic to support Cloud Run, but its final clause treated *any* host not starting with `localhost`/`127.0.0.1` as HTTPS — so `next dev` reached over a LAN IP or IPv6 `[::1]` got a `Secure` cookie the browser silently discarded, reintroducing the original bug in a new shape. The detection is now ordered: **`x-forwarded-proto` wins when present** (authoritative on Cloud Run, Vercel and behind nginx, regardless of `NODE_ENV`), **loopback — `localhost`, `127.0.0.1`, `::1` — is always plain http**, and `NODE_ENV` is only the fallback when no proxy header exists. Trusting that header is safe here because it can only *add* `Secure`, never remove it.
+
+### 14. SQL editor edits are copy-only *(new 2026-08-09)*
+- **Why:** `a131ec4` made the generated PostgreSQL schema editable in `app/LaunchKitTabs.tsx`, with a "CUSTOM MODIFIED" badge. But `customSql` is component state — saving the kit, exporting the PDF (`app/page.tsx`, which renders `kit.databaseRequirements.sqlSchema`) and the launch-kit email all use the unedited AI original. A user who customizes the schema and then exports silently loses the change, and the badge implies otherwise.
+- **Done (2026-08-09):** The helper text now says explicitly that edits apply to **Copy SQL Script** only and are not saved to the kit, PDF, or email. That closes the misleading-UI part.
+- **Remaining (the actual feature):** lift the edited SQL into the kit so it survives save/export — e.g. store `databaseRequirements.sqlSchemaCustom` alongside the original in the `savedIdeas` entry, prefer it wherever `sqlSchema` is rendered, and keep the existing reset-to-AI-suggestion control as the way back. Worth doing only if you want editing to be more than a scratchpad.
+- **Effort:** M.
+
+### 15. Niche comparison metrics are synthetic *(logged 2026-08-09 — pre-existing, not a regression)*
+- **Why:** `getMetrics` in `app/components/CompareNichesView.tsx` derives Avg MRR Potential, growth %, build complexity and the 6-month demand trend from `hashCode(nicheName)` — deterministic pseudo-random numbers, not market data. This is honestly labeled by the `SIMULATED DATA` badge on the tab, so it is **not** a correctness bug, and it was left alone.
+- **Worth knowing:** because the numbers are a hash of the name, unrelated niches can show identical figures (two niches currently both report `+33%` growth), which reads as a bug even though it isn't. And the whole point of the product is evaluating opportunities, so placeholder metrics in the comparison view are the one place a user is most likely to over-trust them.
+- **Do (if you want it real):** back the four metrics with something sourced — even a hand-maintained table in `app/lib/niches.ts` with a "last reviewed" date would beat a hash — or drop the numeric columns and keep the view qualitative. Until then, keep the `SIMULATED DATA` badge adjacent to the numbers, not just in the tab header.
+- **Effort:** M (hand-maintained table) / L (real data source).
 
 ---
 
