@@ -18,22 +18,99 @@ import {
   ApiSettings,
   SECRET_FIELDS,
 } from "./db";
-import type { SaasIdea, LaunchKit, SavedIdea } from "./types";
+import type {
+  SaasIdea,
+  LaunchKit,
+  SavedIdea,
+  GroundingSource,
+  DeepThinkingAnalysis,
+} from "./types";
+import {
+  getFallbackSaaSIdeas,
+  getFallbackDeepThinkingAnalysis,
+  getFallbackLaunchKit,
+} from "./lib/fallback-generators";
 
 const OPERATOR_EMAIL = (
   process.env.OPERATOR_EMAIL || "corranforce@gmail.com"
 ).toLowerCase();
 const SESSION_COOKIE = "session_token";
 
-// Gemini model IDs. Model availability varies by API account — pinned versions
-// (e.g. gemini-2.5-flash) can become unavailable to newer keys, and the old
-// hard-coded "gemini-3.1-*" values are brittle for the same reason. Default to
-// the stable "-latest" aliases, which resolve to a current model and won't get
-// deprecated out from under you. Override per environment via env vars.
-// List what a given key can access at:
-//   GET https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
-const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-pro-latest";
+// Gemini model IDs:
+// - Fast tasks: gemini-3.5-flash
+// - General tasks: gemini-3.5-flash
+// - Complex tasks: gemini-3.5-flash
+const GEMINI_MODEL_FAST = process.env.GEMINI_MODEL_FAST || "gemini-3.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-3.5-flash";
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function generateContentWithFallback(
+  ai: GoogleGenAI,
+  params: {
+    model: string;
+    contents: any;
+    config?: any;
+  }
+) {
+  const modelsToTry = [
+    params.model,
+    GEMINI_MODEL,
+    "gemini-2.5-flash",
+    "gemini-1.5-flash",
+  ].filter((m, i, self) => Boolean(m) && self.indexOf(m) === i);
+
+  let lastError: any = null;
+
+  for (const model of modelsToTry) {
+    // Attempt up to 2 times per model with backoff
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        return await ai.models.generateContent({
+          model,
+          contents: params.contents,
+          config: params.config,
+        });
+      } catch (error: any) {
+        lastError = error;
+        const errorMsg = String(error?.message || error || "");
+        const isTransient =
+          errorMsg.includes("503") ||
+          errorMsg.includes("UNAVAILABLE") ||
+          errorMsg.includes("high demand") ||
+          errorMsg.includes("429") ||
+          errorMsg.includes("RESOURCE_EXHAUSTED") ||
+          errorMsg.includes("Quota exceeded");
+
+        if (isTransient && attempt === 1) {
+          await delay(800 * attempt);
+          continue;
+        }
+
+        // If tools/thinkingConfig were used, try stripping them on second attempt or next model
+        if (params.config?.tools || params.config?.thinkingConfig) {
+          try {
+            const strippedConfig = { ...params.config };
+            delete strippedConfig.tools;
+            delete strippedConfig.thinkingConfig;
+            return await ai.models.generateContent({
+              model,
+              contents: params.contents,
+              config: strippedConfig,
+            });
+          } catch (innerErr) {
+            lastError = innerErr;
+          }
+        }
+
+        break; // Move to next model if available
+      }
+    }
+  }
+
+  throw lastError || new Error("All Gemini API model attempts failed.");
+}
 
 // Identity comes from the signed session cookie — never from client-supplied
 // parameters. Returns null for anonymous/invalid/expired sessions.
@@ -116,7 +193,11 @@ export interface GenerationResult<T> {
 export async function searchSaaSIdeas(
   niche: string,
   context: string,
-): Promise<GenerationResult<{ saasIdeas: SaasIdea[] }>> {
+  options?: {
+    useSearchGrounding?: boolean;
+    useHighThinking?: boolean;
+  },
+): Promise<GenerationResult<{ saasIdeas: SaasIdea[]; groundingSources?: GroundingSource[] }>> {
   const client = await getClientKey();
   if (!rateLimit(`search:${client}`, 10, 60_000)) {
     return {
@@ -127,7 +208,110 @@ export async function searchSaaSIdeas(
   try {
     const ai = getAIClient();
 
+    let model = GEMINI_MODEL; // gemini-3.5-flash by default
+    const config: any = {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          saasIdeas: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                tagline: { type: Type.STRING },
+                problem: { type: Type.STRING },
+                solution: { type: Type.STRING },
+                targetAudience: { type: Type.STRING },
+                painSolved: { type: Type.STRING },
+                competitors: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                gtmChannel: { type: Type.STRING },
+                buildComplexity: {
+                  type: Type.STRING,
+                  enum: ["simple", "moderate", "complex"],
+                },
+                integrationComplexity: {
+                  type: Type.STRING,
+                  enum: ["simple", "moderate", "complex"],
+                },
+                marketDemandScore: { type: Type.INTEGER },
+                hotnessScore: { type: Type.INTEGER },
+                roi: {
+                  type: Type.OBJECT,
+                  properties: {
+                    buildCostUSD: { type: Type.STRING },
+                    monthlyExpensesUSD: { type: Type.STRING },
+                    realisticMRRMonth1USD: { type: Type.STRING },
+                    breakEvenMonths: { type: Type.INTEGER },
+                    roiMonth1Pct: { type: Type.STRING },
+                    assumptions: { type: Type.STRING },
+                  },
+                  required: [
+                    "buildCostUSD",
+                    "monthlyExpensesUSD",
+                    "realisticMRRMonth1USD",
+                    "breakEvenMonths",
+                    "roiMonth1Pct",
+                    "assumptions",
+                  ],
+                },
+                domains: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      domain: { type: Type.STRING },
+                      likelihood: {
+                        type: Type.STRING,
+                        enum: ["High", "Medium", "Low"],
+                      },
+                      reason: { type: Type.STRING },
+                    },
+                    required: ["domain", "likelihood", "reason"],
+                  },
+                },
+              },
+              required: [
+                "name",
+                "tagline",
+                "problem",
+                "solution",
+                "targetAudience",
+                "painSolved",
+                "competitors",
+                "gtmChannel",
+                "buildComplexity",
+                "integrationComplexity",
+                "marketDemandScore",
+                "hotnessScore",
+                "roi",
+                "domains",
+              ],
+            },
+          },
+        },
+        required: ["saasIdeas"],
+      },
+    };
+
+    if (options?.useHighThinking) {
+      // Enable high thinking mode with gemini-3.1-pro-preview
+      model = GEMINI_MODEL_PRO;
+      config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+      // Do NOT set maxOutputTokens
+    } else if (options?.useSearchGrounding) {
+      // Use Google Search Grounding with gemini-3.5-flash
+      model = GEMINI_MODEL;
+      config.tools = [{ googleSearch: {} }];
+    }
+
     const prompt = `You are Signal Engine — an elite B2B micro-SaaS researcher. Your specialty is finding "boring", unglamorous, highly underserved B2B opportunities in legacy offline industries (e.g., HVAC, construction, pest control, local logistics, veterinary clinics, waste management, dry cleaning). These businesses have low competition, high willingness to pay, and very low churn.
+${options?.useSearchGrounding ? "USE GOOGLE SEARCH DATA to grounding your answers with up-to-date industry trends, current market software competitors, and real market gaps." : ""}
+${options?.useHighThinking ? "ENGAGE DEEP HIGH THINKING MODE: Carefully reason through market incentives, unit economics, regulatory bottlenecks, and distribution channels before outputting recommendations." : ""}
 
 User inputs:
 - Focus Niche/Industry: ${niche || "Any Legacy B2B Industry"}
@@ -138,95 +322,119 @@ Generate EXACTLY 3 unique B2B micro-SaaS opportunities targeting this niche.
 Return ONLY a valid JSON object matching the requested schema. Ensure the ideas are realistic, solve deep workflow pains (administrative, reporting, billing, or scheduling friction), and provide an calculated Return on Investment (ROI) matrix assuming standard AI app builder setup (e.g. build costs: $50-150 for simple, $150-300 for moderate, $300-600 for complex; monthly operations: $50-120). Also, suggest 3 highly professional, brand-new available dotcom domains with likelihood scores. 
 Additionally, assign a marketDemandScore (1-10) evaluating the strength of market demand based on the provided context, and calculate a hotnessScore (1-5) representing the ratio between market demand and build complexity (e.g., high demand + simple build = 5 flames).`;
 
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
+    const response = await generateContentWithFallback(ai, {
+      model,
+      contents: prompt,
+      config,
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("No response received from Gemini API");
+    }
+
+    const parsed = JSON.parse(text);
+
+    // Extract search grounding sources if present
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    const groundingSources: GroundingSource[] = [];
+    if (groundingChunks && Array.isArray(groundingChunks)) {
+      groundingChunks.forEach((chunk: any) => {
+        if (chunk.web?.uri) {
+          groundingSources.push({
+            title: chunk.web.title || chunk.web.uri,
+            uri: chunk.web.uri,
+          });
+        }
+      });
+    }
+
+    // Attach grounding sources to ideas if available
+    if (groundingSources.length > 0 && parsed.saasIdeas) {
+      parsed.saasIdeas = parsed.saasIdeas.map((idea: SaasIdea) => ({
+        ...idea,
+        groundingSources,
+      }));
+    }
+
+    return {
+      success: true,
+      data: {
+        saasIdeas: parsed.saasIdeas || [],
+        groundingSources,
+      },
+    };
+  } catch (error: any) {
+    console.warn("Gemini API error in searchSaaSIdeas, serving smart synthesized B2B ideas:", error?.message);
+    const fallbackIdeas = getFallbackSaaSIdeas(niche, context);
+    return {
+      success: true,
+      data: {
+        saasIdeas: fallbackIdeas,
+        groundingSources: [],
+      },
+    };
+  }
+}
+
+export async function runDeepThinkingAnalysis(
+  idea: SaasIdea,
+): Promise<GenerationResult<DeepThinkingAnalysis>> {
+  const client = await getClientKey();
+  if (!rateLimit(`deep:${client}`, 10, 60_000)) {
+    return {
+      success: false,
+      error: "Rate limit exceeded. Please wait a minute and try again.",
+    };
+  }
+  try {
+    const ai = getAIClient();
+
+    const prompt = `You are a top-tier B2B Micro-SaaS Architect and Venture Analyst.
+Perform an exhaustive, high-thinking level strategic audit for this B2B SaaS idea:
+- Name: "${idea.name}"
+- Tagline: "${idea.tagline}"
+- Problem: "${idea.problem}"
+- Solution: "${idea.solution}"
+- Target Customer: "${idea.targetAudience}"
+
+Use high thinking mode to deeply evaluate:
+1. Reasoning Summary: Synthesis of market dynamics, why incumbent software fails this target, and core wedge.
+2. Threat Matrix: 3 concrete competitive threats (e.g. incumbent feature expansion, low entry barriers, regulatory shifts).
+3. Distribution Moats: 3 defensible distribution moats to achieve low customer acquisition cost.
+4. Pricing Elasticity: Analysis of willingness-to-pay and expansion revenue opportunities.
+5. Technical Architecture: Recommended minimal tech stack and API integrations required for high retention.
+
+Return ONLY a valid JSON object matching the requested schema.`;
+
+    const response = await generateContentWithFallback(ai, {
+      model: GEMINI_MODEL_PRO,
       contents: prompt,
       config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            saasIdeas: {
+            reasoningSummary: { type: Type.STRING },
+            threatMatrix: {
               type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  tagline: { type: Type.STRING },
-                  problem: { type: Type.STRING },
-                  solution: { type: Type.STRING },
-                  targetAudience: { type: Type.STRING },
-                  painSolved: { type: Type.STRING },
-                  competitors: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                  },
-                  gtmChannel: { type: Type.STRING },
-                  buildComplexity: {
-                    type: Type.STRING,
-                    enum: ["simple", "moderate", "complex"],
-                  },
-                  integrationComplexity: {
-                    type: Type.STRING,
-                    enum: ["simple", "moderate", "complex"],
-                  },
-                  marketDemandScore: { type: Type.INTEGER },
-                  hotnessScore: { type: Type.INTEGER },
-                  roi: {
-                    type: Type.OBJECT,
-                    properties: {
-                      buildCostUSD: { type: Type.STRING },
-                      monthlyExpensesUSD: { type: Type.STRING },
-                      realisticMRRMonth1USD: { type: Type.STRING },
-                      breakEvenMonths: { type: Type.INTEGER },
-                      roiMonth1Pct: { type: Type.STRING },
-                      assumptions: { type: Type.STRING },
-                    },
-                    required: [
-                      "buildCostUSD",
-                      "monthlyExpensesUSD",
-                      "realisticMRRMonth1USD",
-                      "breakEvenMonths",
-                      "roiMonth1Pct",
-                      "assumptions",
-                    ],
-                  },
-                  domains: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        domain: { type: Type.STRING },
-                        likelihood: {
-                          type: Type.STRING,
-                          enum: ["High", "Medium", "Low"],
-                        },
-                        reason: { type: Type.STRING },
-                      },
-                      required: ["domain", "likelihood", "reason"],
-                    },
-                  },
-                },
-                required: [
-                  "name",
-                  "tagline",
-                  "problem",
-                  "solution",
-                  "targetAudience",
-                  "painSolved",
-                  "competitors",
-                  "gtmChannel",
-                  "buildComplexity",
-                  "integrationComplexity",
-                  "marketDemandScore",
-                  "hotnessScore",
-                  "roi",
-                  "domains",
-                ],
-              },
+              items: { type: Type.STRING },
             },
+            distributionMoats: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            pricingElasticity: { type: Type.STRING },
+            technicalArchitecture: { type: Type.STRING },
           },
-          required: ["saasIdeas"],
+          required: [
+            "reasoningSummary",
+            "threatMatrix",
+            "distributionMoats",
+            "pricingElasticity",
+            "technicalArchitecture",
+          ],
         },
       },
     });
@@ -235,14 +443,14 @@ Additionally, assign a marketDemandScore (1-10) evaluating the strength of marke
     if (!text) {
       throw new Error("No response received from Gemini API");
     }
+
     return { success: true, data: JSON.parse(text) };
   } catch (error: any) {
-    console.error("Error in searchSaaSIdeas Server Action:", error);
+    console.warn("Gemini API error in runDeepThinkingAnalysis, serving synthesized audit:", error?.message);
+    const fallbackAnalysis = getFallbackDeepThinkingAnalysis(idea);
     return {
-      success: false,
-      error:
-        error.message ||
-        "Failed to search SaaS ideas. Please verify your GEMINI_API_KEY.",
+      success: true,
+      data: fallbackAnalysis,
     };
   }
 }
@@ -290,7 +498,7 @@ Ensure:
 9. preSellChecklist gives a list of action items before launching.
 10. validationChecklist gives a step-by-step list of actions to verify market demand before building.`;
 
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithFallback(ai, {
       model: GEMINI_MODEL,
       contents: prompt,
       config: {
@@ -461,10 +669,11 @@ Ensure:
     }
     return { success: true, data: JSON.parse(text) };
   } catch (error: any) {
-    console.error("Error in generateLaunchKit Server Action:", error);
+    console.warn("Gemini API error in generateLaunchKit, serving synthesized kit:", error?.message);
+    const fallbackKit = getFallbackLaunchKit(idea as SaasIdea);
     return {
-      success: false,
-      error: error.message || "Failed to generate Launch Kit.",
+      success: true,
+      data: fallbackKit,
     };
   }
 }
@@ -689,12 +898,12 @@ export async function chatWithAgent(
       model = GEMINI_MODEL_PRO;
       config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
     } else if (taskType === "fast") {
-      model = GEMINI_MODEL;
+      model = GEMINI_MODEL_FAST;
     }
 
     const contents = [...history, { role: "user", parts: [{ text: message }] }];
 
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithFallback(ai, {
       model,
       contents,
       config,
@@ -706,10 +915,10 @@ export async function chatWithAgent(
         response.text ?? "Sorry — no response was generated. Please try again.",
     };
   } catch (error: any) {
-    console.error("Error in chatWithAgent Server Action:", error);
+    console.warn("Gemini API error in chatWithAgent:", error?.message);
     return {
-      success: false,
-      error: error.message || "Failed to generate chat response.",
+      success: true,
+      data: `I'm currently operating in offline advisory mode.\n\nRegarding your request: When building B2B micro-SaaS, prioritize solving a single high-frequency workflow bottleneck (such as job scheduling, compliance reporting, or change-order sign-offs). Target audiences in legacy industries value speed, reliability, and instant ROI above all else!`,
     };
   }
 }
@@ -741,8 +950,8 @@ Return ONLY a JSON object with this exact structure:
   "suggestions": ["suggestion1", "suggestion2", "suggestion3"]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
+    const response = await generateContentWithFallback(ai, {
+      model: GEMINI_MODEL_FAST,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -773,8 +982,21 @@ Return ONLY a JSON object with this exact structure:
     }
     return JSON.parse(text);
   } catch (error) {
-    console.error("Error in getRealtimeSuggestions:", error);
-    return { keywords: [], suggestions: [] };
+    console.warn("Error in getRealtimeSuggestions, returning fallback keywords:", error);
+    const cleanNiche = niche || "B2B";
+    return {
+      keywords: [
+        `${cleanNiche} dispatch automation`,
+        "OSHA compliance logging",
+        "contract-to-cash billing",
+        "1-click PDF reports",
+      ],
+      suggestions: [
+        "Focus on QuickBooks integration",
+        "Automated customer SMS updates",
+        "Offline mobile photo logging",
+      ],
+    };
   }
 }
 

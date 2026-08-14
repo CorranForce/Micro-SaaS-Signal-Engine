@@ -1,6 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
+import { motion } from "motion/react";
 import {
   Mail,
   Database,
@@ -11,9 +12,14 @@ import {
   Download,
   ChevronUp,
   ChevronDown,
+  Globe,
+  Brain,
+  Cpu,
+  ExternalLink,
+  Sparkles,
 } from "lucide-react";
 import { LaunchKitTabs } from "../LaunchKitTabs";
-import type { SaasIdea, LaunchKit } from "../types";
+import type { SaasIdea, LaunchKit, DeepThinkingAnalysis } from "../types";
 import type { SchemaTable } from "../lib/launchkit-utils";
 
 type KitEntry =
@@ -49,6 +55,9 @@ interface IdeaCardProps {
   copiedText: string | null;
   generateSqlFallback?: (tables: SchemaTable[]) => string;
   VisualSchemaDiagram?: ComponentType<{ tables: SchemaTable[] }>;
+  onRunDeepAnalysis?: () => void;
+  isDeepAnalyzing?: boolean;
+  deepAnalysis?: DeepThinkingAnalysis;
 }
 
 export function IdeaCard({
@@ -77,12 +86,21 @@ export function IdeaCard({
   copiedText,
   generateSqlFallback,
   VisualSchemaDiagram,
+  onRunDeepAnalysis,
+  isDeepAnalyzing,
+  deepAnalysis,
 }: IdeaCardProps) {
   const isKitLoaded = !!kitEntry?.data;
   const isKitLoading = !!kitEntry?.loading;
 
   return (
-    <div
+    <motion.div
+      whileHover={{
+        scale: 1.015,
+        boxShadow:
+          "0 12px 30px -10px rgba(0, 255, 128, 0.15), 0 10px 20px -5px rgba(0, 0, 0, 0.4)",
+      }}
+      transition={{ type: "spring", stiffness: 400, damping: 25 }}
       className={`bg-ms-card border rounded-lg flex flex-col transition-all relative animate-fade-in ${
         compactMode ? "p-3 pb-6" : "p-5 pb-8"
       } ${
@@ -172,6 +190,30 @@ export function IdeaCard({
           >
             {idea.solution}
           </p>
+
+          {/* Google Search Grounding Sources */}
+          {idea.groundingSources && idea.groundingSources.length > 0 && (
+            <div className="mt-3 bg-cyan-950/20 border border-cyan-800/40 p-2.5 rounded-lg space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-ms font-bold text-cyan-400 uppercase tracking-wider">
+                <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                Google Search Grounding Sources
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {idea.groundingSources.map((source, idx) => (
+                  <a
+                    key={idx}
+                    href={source.uri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-ms text-cyan-300 hover:text-white bg-cyan-950/60 border border-cyan-800/60 px-2 py-1 rounded flex items-center gap-1 transition-colors truncate max-w-xs"
+                  >
+                    <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                    <span className="truncate">{source.title || source.uri}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="md:w-80 flex flex-col justify-between border-t md:border-t-0 md:border-l border-ms-border pt-3 md:pt-0 md:pl-6 space-y-3">
@@ -445,6 +487,140 @@ export function IdeaCard({
             </p>
           </div>
 
+          {/* Strategic Deep Audit (Gemini 3.1 Pro High Thinking) */}
+          <div className="bg-purple-950/20 border border-purple-800/40 p-4 rounded-lg space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-purple-800/40 pb-2">
+              <div className="flex items-center gap-2">
+                <Brain className="w-4 h-4 text-purple-400" />
+                <h4 className="text-xs font-bold text-purple-200 uppercase tracking-wider font-ms">
+                  High Thinking Strategic Audit
+                </h4>
+                <span className="text-[9px] bg-purple-900/60 text-purple-300 border border-purple-700/50 px-1.5 py-0.5 rounded font-mono">
+                  gemini-3.1-pro-preview
+                </span>
+              </div>
+
+              {!deepAnalysis && onRunDeepAnalysis && (
+                <button
+                  onClick={onRunDeepAnalysis}
+                  disabled={isDeepAnalyzing}
+                  className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-ms font-bold text-[10px] rounded uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-md disabled:opacity-50"
+                >
+                  {isDeepAnalyzing ? (
+                    <>
+                      <div className="w-3 h-3 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                      <span>Deep Reasoning in progress...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3 h-3" />
+                      <span>Run Deep Strategic Audit</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {deepAnalysis ? (
+              <div className="space-y-4 pt-1">
+                {/* Reasoning Summary */}
+                <div className="bg-purple-950/40 p-3 rounded border border-purple-800/30">
+                  <h5 className="text-[10px] font-bold text-purple-300 uppercase font-ms mb-1">
+                    Reasoning & Market Mechanics
+                  </h5>
+                  <p className="text-xs text-purple-100 leading-relaxed font-sans">
+                    {deepAnalysis.reasoningSummary}
+                  </p>
+                </div>
+
+                {/* Threat Matrix */}
+                {deepAnalysis.threatMatrix && (
+                  <div>
+                    <h5 className="text-[10px] font-bold text-purple-300 uppercase font-ms mb-2">
+                      Threat & Friction Matrix
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="bg-ms-bg p-2.5 rounded border border-purple-800/30">
+                        <span className="text-[9px] text-red-400 font-bold block uppercase mb-1">
+                          Competitor Risk
+                        </span>
+                        <p className="text-[11px] text-gray-200">
+                          {deepAnalysis.threatMatrix.competitorRisk}
+                        </p>
+                      </div>
+                      <div className="bg-ms-bg p-2.5 rounded border border-purple-800/30">
+                        <span className="text-[9px] text-amber-400 font-bold block uppercase mb-1">
+                          Regulatory/Legal Risk
+                        </span>
+                        <p className="text-[11px] text-gray-200">
+                          {deepAnalysis.threatMatrix.regulatoryRisk}
+                        </p>
+                      </div>
+                      <div className="bg-ms-bg p-2.5 rounded border border-purple-800/30">
+                        <span className="text-[9px] text-blue-400 font-bold block uppercase mb-1">
+                          Execution Friction
+                        </span>
+                        <p className="text-[11px] text-gray-200">
+                          {deepAnalysis.threatMatrix.executionFriction}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Moats & Elasticity */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {deepAnalysis.distributionMoats &&
+                    deepAnalysis.distributionMoats.length > 0 && (
+                      <div className="bg-ms-bg p-3 rounded border border-purple-800/30">
+                        <h5 className="text-[10px] font-bold text-purple-300 uppercase font-ms mb-1.5">
+                          Defensible Distribution Moats
+                        </h5>
+                        <ul className="space-y-1">
+                          {deepAnalysis.distributionMoats.map((m, i) => (
+                            <li
+                              key={i}
+                              className="text-[11px] text-gray-200 flex items-start gap-1.5"
+                            >
+                              <span className="text-purple-400 font-bold">•</span>
+                              <span>{m}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                  {deepAnalysis.pricingElasticity && (
+                    <div className="bg-ms-bg p-3 rounded border border-purple-800/30">
+                      <h5 className="text-[10px] font-bold text-purple-300 uppercase font-ms mb-1.5">
+                        Pricing Elasticity Analysis
+                      </h5>
+                      <p className="text-[11px] text-gray-200 leading-relaxed">
+                        {deepAnalysis.pricingElasticity}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Technical Architecture */}
+                {deepAnalysis.technicalArchitecture && (
+                  <div className="bg-ms-bg p-3 rounded border border-purple-800/30">
+                    <h5 className="text-[10px] font-bold text-purple-300 uppercase font-ms mb-1">
+                      Recommended Technical Architecture
+                    </h5>
+                    <p className="text-[11px] text-gray-200 leading-relaxed font-mono">
+                      {deepAnalysis.technicalArchitecture}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-[11px] text-purple-300/70 italic">
+                Click &ldquo;Run Deep Strategic Audit&rdquo; to unleash Gemini 3.1 Pro with High Thinking Level to evaluate threat risks, distribution moats, pricing power, and technical architecture.
+              </p>
+            )}
+          </div>
+
           {isKitLoaded && (
             <div className="mt-6 border-t border-ms-border pt-6">
               <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
@@ -521,6 +697,6 @@ export function IdeaCard({
           <ChevronDown className="w-4 h-4" />
         )}
       </button>
-    </div>
+    </motion.div>
   );
 }

@@ -26,6 +26,28 @@ export interface SaasIdea {
     likelihood: "High" | "Medium" | "Low";
     reason: string;
   }[];
+  groundingSources?: {
+    title?: string;
+    uri?: string;
+  }[];
+  deepAnalysis?: DeepThinkingAnalysis;
+}
+
+export interface GroundingSource {
+  title?: string;
+  uri?: string;
+}
+
+export interface DeepThinkingAnalysis {
+  reasoningSummary: string;
+  threatMatrix: {
+    competitorRisk: string;
+    regulatoryRisk: string;
+    executionFriction: string;
+  };
+  distributionMoats: string[];
+  pricingElasticity: string;
+  technicalArchitecture: string;
 }
 
 export interface LaunchKit {

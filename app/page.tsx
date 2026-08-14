@@ -16,9 +16,13 @@ import {
   Bookmark,
   Lock,
   Download,
+  Globe,
+  Brain,
+  Cpu,
 } from "lucide-react";
 import {
   searchSaaSIdeas,
+  runDeepThinkingAnalysis,
   generateLaunchKit,
   loginUser,
   registerUser,
@@ -33,7 +37,7 @@ import {
   checkDomainAvailabilityAction,
 } from "./actions";
 // --- Types (shared with server actions and LaunchKitTabs) ---
-import type { SaasIdea, LaunchKit } from "./types";
+import type { SaasIdea, LaunchKit, DeepThinkingAnalysis } from "./types";
 import { LEGACY_NICHES } from "./lib/niches";
 import { generateSqlFallback, escapeHtmlC } from "./lib/launchkit-utils";
 import { TypewriterLog } from "./components/TypewriterLog";
@@ -82,6 +86,16 @@ export default function MicroSaaSSignalEngine() {
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [expandedSavedIdeas, setExpandedSavedIdeas] = useState<Record<number, boolean>>({});
   const [savedKitsSearchQuery, setSavedKitsSearchQuery] = useState("");
+
+  // Gemini Skills Features state
+  const [useSearchGrounding, setUseSearchGrounding] = useState<boolean>(true);
+  const [useHighThinking, setUseHighThinking] = useState<boolean>(false);
+  const [deepAnalysisLoading, setDeepAnalysisLoading] = useState<
+    Record<number, boolean>
+  >({});
+  const [deepAnalysisData, setDeepAnalysisData] = useState<
+    Record<number, DeepThinkingAnalysis>
+  >({});
 
   // Real-time suggestions state
   const [realtimeKeywords, setRealtimeKeywords] = useState<string[]>([]);
@@ -686,7 +700,24 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       LEGACY_NICHES.find((n) => n.id === selectedNiche)?.name ||
       selectedNiche;
     try {
-      const res = await searchSaaSIdeas(finalNiche, additionalContext);
+      if (useHighThinking) {
+        setTerminalLogs((prev) => [
+          `[HIGH THINKING MODE] Activating Gemini 3.1 Pro with High Thinking Level for deep market reasoning...`,
+          ...prev,
+        ]);
+      }
+      if (useSearchGrounding) {
+        setTerminalLogs((prev) => [
+          `[SEARCH GROUNDING] Live Google Search Grounding enabled with Gemini 3.5 Flash...`,
+          ...prev,
+        ]);
+      }
+
+      const res = await searchSaaSIdeas(finalNiche, additionalContext, {
+        useSearchGrounding,
+        useHighThinking,
+      });
+
       if (res.success && res.data?.saasIdeas) {
         setGeneratedIdeas(res.data.saasIdeas);
         setTerminalLogs((prev) => [
@@ -717,6 +748,24 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       } else {
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
+    }
+  };
+
+  const handleRunDeepAnalysis = async (idea: SaasIdea, index: number) => {
+    setDeepAnalysisLoading((prev) => ({ ...prev, [index]: true }));
+    try {
+      const res = await runDeepThinkingAnalysis(idea);
+      if (res.success && res.data) {
+        const analysis = res.data;
+        setDeepAnalysisData((prev) => ({ ...prev, [index]: analysis }));
+      } else {
+        alert(res.error || "Failed to execute deep strategic analysis.");
+      }
+    } catch (err: any) {
+      console.error("Deep analysis error:", err);
+      alert(err.message || "Failed to execute deep strategic analysis.");
+    } finally {
+      setDeepAnalysisLoading((prev) => ({ ...prev, [index]: false }));
     }
   };
 
@@ -1358,6 +1407,58 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                     </div>
                   </div>
 
+                  {/* AI Intelligence & Grounding Mode Selector */}
+                  <div className="bg-ms-bg/60 border border-ms-border rounded-lg p-3 space-y-2.5">
+                    <div className="text-[10px] text-ms-green font-ms font-bold uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-ms-green" />
+                      Gemini Intelligence Controls
+                    </div>
+
+                    {/* Search Grounding Toggle */}
+                    <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded border border-ms-border/50 bg-ms-card/50 hover:border-ms-green/50 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={useSearchGrounding}
+                        onChange={(e) => setUseSearchGrounding(e.target.checked)}
+                        className="mt-0.5 accent-ms-green"
+                      />
+                      <div className="flex-1 text-left">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-white font-ms">
+                          <Globe className="w-3 h-3 text-cyan-400" />
+                          Google Search Grounding
+                          <span className="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1 py-0.2 rounded font-mono">
+                            gemini-3.5-flash
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-ms-text-muted mt-0.5 leading-snug">
+                          Ground output with real-time web search trends and live software competitor market data.
+                        </p>
+                      </div>
+                    </label>
+
+                    {/* High Thinking Mode Toggle */}
+                    <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded border border-ms-border/50 bg-ms-card/50 hover:border-ms-green/50 transition-all">
+                      <input
+                        type="checkbox"
+                        checked={useHighThinking}
+                        onChange={(e) => setUseHighThinking(e.target.checked)}
+                        className="mt-0.5 accent-ms-green"
+                      />
+                      <div className="flex-1 text-left">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-white font-ms">
+                          <Brain className="w-3 h-3 text-purple-400" />
+                          High Thinking Level
+                          <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-800 px-1 py-0.2 rounded font-mono">
+                            gemini-3.1-pro-preview
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-ms-text-muted mt-0.5 leading-snug">
+                          Enable High Thinking reasoning for complex market friction, unit economics, and unit risks.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
                   <button
                     onClick={handleDiscover}
                     disabled={isScanning}
@@ -1549,6 +1650,9 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                         copiedText={copiedText}
                         generateSqlFallback={generateSqlFallback}
                         VisualSchemaDiagram={VisualSchemaDiagram}
+                        onRunDeepAnalysis={() => handleRunDeepAnalysis(idea, index)}
+                        isDeepAnalyzing={!!deepAnalysisLoading[index]}
+                        deepAnalysis={deepAnalysisData[index]}
                       />
                     ))}
                   </div>
