@@ -66,6 +66,16 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Why:** This subsystem was half-built: the seed route (already deleted) wrote secrets nothing ever read, the cron route only pattern-matched an encryption format and asked an LLM to comment on it, and `secret_keys` was populated by nothing. It added attack surface (service-role access, paid LLM calls) for no delivered value.
 - **Done:** Removed `app/api/cron/agent/route.ts`, `app/lib/supabase.ts` (its only consumer), `instrumentation.ts`, and `vercel.json` (contained only the cron). Rewrote `supabase_schema.sql` to the canonical `saved_ideas` table the app actually uses (with anon-insert-only RLS), and dropped the now-unused `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` env vars. Build verified after removal.
 
+### 14. Stop the same fixes from regressing — enforce them in `prebuild`/CI
+> Numbered 14 to keep existing cross-references to #1–#13 valid.
+
+- **Why:** Three fixes have now been made twice. `8a5d0ea` restored the `secret_keys`/cron subsystem removed under #7, bringing back both unauthenticated routes (BugReport R3) and the AES-CBC module with a committed fallback key (R6); the module-scope Supabase client that breaks `next build` came back with it. Separately, two commits in a row added a dependency to `package.json` while regenerating only `bun.lock`, breaking `npm ci`. The router conflict stopped recurring only when `scripts/check-router.mjs` made it a hard `prebuild` failure — convention alone has not held for anything else.
+- **Do:**
+  1. `npm ci --dry-run` (or `npm ls` against the lockfile) in `prebuild` or CI, so lockfile drift fails at the commit that causes it rather than at deploy.
+  2. Extend `scripts/check-router.mjs` (or add a sibling) to fail when a handler under `app/api/` has no auth guard — a grep for `CRON_SECRET` / `verifySessionToken` in each route file would have caught both regressions.
+  3. Decide #7 once and for all: either finish the `secret_keys` subsystem (something must actually *read* the seeded credentials) or delete it again. Half-built is what keeps regressing.
+- **Found:** 2026-08-14 review. **Effort:** S.
+
 ### 13. Sessions are never revoked when a user is deleted or disabled
 > Numbered 13 (out of positional order) so existing cross-references to #1–#12 in README.md and BugReport.md stay valid.
 

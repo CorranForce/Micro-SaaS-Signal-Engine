@@ -36,15 +36,58 @@ const OPERATOR_EMAIL = (
 ).toLowerCase();
 const SESSION_COOKIE = "session_token";
 
-// Gemini model IDs:
-// - Fast tasks: gemini-3.5-flash
-// - General tasks: gemini-3.5-flash
-// - Complex tasks: gemini-3.5-flash
+// Gemini model IDs. Model availability varies by API account — pinned versions
+// can silently become unavailable to a given key, so every ID below is
+// overridable per environment. Defaults intentionally use the "-latest" aliases
+// as the *last-resort* fallback rung: they resolve to a current model and
+// can't be deprecated out from under you.
+// List what a given key can access at:
+//   GET https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY
 const GEMINI_MODEL_FAST = process.env.GEMINI_MODEL_FAST || "gemini-3.5-flash";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+// NOTE: this is the model used for "High Thinking" work. It defaults to the
+// same flash model as everything else — point GEMINI_MODEL_PRO at a pro model
+// if your key has one. The UI reads the model actually used off the response
+// rather than hard-coding a name, so this stays honest either way.
 const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-3.5-flash";
 
+// Final fallback rung: stable aliases, not pinned point releases.
+const GEMINI_MODEL_FALLBACK =
+  process.env.GEMINI_MODEL_FALLBACK || "gemini-flash-latest";
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Configuration/authorization failures are permanent for this deployment —
+// retrying them across four models just burns latency and quota before
+// surfacing the same error.
+function isFatalApiError(message: string): boolean {
+  return (
+    message.includes("API_KEY_INVALID") ||
+    message.includes("API key not valid") ||
+    message.includes("PERMISSION_DENIED") ||
+    message.includes("401") ||
+    message.includes("403")
+  );
+}
+
+function isTransientApiError(message: string): boolean {
+  return (
+    message.includes("503") ||
+    message.includes("UNAVAILABLE") ||
+    message.includes("high demand") ||
+    message.includes("429") ||
+    message.includes("RESOURCE_EXHAUSTED") ||
+    message.includes("Quota exceeded")
+  );
+}
+
+export interface GeminiCallOutcome {
+  response: Awaited<ReturnType<GoogleGenAI["models"]["generateContent"]>>;
+  /** The model that actually served the response (may be a fallback rung). */
+  model: string;
+  /** True when tools/thinkingConfig had to be dropped to get a response. */
+  degradedConfig: boolean;
+}
 
 async function generateContentWithFallback(
   ai: GoogleGenAI,
@@ -52,13 +95,12 @@ async function generateContentWithFallback(
     model: string;
     contents: any;
     config?: any;
-  }
-) {
+  },
+): Promise<GeminiCallOutcome> {
   const modelsToTry = [
     params.model,
     GEMINI_MODEL,
-    "gemini-2.5-flash",
-    "gemini-1.5-flash",
+    GEMINI_MODEL_FALLBACK,
   ].filter((m, i, self) => Boolean(m) && self.indexOf(m) === i);
 
   let lastError: any = null;
@@ -67,38 +109,39 @@ async function generateContentWithFallback(
     // Attempt up to 2 times per model with backoff
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        return await ai.models.generateContent({
+        const response = await ai.models.generateContent({
           model,
           contents: params.contents,
           config: params.config,
         });
+        return { response, model, degradedConfig: false };
       } catch (error: any) {
         lastError = error;
         const errorMsg = String(error?.message || error || "");
-        const isTransient =
-          errorMsg.includes("503") ||
-          errorMsg.includes("UNAVAILABLE") ||
-          errorMsg.includes("high demand") ||
-          errorMsg.includes("429") ||
-          errorMsg.includes("RESOURCE_EXHAUSTED") ||
-          errorMsg.includes("Quota exceeded");
 
-        if (isTransient && attempt === 1) {
+        if (isFatalApiError(errorMsg)) {
+          throw error;
+        }
+
+        if (isTransientApiError(errorMsg) && attempt === 1) {
           await delay(800 * attempt);
           continue;
         }
 
-        // If tools/thinkingConfig were used, try stripping them on second attempt or next model
+        // The request may have been rejected for the optional extras rather
+        // than the model itself (e.g. a key without tool access). Retry once
+        // without them before writing this model off.
         if (params.config?.tools || params.config?.thinkingConfig) {
           try {
             const strippedConfig = { ...params.config };
             delete strippedConfig.tools;
             delete strippedConfig.thinkingConfig;
-            return await ai.models.generateContent({
+            const response = await ai.models.generateContent({
               model,
               contents: params.contents,
               config: strippedConfig,
             });
+            return { response, model, degradedConfig: true };
           } catch (innerErr) {
             lastError = innerErr;
           }
@@ -110,6 +153,54 @@ async function generateContentWithFallback(
   }
 
   throw lastError || new Error("All Gemini API model attempts failed.");
+}
+
+// Grounded responses can't use responseSchema (see searchSaaSIdeas), so the
+// model returns JSON as free text — often wrapped in a ```json fence.
+function parseJsonLoose(text: string): any {
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced) {
+      return JSON.parse(fenced[1].trim());
+    }
+    const firstBrace = trimmed.indexOf("{");
+    const lastBrace = trimmed.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      return JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+    }
+    throw new Error("Gemini returned a response that was not valid JSON.");
+  }
+}
+
+// The audit UI reads three named risk fields. A model that answers with a bare
+// list of threats (or drops a field) would otherwise render empty cards, so
+// coerce whatever comes back into the shape the UI expects.
+function normalizeDeepAnalysis(raw: any): DeepThinkingAnalysis {
+  const tm = raw?.threatMatrix;
+  const threatMatrix = Array.isArray(tm)
+    ? {
+        competitorRisk: String(tm[0] ?? "Not assessed."),
+        regulatoryRisk: String(tm[1] ?? "Not assessed."),
+        executionFriction: String(tm[2] ?? "Not assessed."),
+      }
+    : {
+        competitorRisk: String(tm?.competitorRisk ?? "Not assessed."),
+        regulatoryRisk: String(tm?.regulatoryRisk ?? "Not assessed."),
+        executionFriction: String(tm?.executionFriction ?? "Not assessed."),
+      };
+
+  return {
+    reasoningSummary: String(raw?.reasoningSummary ?? ""),
+    threatMatrix,
+    distributionMoats: Array.isArray(raw?.distributionMoats)
+      ? raw.distributionMoats.map((m: unknown) => String(m))
+      : [],
+    pricingElasticity: String(raw?.pricingElasticity ?? ""),
+    technicalArchitecture: String(raw?.technicalArchitecture ?? ""),
+  };
 }
 
 // Identity comes from the signed session cookie — never from client-supplied
@@ -188,7 +279,21 @@ export interface GenerationResult<T> {
   success: boolean;
   data?: T;
   error?: string;
+  /**
+   * True when `data` did NOT come from the Gemini API — it is locally
+   * synthesized template content served so the UI stays usable. Callers MUST
+   * surface this; presenting canned content as live market research is worse
+   * than showing an error.
+   */
+  degraded?: boolean;
+  /** Human-readable explanation to show alongside degraded data. */
+  notice?: string;
+  /** The Gemini model that actually served the response, when one did. */
+  modelUsed?: string;
 }
+
+const DEGRADED_NOTICE =
+  "Gemini is unreachable right now, so this is locally synthesized template content — not live AI research. Verify the GEMINI_API_KEY / model settings and re-run for real analysis.";
 
 export async function searchSaaSIdeas(
   niche: string,
@@ -299,19 +404,34 @@ export async function searchSaaSIdeas(
     };
 
     if (options?.useHighThinking) {
-      // Enable high thinking mode with gemini-3.1-pro-preview
+      // Deep reasoning runs on GEMINI_MODEL_PRO. Do NOT set maxOutputTokens —
+      // thinking tokens count against it and truncate the JSON payload.
       model = GEMINI_MODEL_PRO;
       config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
-      // Do NOT set maxOutputTokens
-    } else if (options?.useSearchGrounding) {
-      // Use Google Search Grounding with gemini-3.5-flash
-      model = GEMINI_MODEL;
+    }
+
+    // Grounding and structured-output mode are mutually exclusive on the
+    // Gemini API: attaching a tool while responseMimeType is
+    // "application/json" is rejected with INVALID_ARGUMENT. Drop the schema
+    // and pin the JSON contract in the prompt instead — otherwise the request
+    // fails, the retry layer silently strips the tool, and grounding never
+    // actually happens (it just costs an extra round trip).
+    const grounded = !!options?.useSearchGrounding;
+    if (grounded) {
       config.tools = [{ googleSearch: {} }];
+      delete config.responseMimeType;
+      delete config.responseSchema;
     }
 
     const prompt = `You are Signal Engine — an elite B2B micro-SaaS researcher. Your specialty is finding "boring", unglamorous, highly underserved B2B opportunities in legacy offline industries (e.g., HVAC, construction, pest control, local logistics, veterinary clinics, waste management, dry cleaning). These businesses have low competition, high willingness to pay, and very low churn.
-${options?.useSearchGrounding ? "USE GOOGLE SEARCH DATA to grounding your answers with up-to-date industry trends, current market software competitors, and real market gaps." : ""}
+${grounded ? "USE GOOGLE SEARCH DATA to ground your answers in up-to-date industry trends, current market software competitors, and real market gaps." : ""}
 ${options?.useHighThinking ? "ENGAGE DEEP HIGH THINKING MODE: Carefully reason through market incentives, unit economics, regulatory bottlenecks, and distribution channels before outputting recommendations." : ""}
+${
+  grounded
+    ? `Respond with raw JSON only — no markdown fences, no commentary — using exactly this shape:
+{"saasIdeas":[{"name":string,"tagline":string,"problem":string,"solution":string,"targetAudience":string,"painSolved":string,"competitors":string[],"gtmChannel":string,"buildComplexity":"simple"|"moderate"|"complex","integrationComplexity":"simple"|"moderate"|"complex","marketDemandScore":number,"hotnessScore":number,"roi":{"buildCostUSD":string,"monthlyExpensesUSD":string,"realisticMRRMonth1USD":string,"breakEvenMonths":number,"roiMonth1Pct":string,"assumptions":string},"domains":[{"domain":string,"likelihood":"High"|"Medium"|"Low","reason":string}]}]}`
+    : ""
+}
 
 User inputs:
 - Focus Niche/Industry: ${niche || "Any Legacy B2B Industry"}
@@ -322,18 +442,19 @@ Generate EXACTLY 3 unique B2B micro-SaaS opportunities targeting this niche.
 Return ONLY a valid JSON object matching the requested schema. Ensure the ideas are realistic, solve deep workflow pains (administrative, reporting, billing, or scheduling friction), and provide an calculated Return on Investment (ROI) matrix assuming standard AI app builder setup (e.g. build costs: $50-150 for simple, $150-300 for moderate, $300-600 for complex; monthly operations: $50-120). Also, suggest 3 highly professional, brand-new available dotcom domains with likelihood scores. 
 Additionally, assign a marketDemandScore (1-10) evaluating the strength of market demand based on the provided context, and calculate a hotnessScore (1-5) representing the ratio between market demand and build complexity (e.g., high demand + simple build = 5 flames).`;
 
-    const response = await generateContentWithFallback(ai, {
+    const outcome = await generateContentWithFallback(ai, {
       model,
       contents: prompt,
       config,
     });
+    const response = outcome.response;
 
     const text = response.text;
     if (!text) {
       throw new Error("No response received from Gemini API");
     }
 
-    const parsed = JSON.parse(text);
+    const parsed = parseJsonLoose(text);
 
     // Extract search grounding sources if present
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -359,16 +480,29 @@ Additionally, assign a marketDemandScore (1-10) evaluating the strength of marke
 
     return {
       success: true,
+      modelUsed: outcome.model,
+      // Grounding was asked for but the request had to fall back to a
+      // tool-less call, so the result is not actually grounded.
+      notice:
+        grounded && outcome.degradedConfig
+          ? "Google Search grounding was unavailable for this key/model — results are ungrounded."
+          : undefined,
       data: {
         saasIdeas: parsed.saasIdeas || [],
         groundingSources,
       },
     };
   } catch (error: any) {
-    console.warn("Gemini API error in searchSaaSIdeas, serving smart synthesized B2B ideas:", error?.message);
+    console.error(
+      "Gemini API error in searchSaaSIdeas, serving synthesized template ideas:",
+      error?.message,
+    );
     const fallbackIdeas = getFallbackSaaSIdeas(niche, context);
     return {
       success: true,
+      degraded: true,
+      notice: DEGRADED_NOTICE,
+      error: error?.message,
       data: {
         saasIdeas: fallbackIdeas,
         groundingSources: [],
@@ -400,14 +534,14 @@ Perform an exhaustive, high-thinking level strategic audit for this B2B SaaS ide
 
 Use high thinking mode to deeply evaluate:
 1. Reasoning Summary: Synthesis of market dynamics, why incumbent software fails this target, and core wedge.
-2. Threat Matrix: 3 concrete competitive threats (e.g. incumbent feature expansion, low entry barriers, regulatory shifts).
+2. Threat Matrix: exactly three named risks — competitorRisk (incumbent feature expansion, low entry barriers), regulatoryRisk (compliance, licensing, or privacy shifts), and executionFriction (adoption, onboarding, or operational drag).
 3. Distribution Moats: 3 defensible distribution moats to achieve low customer acquisition cost.
 4. Pricing Elasticity: Analysis of willingness-to-pay and expansion revenue opportunities.
 5. Technical Architecture: Recommended minimal tech stack and API integrations required for high retention.
 
 Return ONLY a valid JSON object matching the requested schema.`;
 
-    const response = await generateContentWithFallback(ai, {
+    const outcome = await generateContentWithFallback(ai, {
       model: GEMINI_MODEL_PRO,
       contents: prompt,
       config: {
@@ -417,9 +551,20 @@ Return ONLY a valid JSON object matching the requested schema.`;
           type: Type.OBJECT,
           properties: {
             reasoningSummary: { type: Type.STRING },
+            // Must stay an object: the UI renders three labelled risk cards
+            // off these exact keys (see IdeaCard "Threat & Friction Matrix").
             threatMatrix: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
+              type: Type.OBJECT,
+              properties: {
+                competitorRisk: { type: Type.STRING },
+                regulatoryRisk: { type: Type.STRING },
+                executionFriction: { type: Type.STRING },
+              },
+              required: [
+                "competitorRisk",
+                "regulatoryRisk",
+                "executionFriction",
+              ],
             },
             distributionMoats: {
               type: Type.ARRAY,
@@ -439,17 +584,27 @@ Return ONLY a valid JSON object matching the requested schema.`;
       },
     });
 
-    const text = response.text;
+    const text = outcome.response.text;
     if (!text) {
       throw new Error("No response received from Gemini API");
     }
 
-    return { success: true, data: JSON.parse(text) };
+    return {
+      success: true,
+      modelUsed: outcome.model,
+      data: normalizeDeepAnalysis(parseJsonLoose(text)),
+    };
   } catch (error: any) {
-    console.warn("Gemini API error in runDeepThinkingAnalysis, serving synthesized audit:", error?.message);
+    console.error(
+      "Gemini API error in runDeepThinkingAnalysis, serving synthesized audit:",
+      error?.message,
+    );
     const fallbackAnalysis = getFallbackDeepThinkingAnalysis(idea);
     return {
       success: true,
+      degraded: true,
+      notice: DEGRADED_NOTICE,
+      error: error?.message,
       data: fallbackAnalysis,
     };
   }
@@ -498,7 +653,7 @@ Ensure:
 9. preSellChecklist gives a list of action items before launching.
 10. validationChecklist gives a step-by-step list of actions to verify market demand before building.`;
 
-    const response = await generateContentWithFallback(ai, {
+    const outcome = await generateContentWithFallback(ai, {
       model: GEMINI_MODEL,
       contents: prompt,
       config: {
@@ -663,16 +818,26 @@ Ensure:
       },
     });
 
-    const text = response.text;
+    const text = outcome.response.text;
     if (!text) {
       throw new Error("No response received from Gemini API");
     }
-    return { success: true, data: JSON.parse(text) };
+    return {
+      success: true,
+      modelUsed: outcome.model,
+      data: parseJsonLoose(text),
+    };
   } catch (error: any) {
-    console.warn("Gemini API error in generateLaunchKit, serving synthesized kit:", error?.message);
+    console.error(
+      "Gemini API error in generateLaunchKit, serving synthesized kit:",
+      error?.message,
+    );
     const fallbackKit = getFallbackLaunchKit(idea as SaasIdea);
     return {
       success: true,
+      degraded: true,
+      notice: DEGRADED_NOTICE,
+      error: error?.message,
       data: fallbackKit,
     };
   }
@@ -903,7 +1068,7 @@ export async function chatWithAgent(
 
     const contents = [...history, { role: "user", parts: [{ text: message }] }];
 
-    const response = await generateContentWithFallback(ai, {
+    const outcome = await generateContentWithFallback(ai, {
       model,
       contents,
       config,
@@ -911,14 +1076,19 @@ export async function chatWithAgent(
 
     return {
       success: true,
+      modelUsed: outcome.model,
       data:
-        response.text ?? "Sorry — no response was generated. Please try again.",
+        outcome.response.text ??
+        "Sorry — no response was generated. Please try again.",
     };
   } catch (error: any) {
-    console.warn("Gemini API error in chatWithAgent:", error?.message);
+    console.error("Gemini API error in chatWithAgent:", error?.message);
     return {
       success: true,
-      data: `I'm currently operating in offline advisory mode.\n\nRegarding your request: When building B2B micro-SaaS, prioritize solving a single high-frequency workflow bottleneck (such as job scheduling, compliance reporting, or change-order sign-offs). Target audiences in legacy industries value speed, reliability, and instant ROI above all else!`,
+      degraded: true,
+      notice: DEGRADED_NOTICE,
+      error: error?.message,
+      data: `⚠️ Offline advisory mode — Gemini is unreachable (${error?.message || "unknown error"}), so this is a canned answer rather than a live one.\n\nGeneral guidance: when building B2B micro-SaaS, prioritize solving a single high-frequency workflow bottleneck (such as job scheduling, compliance reporting, or change-order sign-offs). Buyers in legacy industries value speed, reliability, and instant ROI above all else.`,
     };
   }
 }
@@ -950,7 +1120,7 @@ Return ONLY a JSON object with this exact structure:
   "suggestions": ["suggestion1", "suggestion2", "suggestion3"]
 }`;
 
-    const response = await generateContentWithFallback(ai, {
+    const outcome = await generateContentWithFallback(ai, {
       model: GEMINI_MODEL_FAST,
       contents: prompt,
       config: {
@@ -976,11 +1146,11 @@ Return ONLY a JSON object with this exact structure:
       },
     });
 
-    const text = response.text;
+    const text = outcome.response.text;
     if (!text) {
       return { keywords: [], suggestions: [] };
     }
-    return JSON.parse(text);
+    return parseJsonLoose(text);
   } catch (error) {
     console.warn("Error in getRealtimeSuggestions, returning fallback keywords:", error);
     const cleanNiche = niche || "B2B";

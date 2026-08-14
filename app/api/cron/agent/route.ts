@@ -1,13 +1,57 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
+import { headers } from 'next/headers';
+import crypto from 'crypto';
+import { getSupabaseAdmin, isSupabaseConfigured } from '@/app/lib/supabase';
 import { GoogleGenAI } from '@google/genai';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Scheduled audit of the secret_keys table. Requires
+// `Authorization: Bearer $CRON_SECRET` — an anonymous caller could otherwise
+// bill unlimited Gemini requests and read back metadata about which
+// credentials this deployment holds. Fails closed when CRON_SECRET is unset.
+export const dynamic = 'force-dynamic';
+
+// Keep in step with app/actions.ts — overridable per environment rather than
+// pinned to a model ID that a given API key may not have access to.
+const AGENT_MODEL = process.env.GEMINI_MODEL_FAST || 'gemini-3.5-flash';
+
+// Constant-time compare so a caller can't learn the secret byte by byte.
+function isAuthorized(header: string | null): boolean {
+  const expected = process.env.CRON_SECRET;
+  if (!expected) return false;
+  const provided = (header || '').replace(/^Bearer /i, '');
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+const ENCRYPTED_ENVELOPE =
+  /^enc:v1:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+:[A-Za-z0-9+/=]+$/;
 
 export async function GET() {
+  const requestHeaders = await headers();
+  if (!isAuthorized(requestHeaders.get('authorization'))) {
+    return NextResponse.json({ error: 'Not authorized' }, { status: 401 });
+  }
+
   try {
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json(
+        { error: 'Supabase is not configured; security agent skipped.' },
+        { status: 503 },
+      );
+    }
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json(
+        { error: 'GEMINI_API_KEY is not configured; security agent skipped.' },
+        { status: 503 },
+      );
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
     // 1. Fetch the secret keys
-    const { data: keys, error } = await supabase.from('secret_keys').select('*');
+    const { data: keys, error } = await getSupabaseAdmin()
+      .from('secret_keys')
+      .select('*');
 
     if (error) {
       return NextResponse.json({ error: 'Failed to fetch keys for analysis', details: error.message }, { status: 500 });
@@ -15,13 +59,15 @@ export async function GET() {
 
     // 2. Format the data to check if they are encrypted
     const analysisData = (keys || []).map(key => {
-      // Basic check: encrypted format should be iv:encrypted_text (e.g. hex:hex)
-      const isEncryptedFormat = /^[0-9a-f]{32}:[0-9a-f]+$/i.test(key.encrypted_value);
+      // Matches the "enc:v1:<iv>:<tag>:<ciphertext>" envelope written by
+      // encryptSecret() in app/security.ts (AES-256-GCM, base64 segments).
+      const encryptedValue: string = key.encrypted_value ?? '';
+      const isEncryptedFormat = ENCRYPTED_ENVELOPE.test(encryptedValue);
       return {
         id: key.id,
         name: key.name,
         isEncryptedFormat,
-        valueLength: key.encrypted_value.length,
+        valueLength: encryptedValue.length,
         created_at: key.created_at,
         updated_at: key.updated_at
       };
@@ -42,7 +88,7 @@ export async function GET() {
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite",
+      model: AGENT_MODEL,
       contents: prompt,
     });
 

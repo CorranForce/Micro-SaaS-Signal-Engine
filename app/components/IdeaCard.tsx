@@ -14,7 +14,6 @@ import {
   ChevronDown,
   Globe,
   Brain,
-  Cpu,
   ExternalLink,
   Sparkles,
 } from "lucide-react";
@@ -487,7 +486,9 @@ export function IdeaCard({
             </p>
           </div>
 
-          {/* Strategic Deep Audit (Gemini 3.1 Pro High Thinking) */}
+          {/* Strategic Deep Audit — runs on GEMINI_MODEL_PRO with High
+              Thinking Level. The badge names the setting, not a specific
+              model: the resolved model is environment-dependent. */}
           <div className="bg-purple-950/20 border border-purple-800/40 p-4 rounded-lg space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-purple-800/40 pb-2">
               <div className="flex items-center gap-2">
@@ -496,7 +497,7 @@ export function IdeaCard({
                   High Thinking Strategic Audit
                 </h4>
                 <span className="text-[9px] bg-purple-900/60 text-purple-300 border border-purple-700/50 px-1.5 py-0.5 rounded font-mono">
-                  gemini-3.1-pro-preview
+                  GEMINI_MODEL_PRO
                 </span>
               </div>
 
@@ -616,7 +617,7 @@ export function IdeaCard({
               </div>
             ) : (
               <p className="text-[11px] text-purple-300/70 italic">
-                Click &ldquo;Run Deep Strategic Audit&rdquo; to unleash Gemini 3.1 Pro with High Thinking Level to evaluate threat risks, distribution moats, pricing power, and technical architecture.
+                Click &ldquo;Run Deep Strategic Audit&rdquo; to run High Thinking Level reasoning over threat risks, distribution moats, pricing power, and technical architecture.
               </p>
             )}
           </div>

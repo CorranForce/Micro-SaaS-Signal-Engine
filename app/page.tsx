@@ -18,7 +18,7 @@ import {
   Download,
   Globe,
   Brain,
-  Cpu,
+  AlertTriangle,
 } from "lucide-react";
 import {
   searchSaaSIdeas,
@@ -96,6 +96,9 @@ export default function MicroSaaSSignalEngine() {
   const [deepAnalysisData, setDeepAnalysisData] = useState<
     Record<number, DeepThinkingAnalysis>
   >({});
+  // Set when the server served locally synthesized content instead of live
+  // Gemini output, so the UI never passes template copy off as AI research.
+  const [degradedNotice, setDegradedNotice] = useState<string | null>(null);
 
   // Real-time suggestions state
   const [realtimeKeywords, setRealtimeKeywords] = useState<string[]>([]);
@@ -660,6 +663,12 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     setActiveIdeaIndex(null);
     setLaunchKits({});
     setTerminalLogs([]);
+    // Deep-audit results are keyed by position in generatedIdeas, so they must
+    // be cleared with the ideas themselves — otherwise the previous run's
+    // audit renders under whatever idea lands at the same index.
+    setDeepAnalysisData({});
+    setDeepAnalysisLoading({});
+    setDegradedNotice(null);
 
     const selectedNicheName = selectedNicheNameForUI;
 
@@ -702,13 +711,13 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     try {
       if (useHighThinking) {
         setTerminalLogs((prev) => [
-          `[HIGH THINKING MODE] Activating Gemini 3.1 Pro with High Thinking Level for deep market reasoning...`,
+          `[HIGH THINKING MODE] Requesting High Thinking Level reasoning for deep market analysis...`,
           ...prev,
         ]);
       }
       if (useSearchGrounding) {
         setTerminalLogs((prev) => [
-          `[SEARCH GROUNDING] Live Google Search Grounding enabled with Gemini 3.5 Flash...`,
+          `[SEARCH GROUNDING] Live Google Search Grounding requested...`,
           ...prev,
         ]);
       }
@@ -720,10 +729,21 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
 
       if (res.success && res.data?.saasIdeas) {
         setGeneratedIdeas(res.data.saasIdeas);
-        setTerminalLogs((prev) => [
-          `[SUCCESS] 3 Premium B2B blueprints successfully loaded and validated! 🎉`,
-          ...prev,
-        ]);
+        setDegradedNotice(res.degraded ? res.notice || null : null);
+        if (res.degraded) {
+          setTerminalLogs((prev) => [
+            `[DEGRADED] Gemini unreachable (${res.error || "unknown error"}) — showing locally synthesized template blueprints, NOT live research.`,
+            ...prev,
+          ]);
+        } else {
+          if (res.notice) {
+            setTerminalLogs((prev) => [`[WARN] ${res.notice}`, ...prev]);
+          }
+          setTerminalLogs((prev) => [
+            `[SUCCESS] 3 Premium B2B blueprints loaded via ${res.modelUsed || "Gemini"}! 🎉`,
+            ...prev,
+          ]);
+        }
       } else {
         throw new Error(
           res.error || "Invalid output received. Please try again.",
@@ -758,6 +778,9 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       if (res.success && res.data) {
         const analysis = res.data;
         setDeepAnalysisData((prev) => ({ ...prev, [index]: analysis }));
+        if (res.degraded && res.notice) {
+          setDegradedNotice(res.notice);
+        }
       } else {
         alert(res.error || "Failed to execute deep strategic analysis.");
       }
@@ -1426,8 +1449,8 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                         <div className="flex items-center gap-1.5 text-xs font-bold text-white font-ms">
                           <Globe className="w-3 h-3 text-cyan-400" />
                           Google Search Grounding
-                          <span className="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1 py-0.2 rounded font-mono">
-                            gemini-3.5-flash
+                          <span className="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1 py-0.5 rounded font-mono">
+                            GEMINI_MODEL
                           </span>
                         </div>
                         <p className="text-[10px] text-ms-text-muted mt-0.5 leading-snug">
@@ -1448,8 +1471,8 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                         <div className="flex items-center gap-1.5 text-xs font-bold text-white font-ms">
                           <Brain className="w-3 h-3 text-purple-400" />
                           High Thinking Level
-                          <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-800 px-1 py-0.2 rounded font-mono">
-                            gemini-3.1-pro-preview
+                          <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-800 px-1 py-0.5 rounded font-mono">
+                            GEMINI_MODEL_PRO
                           </span>
                         </div>
                         <p className="text-[10px] text-ms-text-muted mt-0.5 leading-snug">
@@ -1592,6 +1615,23 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                   >
                     <Download size={14} /> EXPORT NICHES CSV
                   </button>
+                </div>
+              )}
+
+              {/* Degraded-mode banner: the server serves synthesized template
+                  content when Gemini is unreachable. Say so, loudly — these
+                  numbers are not market research. */}
+              {degradedNotice && (
+                <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-amber-700/60 bg-amber-950/30 p-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-ms font-bold uppercase tracking-wider text-amber-300">
+                      Offline / Template Mode
+                    </div>
+                    <p className="text-[11px] text-amber-100/90 mt-0.5 leading-snug">
+                      {degradedNotice}
+                    </p>
+                  </div>
                 </div>
               )}
 

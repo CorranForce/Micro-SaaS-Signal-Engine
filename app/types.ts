@@ -26,11 +26,7 @@ export interface SaasIdea {
     likelihood: "High" | "Medium" | "Low";
     reason: string;
   }[];
-  groundingSources?: {
-    title?: string;
-    uri?: string;
-  }[];
-  deepAnalysis?: DeepThinkingAnalysis;
+  groundingSources?: GroundingSource[];
 }
 
 export interface GroundingSource {

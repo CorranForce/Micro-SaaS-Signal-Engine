@@ -246,6 +246,20 @@ Worked through the [Enhancements.md](./Enhancements.md) backlog in priority orde
 
 **Follow-up quick review (2026-07-25).** A post-decomposition sweep (ESLint, a manual unused-import check, and a runtime smoke test) found 10 dead imports left in `app/page.tsx` after their JSX moved into the new components: the `LaunchKitTabs` import and the `ArrowRight`, `Mail`, `Users`, `Globe`, `Calendar`, `CheckCircle2`, `ChevronDown`, `ChevronUp` icons, and the `chatWithAgent` action — all now imported directly by the components that use them (`IdeaCard`, `SavedKitsTab`, `SettingsPanel`, `AuthModal`, `FloatingChatbot`). Removed; build and lint clean, zero console errors at runtime.
 
+## Code Review — 2026-08-14
+
+Full review of `68e4e44` ("feat(ai): integrate deep thinking and grounding") and the code it touches. Full detail, with evidence and verification, is in [BugReport.md](./BugReport.md#code-review--2026-08-14-68e4e44-featai-integrate-deep-thinking-and-grounding).
+
+Headlines:
+
+- **`npm ci` was broken.** `motion` was added to `package.json` with only `bun.lock` regenerated (as `node-cron` had been before it), so every npm-based install failed before compiling. Lockfile regenerated.
+- **Two security fixes had regressed** in `8a5d0ea` and were live on `main`: `POST /api/secrets/seed` and `GET /api/cron/agent` were reachable anonymously (service-role writes, per-request Gemini billing, secret metadata disclosure), and `app/lib/encryption.ts` was back with AES-256-CBC and a fallback key committed to the repo. Seed now requires an operator session, cron requires `Authorization: Bearer $CRON_SECRET` (fails closed when unset), and the app uses only the AES-256-GCM helpers in `app/security.ts`.
+- **AI failures were being reported as successes.** Every generation action returned `success: true` with locally synthesized template content on any error — including a missing `GEMINI_API_KEY` — so an unconfigured deployment displayed canned ROI figures as live research. The fallback is kept but now flagged: results carry `degraded`/`notice`, and the UI shows an "Offline / Template Mode" banner.
+- **Two shipped features could not work as written.** The deep-audit response schema (`threatMatrix` as a string array) disagreed with the UI reading it as three named risk fields, so successful API calls rendered blank cards — only the offline fallback looked right. And Google Search grounding was requested alongside JSON schema mode, which the Gemini API rejects, so grounding silently never ran on the default code path.
+- Plus: stale deep-audit results leaking between searches, UI badges naming models the code never uses, retired model IDs in the fallback chain, a build that died without Supabase env vars, and the in-process cron double-invoking the Vercel cron.
+
+Verified: `npm ci` clean, `tsc` and `next lint` clean, `next build` green with **zero env vars**, and the auth gates confirmed over HTTP (401 anonymous, 401 wrong secret).
+
 ## License
 
 This project is licensed under the MIT License.
