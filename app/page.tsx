@@ -418,11 +418,13 @@ export default function MicroSaaSSignalEngine() {
     if (!currentUser || savedIdeas.length === 0) return;
 
     const syncedKey = `synced_ideas_${currentUser.toLowerCase()}`;
+    let isPaused = false;
+    let consecutiveFailures = 0;
 
-    const syncInterval = setInterval(async () => {
+    const performSync = async () => {
+      if (isPaused) return;
+
       try {
-        // Track what has already been synced locally so the background job
-        // doesn't re-send (or duplicate) rows every 30 seconds.
         let synced: string[] = [];
         try {
           synced = JSON.parse(localStorage.getItem(syncedKey) || "[]");
@@ -435,7 +437,8 @@ export default function MicroSaaSSignalEngine() {
         if (unsynced.length === 0) return;
 
         const res = await syncToSupabaseAction(unsynced);
-        if (res.success) {
+        if (res && res.success) {
+          consecutiveFailures = 0;
           localStorage.setItem(
             syncedKey,
             JSON.stringify([...synced, ...unsynced.map((s) => s.idea.name)]),
@@ -445,11 +448,30 @@ export default function MicroSaaSSignalEngine() {
               `Synced ${res.count} saved ideas to Supabase in the background.`,
             );
           }
+        } else {
+          // If unconfigured or unauthorized, pause background syncing
+          if (
+            res?.reason === "SUPABASE_CONFIG_MISSING" ||
+            res?.reason === "AUTH_REQUIRED" ||
+            res?.reason === "SUPABASE_UNREACHABLE"
+          ) {
+            isPaused = true;
+          }
+          consecutiveFailures++;
+          if (consecutiveFailures >= 2) {
+            isPaused = true;
+          }
         }
-      } catch (err) {
-        console.error("Background sync error:", err);
+      } catch (err: any) {
+        consecutiveFailures++;
+        if (consecutiveFailures >= 2) {
+          isPaused = true;
+        }
+        console.warn("Background sync paused:", err?.message || "Temporarily unavailable");
       }
-    }, 30000); // 30 seconds
+    };
+
+    const syncInterval = setInterval(performSync, 60000); // 60 seconds
 
     return () => clearInterval(syncInterval);
   }, [currentUser, savedIdeas]);
@@ -1294,22 +1316,47 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-ms text-ms-text-muted uppercase mb-1.5">
-                      Target MRR (Monthly Income)
-                    </label>
-                    <div className="flex items-center gap-4">
-                      <input
-                        type="range"
-                        min="2000"
-                        max="25000"
-                        step="1000"
-                        value={mrrTarget}
-                        onChange={(e) => setMrrTarget(parseInt(e.target.value))}
-                        className="flex-1 accent-ms-green h-1 bg-ms-border rounded-lg appearance-none cursor-pointer"
-                      />
-                      <span className="font-ms text-xs font-bold text-ms-green bg-ms-green-dark border border-ms-green/40 px-2 py-1 rounded">
-                        ${mrrTarget.toLocaleString()}
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-ms text-ms-text-muted uppercase">
+                        Target MRR (Monthly Income)
+                      </label>
+                      <span className="font-ms text-xs font-bold text-ms-green bg-ms-green-dark border border-ms-green/40 px-2 py-0.5 rounded">
+                        ${mrrTarget.toLocaleString()}/mo
                       </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: "$2k", value: 2000, desc: "Starter" },
+                        { label: "$5k", value: 5000, desc: "Growth" },
+                        { label: "$10k", value: 10000, desc: "Scale" },
+                        { label: "$25k", value: 25000, desc: "Enterprise" },
+                      ].map((target) => {
+                        const isSelected = mrrTarget === target.value;
+                        return (
+                          <button
+                            key={target.value}
+                            id={`mrr-target-btn-${target.value}`}
+                            type="button"
+                            onClick={() => setMrrTarget(target.value)}
+                            className={`flex flex-col items-center justify-center py-2 px-1.5 rounded border text-center transition-all ${
+                              isSelected
+                                ? "bg-ms-green text-black border-ms-green font-bold shadow-sm ring-1 ring-ms-green/50"
+                                : "bg-ms-bg border-ms-border text-ms-text hover:border-ms-green/50 hover:text-white"
+                            }`}
+                          >
+                            <span className="font-ms text-xs font-bold tracking-tight">
+                              {target.label}
+                            </span>
+                            <span
+                              className={`text-[9px] uppercase font-mono mt-0.5 ${
+                                isSelected ? "text-black/70 font-semibold" : "text-ms-text-muted"
+                              }`}
+                            >
+                              {target.desc}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -1427,7 +1474,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                           <Globe className="w-3 h-3 text-cyan-400" />
                           Google Search Grounding
                           <span className="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1 py-0.2 rounded font-mono">
-                            gemini-3.5-flash
+                            gemini-3.8-flash
                           </span>
                         </div>
                         <p className="text-[10px] text-ms-text-muted mt-0.5 leading-snug">

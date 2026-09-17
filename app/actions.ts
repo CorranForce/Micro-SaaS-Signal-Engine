@@ -37,12 +37,12 @@ const OPERATOR_EMAIL = (
 const SESSION_COOKIE = "session_token";
 
 // Gemini model IDs:
-// - Fast tasks: gemini-3.5-flash
-// - General tasks: gemini-3.5-flash
-// - Complex tasks: gemini-3.5-flash
-const GEMINI_MODEL_FAST = process.env.GEMINI_MODEL_FAST || "gemini-3.5-flash";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
-const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-3.5-flash";
+// - Fast tasks: gemini-3.8-flash
+// - General tasks: gemini-3.8-flash
+// - Complex tasks: gemini-3.8-flash
+const GEMINI_MODEL_FAST = process.env.GEMINI_MODEL_FAST || "gemini-3.8-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-3.8-flash";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -57,8 +57,11 @@ async function generateContentWithFallback(
   const modelsToTry = [
     params.model,
     GEMINI_MODEL,
-    "gemini-2.5-flash",
-    "gemini-1.5-flash",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
   ].filter((m, i, self) => Boolean(m) && self.indexOf(m) === i);
 
   let lastError: any = null;
@@ -708,27 +711,38 @@ export async function loginUser(
   const settings = getSettings();
   const { supabaseUrl, supabaseAnonKey } = settings;
   
-  if (supabaseUrl && supabaseAnonKey) {
-    const { createClient } = require('@supabase/supabase-js');
-    const supabase = createClient(supabaseUrl, supabaseAnonKey);
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: normalized,
-      password: password,
-    });
+  let authenticated = false;
 
-    // Only trust the login if Supabase actually returned an authenticated
-    // session. Without this check the app session is granted purely on the
-    // client-supplied email, which is an impersonation vector.
-    if (error || !data?.session) {
-      return { success: false, error: "Invalid email or password." };
-    }
-  } else {
-    // Fallback to local
-    const users = getUsers();
-    const user = users.find((u) => u.email.toLowerCase() === normalized);
-    if (!user) return { success: false, error: "Invalid email or password." };
+  // 1. Check local users first (allows operator and local accounts to log in reliably)
+  const users = getUsers();
+  const user = users.find((u) => u.email.toLowerCase() === normalized);
+  if (user) {
     const { valid } = verifyPassword(password, user.passwordHash);
-    if (!valid) return { success: false, error: "Invalid email or password." };
+    if (valid) {
+      authenticated = true;
+    }
+  }
+
+  // 2. If not authenticated locally, attempt Supabase Auth if configured
+  if (!authenticated && supabaseUrl && supabaseAnonKey) {
+    try {
+      const { createClient } = require('@supabase/supabase-js');
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalized,
+        password: password,
+      });
+
+      if (!error && data?.session) {
+        authenticated = true;
+      }
+    } catch {
+      // Supabase network/host error — gracefully continue
+    }
+  }
+
+  if (!authenticated) {
+    return { success: false, error: "Invalid email or password." };
   }
 
   await setSessionCookie(normalized);
@@ -1258,18 +1272,36 @@ export async function addToSupabaseAction(
     };
 
     const cleanUrl = supabaseUrl.replace(/\/$/, "");
+    if (!cleanUrl.startsWith("http") || cleanUrl.includes("placeholder")) {
+      return {
+        success: false,
+        reason: "SUPABASE_CONFIG_MISSING",
+        error: "Supabase URL is not configured properly.",
+      };
+    }
     const url = `${cleanUrl}/rest/v1/saved_ideas`;
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify(payload),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(3500),
+      });
+    } catch (netErr: any) {
+      console.warn("addToSupabaseAction network error:", netErr?.message);
+      return {
+        success: false,
+        reason: "SUPABASE_UNREACHABLE",
+        error: "Supabase host is currently unreachable.",
+      };
+    }
 
     if (!response.ok) {
       const errText = await response.text();
@@ -1279,10 +1311,10 @@ export async function addToSupabaseAction(
 
     return { success: true };
   } catch (err: any) {
-    console.error("Error in addToSupabaseAction server action:", err);
+    console.warn("Error in addToSupabaseAction server action:", err?.message || err);
     return {
       success: false,
-      error: err.message || "Failed to connect to Supabase endpoint.",
+      error: err?.message || "Failed to connect to Supabase endpoint.",
     };
   }
 }
@@ -1304,6 +1336,11 @@ export async function syncToSupabaseAction(items: SavedIdea[]) {
       return { success: false, reason: "SUPABASE_CONFIG_MISSING" };
     }
 
+    const cleanUrl = supabaseUrl.replace(/\/$/, "");
+    if (!cleanUrl.startsWith("http") || cleanUrl.includes("placeholder")) {
+      return { success: false, reason: "SUPABASE_CONFIG_MISSING" };
+    }
+
     const payloads = items.map((item) => ({
       name: item.idea.name,
       tagline: item.idea.tagline,
@@ -1321,23 +1358,31 @@ export async function syncToSupabaseAction(items: SavedIdea[]) {
       user_email: userEmail,
     }));
 
-    const cleanUrl = supabaseUrl.replace(/\/$/, "");
     const url = `${cleanUrl}/rest/v1/saved_ideas`;
 
-    // Best-effort server-side dedupe. With the recommended RLS (no anon
-    // SELECT) this returns nothing — the client also tracks synced items
-    // locally, which is the primary duplicate guard.
+    // Best-effort server-side dedupe with timeout
     const getUrl = `${url}?user_email=eq.${encodeURIComponent(userEmail)}&select=name`;
-    const getRes = await fetch(getUrl, {
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-      },
-    });
+    let getRes: Response;
+    try {
+      getRes = await fetch(getUrl, {
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        signal: AbortSignal.timeout(3500),
+      });
+    } catch (netErr: any) {
+      console.warn("syncToSupabaseAction network error:", netErr?.message);
+      return {
+        success: false,
+        reason: "SUPABASE_UNREACHABLE",
+        error: "Supabase host is currently unreachable.",
+      };
+    }
 
     if (!getRes.ok) {
-        const errText = await getRes.text();
-        return handleSupabaseError(errText);
+      const errText = await getRes.text();
+      return handleSupabaseError(errText);
     }
 
     let existingNames = new Set();
@@ -1348,16 +1393,27 @@ export async function syncToSupabaseAction(items: SavedIdea[]) {
 
     if (newPayloads.length === 0) return { success: true, count: 0 };
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify(newPayloads),
-    });
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify(newPayloads),
+        signal: AbortSignal.timeout(3500),
+      });
+    } catch (postErr: any) {
+      console.warn("syncToSupabaseAction POST error:", postErr?.message);
+      return {
+        success: false,
+        reason: "SUPABASE_UNREACHABLE",
+        error: "Supabase host is currently unreachable.",
+      };
+    }
 
     if (!response.ok) {
       const errText = await response.text();
@@ -1367,8 +1423,8 @@ export async function syncToSupabaseAction(items: SavedIdea[]) {
 
     return { success: true, count: newPayloads.length };
   } catch (err: any) {
-    console.error("Error in syncToSupabaseAction:", err);
-    return { success: false, error: err.message };
+    console.warn("Error in syncToSupabaseAction:", err?.message || err);
+    return { success: false, error: err?.message || "Sync failed" };
   }
 }
 
