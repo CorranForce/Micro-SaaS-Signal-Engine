@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { MessageSquare, X, Send, Bot } from "lucide-react";
+import { MessageSquare, X, Send, Bot, ChevronDown } from "lucide-react";
 import { chatWithAgent } from "../actions";
+import { GEMINI_ENGINES, DEFAULT_GEMINI_ENGINE } from "../lib/gemini-engines";
 
 export function FloatingChatbot() {
   const [isOpen, setIsOpen] = useState(false);
@@ -16,10 +17,19 @@ export function FloatingChatbot() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [taskType, setTaskType] = useState<"general" | "complex" | "fast">(
-    "general",
-  );
+  const [selectedEngine, setSelectedEngine] = useState<string>(DEFAULT_GEMINI_ENGINE);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      const savedEngine = localStorage.getItem("signal_engine_gemini_model");
+      if (savedEngine && GEMINI_ENGINES.some((e) => e.id === savedEngine)) {
+        setSelectedEngine(savedEngine);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -46,7 +56,7 @@ export function FloatingChatbot() {
         parts: [{ text: m.text }] as [{ text: string }],
       }));
 
-      const res = await chatWithAgent(history, userMessage, taskType);
+      const res = await chatWithAgent(history, userMessage, "general", selectedEngine);
       const text =
         res.success && res.data
           ? res.data
@@ -84,22 +94,40 @@ export function FloatingChatbot() {
       {/* Chat Window */}
       {isOpen && (
         <div className="fixed bottom-24 right-6 w-96 h-[500px] bg-ms-card border border-ms-border rounded-xl shadow-2xl flex flex-col z-50 overflow-hidden">
-          <div className="bg-ms-bg border-b border-ms-border p-4 flex items-center justify-between">
+          <div className="bg-ms-bg border-b border-ms-border p-3.5 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-ms-green" />
-              <h3 className="text-sm font-bold text-white font-ms">
-                Signal Engine AI
-              </h3>
+              <div>
+                <h3 className="text-xs font-bold text-white font-ms">
+                  Signal Engine AI
+                </h3>
+                <p className="text-[10px] text-ms-text-muted">Interactive Copilot</p>
+              </div>
             </div>
-            <select
-              value={taskType}
-              onChange={(e) => setTaskType(e.target.value as any)}
-              className="bg-ms-card border border-ms-border text-xs text-ms-text-muted rounded px-2 py-1 focus:outline-none"
-            >
-              <option value="fast">Flash Lite (Fast)</option>
-              <option value="general">Flash (General)</option>
-              <option value="complex">Pro (High Thinking)</option>
-            </select>
+            <div className="relative">
+              <select
+                value={selectedEngine}
+                onChange={(e) => {
+                  const engine = e.target.value;
+                  setSelectedEngine(engine);
+                  try {
+                    localStorage.setItem("signal_engine_gemini_model", engine);
+                  } catch {
+                    // ignore
+                  }
+                }}
+                className="bg-ms-card border border-ms-border text-[11px] text-white rounded px-2 py-1 pr-6 focus:outline-none focus:border-ms-green cursor-pointer"
+              >
+                {GEMINI_ENGINES.map((engine) => (
+                  <option key={engine.id} value={engine.id} className="bg-[#121820] text-white">
+                    {engine.name} [{engine.wiredBadge}]
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1.5 text-ms-text-muted">
+                <ChevronDown className="w-3 h-3" />
+              </div>
+            </div>
           </div>
 
           <div

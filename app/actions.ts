@@ -199,6 +199,7 @@ export async function searchSaaSIdeas(
   options?: {
     useSearchGrounding?: boolean;
     useHighThinking?: boolean;
+    engine?: string;
   },
 ): Promise<GenerationResult<{ saasIdeas: SaasIdea[]; groundingSources?: GroundingSource[] }>> {
   const client = await getClientKey();
@@ -211,7 +212,7 @@ export async function searchSaaSIdeas(
   try {
     const ai = getAIClient();
 
-    let model = GEMINI_MODEL; // gemini-3.5-flash by default
+    let model = options?.engine || GEMINI_MODEL;
     const config: any = {
       responseMimeType: "application/json",
       responseSchema: {
@@ -301,14 +302,19 @@ export async function searchSaaSIdeas(
       },
     };
 
-    if (options?.useHighThinking) {
-      // Enable high thinking mode with gemini-3.1-pro-preview
+    if (options?.engine) {
+      model = options.engine;
+    } else if (options?.useHighThinking) {
       model = GEMINI_MODEL_PRO;
-      config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
-      // Do NOT set maxOutputTokens
-    } else if (options?.useSearchGrounding) {
-      // Use Google Search Grounding with gemini-3.5-flash
+    } else {
       model = GEMINI_MODEL;
+    }
+
+    if (options?.useHighThinking || (options?.engine && options.engine.includes("pro"))) {
+      config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+    }
+
+    if (options?.useSearchGrounding) {
       config.tools = [{ googleSearch: {} }];
     }
 
@@ -382,6 +388,7 @@ Additionally, assign a marketDemandScore (1-10) evaluating the strength of marke
 
 export async function runDeepThinkingAnalysis(
   idea: SaasIdea,
+  engine?: string,
 ): Promise<GenerationResult<DeepThinkingAnalysis>> {
   const client = await getClientKey();
   if (!rateLimit(`deep:${client}`, 10, 60_000)) {
@@ -410,8 +417,9 @@ Use high thinking mode to deeply evaluate:
 
 Return ONLY a valid JSON object matching the requested schema.`;
 
+    const modelToUse = engine || GEMINI_MODEL_PRO;
     const response = await generateContentWithFallback(ai, {
-      model: GEMINI_MODEL_PRO,
+      model: modelToUse,
       contents: prompt,
       config: {
         thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
@@ -463,6 +471,7 @@ export async function generateLaunchKit(
     SaasIdea,
     "name" | "tagline" | "problem" | "solution" | "targetAudience" | "painSolved"
   >,
+  engine?: string,
 ): Promise<GenerationResult<LaunchKit>> {
   const client = await getClientKey();
   if (!rateLimit(`kit:${client}`, 6, 60_000)) {
@@ -501,8 +510,9 @@ Ensure:
 9. preSellChecklist gives a list of action items before launching.
 10. validationChecklist gives a step-by-step list of actions to verify market demand before building.`;
 
+    const modelToUse = engine || GEMINI_MODEL;
     const response = await generateContentWithFallback(ai, {
-      model: GEMINI_MODEL,
+      model: modelToUse,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -886,7 +896,8 @@ export async function updateApiSettings(settings: ApiSettings) {
 export async function chatWithAgent(
   history: { role: "user" | "model"; parts: [{ text: string }] }[],
   message: string,
-  taskType: "complex" | "general" | "fast" = "general",
+  taskType: "complex" | "general" | "fast" | string = "general",
+  engine?: string,
 ): Promise<GenerationResult<string>> {
   // Return structured results instead of throwing: Next.js redacts thrown
   // server-action error messages in production, so a throw would show the
@@ -902,17 +913,22 @@ export async function chatWithAgent(
   try {
     const ai = getAIClient();
 
-    let model = GEMINI_MODEL;
+    let model = engine || GEMINI_MODEL;
     let config: any = {
       systemInstruction:
         "You are an expert SaaS advisor and micro-SaaS ideation assistant. You help users refine their startup ideas, understand market dynamics, and build production-ready launch kits.",
     };
 
-    if (taskType === "complex") {
-      model = GEMINI_MODEL_PRO;
+    if (taskType === "complex" || engine?.includes("pro")) {
+      model = engine || GEMINI_MODEL_PRO;
       config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
     } else if (taskType === "fast") {
-      model = GEMINI_MODEL_FAST;
+      model = engine || GEMINI_MODEL_FAST;
+    } else if (taskType && taskType.startsWith("gemini-")) {
+      model = taskType;
+      if (taskType.includes("pro")) {
+        config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
+      }
     }
 
     const contents = [...history, { role: "user", parts: [{ text: message }] }];
@@ -940,6 +956,7 @@ export async function chatWithAgent(
 export async function getRealtimeSuggestions(
   niche: string,
   currentText: string,
+  engine?: string,
 ) {
   // Background/typeahead helper — fail quietly when over the limit.
   const client = await getClientKey();
@@ -964,8 +981,9 @@ Return ONLY a JSON object with this exact structure:
   "suggestions": ["suggestion1", "suggestion2", "suggestion3"]
 }`;
 
+    const modelToUse = engine || GEMINI_MODEL_FAST;
     const response = await generateContentWithFallback(ai, {
-      model: GEMINI_MODEL_FAST,
+      model: modelToUse,
       contents: prompt,
       config: {
         responseMimeType: "application/json",

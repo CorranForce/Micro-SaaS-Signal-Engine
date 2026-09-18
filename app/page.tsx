@@ -19,6 +19,7 @@ import {
   Globe,
   Brain,
   Cpu,
+  ChevronDown,
 } from "lucide-react";
 import {
   searchSaaSIdeas,
@@ -39,6 +40,7 @@ import {
 // --- Types (shared with server actions and LaunchKitTabs) ---
 import type { SaasIdea, LaunchKit, DeepThinkingAnalysis } from "./types";
 import { LEGACY_NICHES } from "./lib/niches";
+import { GEMINI_ENGINES, DEFAULT_GEMINI_ENGINE } from "./lib/gemini-engines";
 import { generateSqlFallback, escapeHtmlC } from "./lib/launchkit-utils";
 import { TypewriterLog } from "./components/TypewriterLog";
 import { VisualSchemaDiagram } from "./components/SchemaDiagram";
@@ -88,6 +90,7 @@ export default function MicroSaaSSignalEngine() {
   const [savedKitsSearchQuery, setSavedKitsSearchQuery] = useState("");
 
   // Gemini Skills Features state
+  const [selectedEngine, setSelectedEngine] = useState<string>(DEFAULT_GEMINI_ENGINE);
   const [useSearchGrounding, setUseSearchGrounding] = useState<boolean>(true);
   const [useHighThinking, setUseHighThinking] = useState<boolean>(false);
   const [deepAnalysisLoading, setDeepAnalysisLoading] = useState<
@@ -96,6 +99,106 @@ export default function MicroSaaSSignalEngine() {
   const [deepAnalysisData, setDeepAnalysisData] = useState<
     Record<number, DeepThinkingAnalysis>
   >({});
+
+  const handleEngineChange = (engine: string) => {
+    setSelectedEngine(engine);
+    try {
+      localStorage.setItem("signal_engine_gemini_model", engine);
+    } catch {
+      // ignore
+    }
+    const found = GEMINI_ENGINES.find((e) => e.id === engine);
+    if (engine === "gemini-3.1-pro-preview" || engine.includes("pro")) {
+      setUseHighThinking(true);
+      setUseSearchGrounding(false);
+      setTerminalLogs((prev) => [
+        `[ENGINE WIRED] Switched to ${found?.name || engine}: High Thinking Level automatically ENGAGED for deep strategic reasoning.`,
+        ...prev,
+      ]);
+    } else {
+      setUseHighThinking(false);
+      setUseSearchGrounding(true);
+      setTerminalLogs((prev) => [
+        `[ENGINE WIRED] Switched to ${found?.name || engine}: Google Search Grounding active for real-time market data.`,
+        ...prev,
+      ]);
+    }
+  };
+
+  const handleToggleSearchGrounding = (checked: boolean) => {
+    setUseSearchGrounding(checked);
+    if (checked) {
+      // If currently on Pro, switch to recommended Flash engine for Search Grounding
+      if (selectedEngine === "gemini-3.1-pro-preview" || selectedEngine.includes("pro")) {
+        setSelectedEngine(DEFAULT_GEMINI_ENGINE);
+        setUseHighThinking(false);
+        try {
+          localStorage.setItem("signal_engine_gemini_model", DEFAULT_GEMINI_ENGINE);
+        } catch {
+          // ignore
+        }
+        setTerminalLogs((prev) => [
+          `[MODE WIRED] Google Search Grounding enabled: Auto-switched engine to Gemini 3.8 Flash for live web grounding.`,
+          ...prev,
+        ]);
+      } else {
+        setTerminalLogs((prev) => [
+          `[MODE WIRED] Google Search Grounding enabled with ${selectedEngine}.`,
+          ...prev,
+        ]);
+      }
+    } else {
+      setTerminalLogs((prev) => [
+        `[MODE WIRED] Google Search Grounding disabled on ${selectedEngine}.`,
+        ...prev,
+      ]);
+    }
+  };
+
+  const handleToggleHighThinking = (checked: boolean) => {
+    setUseHighThinking(checked);
+    if (checked) {
+      // Wires directly to Gemini 3.1 Pro Preview
+      if (selectedEngine !== "gemini-3.1-pro-preview") {
+        setSelectedEngine("gemini-3.1-pro-preview");
+        setUseSearchGrounding(false);
+        try {
+          localStorage.setItem("signal_engine_gemini_model", "gemini-3.1-pro-preview");
+        } catch {
+          // ignore
+        }
+        setTerminalLogs((prev) => [
+          `[MODE WIRED] High Thinking Level enabled: Auto-switched Gemini engine to Gemini 3.1 Pro Preview.`,
+          ...prev,
+        ]);
+      } else {
+        setTerminalLogs((prev) => [
+          `[MODE WIRED] High Thinking Level engaged on Gemini 3.1 Pro Preview.`,
+          ...prev,
+        ]);
+      }
+    } else {
+      // If unchecking while on Pro, switch back to Flash
+      if (selectedEngine === "gemini-3.1-pro-preview" || selectedEngine.includes("pro")) {
+        setSelectedEngine(DEFAULT_GEMINI_ENGINE);
+        setUseSearchGrounding(true);
+        try {
+          localStorage.setItem("signal_engine_gemini_model", DEFAULT_GEMINI_ENGINE);
+        } catch {
+          // ignore
+        }
+        setTerminalLogs((prev) => [
+          `[MODE WIRED] High Thinking Level disabled: Switched back to Gemini 3.8 Flash with Search Grounding.`,
+          ...prev,
+        ]);
+      } else {
+        setTerminalLogs((prev) => [
+          `[MODE WIRED] High Thinking Level turned off on ${selectedEngine}.`,
+          ...prev,
+        ]);
+      }
+    }
+  };
 
   // Real-time suggestions state
   const [realtimeKeywords, setRealtimeKeywords] = useState<string[]>([]);
@@ -122,6 +225,7 @@ export default function MicroSaaSSignalEngine() {
         const data = await getRealtimeSuggestions(
           finalNiche,
           additionalContext,
+          selectedEngine,
         );
         if (!cancelled && data) {
           setRealtimeKeywords(data.keywords || []);
@@ -146,7 +250,7 @@ export default function MicroSaaSSignalEngine() {
       cancelled = true;
       clearTimeout(delayDebounceFn);
     };
-  }, [selectedNiche, customNiche, additionalContext]);
+  }, [selectedNiche, customNiche, additionalContext, selectedEngine]);
 
   const terminalEndRef = useRef<HTMLDivElement>(null);
   const pageTopRef = useRef<HTMLDivElement>(null);
@@ -235,6 +339,15 @@ export default function MicroSaaSSignalEngine() {
     }
 
     setMounted(true);
+    try {
+      const savedEngine = localStorage.getItem("signal_engine_gemini_model");
+      if (savedEngine && GEMINI_ENGINES.some((e) => e.id === savedEngine)) {
+        setSelectedEngine(savedEngine);
+      }
+    } catch {
+      // ignore
+    }
+
     const saved = localStorage.getItem("saved_micro_saas");
     if (saved) {
       try {
@@ -688,11 +801,12 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     const mockLogs = [
       `[INIT] Booting B2B Opportunity Scraper Engine v2.1...`,
       `[CONNECT] Establishing tunnel to Google AI Studio Sandbox...`,
+      `[ENGINE] Utilizing active AI engine: ${selectedEngine}...`,
       `[SCANNING] Crawling online directories & niche industry subreddits for: "${selectedNicheName}"...`,
       `[ANALYZE] Parsing negative reviews for legacy software used by ${selectedNicheName} teams...`,
       `[COMPILING] Identifying key friction points: manual entry, missing mobile compliance, paper tickets...`,
       `[VALUATION] Calculating ROI metrics using MRR goal: $${mrrTarget}/mo...`,
-      `[GENERATE] Formulating bespoke B2B Micro-SaaS ideas via Gemini 3.5...`,
+      `[GENERATE] Formulating bespoke B2B Micro-SaaS ideas via ${selectedEngine}...`,
       `[FINALIZE] Mapping technical feasibility and available dotcom domains...`,
     ];
 
@@ -724,13 +838,13 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     try {
       if (useHighThinking) {
         setTerminalLogs((prev) => [
-          `[HIGH THINKING MODE] Activating Gemini 3.1 Pro with High Thinking Level for deep market reasoning...`,
+          `[HIGH THINKING MODE] Activating Gemini with High Thinking Level for deep market reasoning...`,
           ...prev,
         ]);
       }
       if (useSearchGrounding) {
         setTerminalLogs((prev) => [
-          `[SEARCH GROUNDING] Live Google Search Grounding enabled with Gemini 3.5 Flash...`,
+          `[SEARCH GROUNDING] Live Google Search Grounding enabled with ${selectedEngine}...`,
           ...prev,
         ]);
       }
@@ -738,12 +852,13 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       const res = await searchSaaSIdeas(finalNiche, additionalContext, {
         useSearchGrounding,
         useHighThinking,
+        engine: selectedEngine,
       });
 
       if (res.success && res.data?.saasIdeas) {
         setGeneratedIdeas(res.data.saasIdeas);
         setTerminalLogs((prev) => [
-          `[SUCCESS] 3 Premium B2B blueprints successfully loaded and validated! 🎉`,
+          `[SUCCESS] 3 Premium B2B blueprints successfully loaded and validated via ${selectedEngine}! 🎉`,
           ...prev,
         ]);
       } else {
@@ -776,7 +891,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
   const handleRunDeepAnalysis = async (idea: SaasIdea, index: number) => {
     setDeepAnalysisLoading((prev) => ({ ...prev, [index]: true }));
     try {
-      const res = await runDeepThinkingAnalysis(idea);
+      const res = await runDeepThinkingAnalysis(idea, selectedEngine);
       if (res.success && res.data) {
         const analysis = res.data;
         setDeepAnalysisData((prev) => ({ ...prev, [index]: analysis }));
@@ -974,7 +1089,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     setActiveIdeaIndex(index);
 
     try {
-      const res = await generateLaunchKit(idea);
+      const res = await generateLaunchKit(idea, selectedEngine);
       if (!res.success || !res.data) {
         throw new Error(res.error || "Failed to generate Launch Kit.");
       }
@@ -1455,52 +1570,157 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                   </div>
 
                   {/* AI Intelligence & Grounding Mode Selector */}
-                  <div className="bg-ms-bg/60 border border-ms-border rounded-lg p-3 space-y-2.5">
-                    <div className="text-[10px] text-ms-green font-ms font-bold uppercase tracking-wider flex items-center gap-1.5">
-                      <Sparkles className="w-3 h-3 text-ms-green" />
-                      Gemini Intelligence Controls
+                  <div className="bg-ms-bg/60 border border-ms-border rounded-lg p-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] text-ms-green font-ms font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3 text-ms-green" />
+                        Gemini Intelligence Controls
+                      </div>
+                      <span className="text-[9px] bg-ms-card text-ms-green border border-ms-border px-1.5 py-0.5 rounded font-mono">
+                        {selectedEngine}
+                      </span>
                     </div>
 
-                    {/* Search Grounding Toggle */}
-                    <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded border border-ms-border/50 bg-ms-card/50 hover:border-ms-green/50 transition-all">
+                    {/* Gemini Engine Selector Dropdown */}
+                    <div className="space-y-2 bg-ms-card/40 border border-ms-border/60 rounded p-2.5">
+                      <div className="flex items-center justify-between">
+                        <label
+                          htmlFor="gemini-engine-dropdown"
+                          className="flex items-center gap-1.5 text-xs font-ms font-bold text-white cursor-pointer"
+                        >
+                          <Cpu className="w-3.5 h-3.5 text-ms-green" />
+                          Active Gemini Engine:
+                        </label>
+                        <span className="text-[10px] text-ms-green font-mono font-medium">
+                          {GEMINI_ENGINES.find((e) => e.id === selectedEngine)?.wiredBadge || "⚡ Wired"}
+                        </span>
+                      </div>
+
+                      <div className="relative">
+                        <select
+                          id="gemini-engine-dropdown"
+                          value={selectedEngine}
+                          onChange={(e) => handleEngineChange(e.target.value)}
+                          className="w-full bg-ms-bg border border-ms-border text-xs text-white rounded p-2.5 pr-8 appearance-none focus:outline-none focus:border-ms-green hover:border-ms-green/40 transition-colors font-ms cursor-pointer"
+                        >
+                          {GEMINI_ENGINES.map((engine) => (
+                            <option
+                              key={engine.id}
+                              value={engine.id}
+                              className="bg-[#121820] text-white py-1"
+                            >
+                              {engine.name} [{engine.wiredBadge}] — {engine.tier}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2.5 text-ms-text-muted">
+                          <ChevronDown className="w-4 h-4" />
+                        </div>
+                      </div>
+
+                      {/* Quick-Wire Engine Presets */}
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleEngineChange("gemini-3.8-flash")}
+                          className={`flex-1 py-1 px-2 text-[10px] font-mono rounded border transition-all text-center flex items-center justify-center gap-1 ${
+                            selectedEngine === "gemini-3.8-flash" && useSearchGrounding
+                              ? "bg-cyan-950/60 border-cyan-500/80 text-cyan-300 font-bold shadow-sm"
+                              : "bg-ms-bg/80 border-ms-border/70 text-ms-text-muted hover:border-cyan-500/50 hover:text-white"
+                          }`}
+                        >
+                          <Globe className="w-3 h-3 text-cyan-400" />
+                          Wire: Search Flash
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEngineChange("gemini-3.1-pro-preview")}
+                          className={`flex-1 py-1 px-2 text-[10px] font-mono rounded border transition-all text-center flex items-center justify-center gap-1 ${
+                            selectedEngine === "gemini-3.1-pro-preview" && useHighThinking
+                              ? "bg-purple-950/60 border-purple-500/80 text-purple-300 font-bold shadow-sm"
+                              : "bg-ms-bg/80 border-ms-border/70 text-ms-text-muted hover:border-purple-500/50 hover:text-white"
+                          }`}
+                        >
+                          <Brain className="w-3 h-3 text-purple-400" />
+                          Wire: Pro Thinking
+                        </button>
+                      </div>
+
+                      <p className="text-[10px] text-ms-text-muted leading-tight">
+                        {GEMINI_ENGINES.find((e) => e.id === selectedEngine)?.description}
+                      </p>
+                    </div>
+
+                    {/* Search Grounding Toggle (Wired to Dropdown) */}
+                    <label className={`flex items-start gap-2.5 cursor-pointer p-2.5 rounded border transition-all ${
+                      useSearchGrounding
+                        ? "border-cyan-500/60 bg-cyan-950/20 text-white shadow-sm"
+                        : "border-ms-border/50 bg-ms-card/50 hover:border-cyan-500/40 text-ms-text-muted"
+                    }`}>
                       <input
                         type="checkbox"
                         checked={useSearchGrounding}
-                        onChange={(e) => setUseSearchGrounding(e.target.checked)}
-                        className="mt-0.5 accent-ms-green"
+                        onChange={(e) => handleToggleSearchGrounding(e.target.checked)}
+                        className="mt-0.5 accent-cyan-400"
                       />
                       <div className="flex-1 text-left">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-white font-ms">
-                          <Globe className="w-3 h-3 text-cyan-400" />
-                          Google Search Grounding
-                          <span className="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1 py-0.2 rounded font-mono">
-                            gemini-3.8-flash
-                          </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-white font-ms">
+                            <Globe className="w-3 h-3 text-cyan-400" />
+                            Google Search Grounding
+                          </div>
+                          {useSearchGrounding ? (
+                            <span className="text-[9px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                              Wired: {selectedEngine}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-ms-bg text-ms-text-muted border border-ms-border px-1.5 py-0.5 rounded font-mono">
+                              Off
+                            </span>
+                          )}
                         </div>
-                        <p className="text-[10px] text-ms-text-muted mt-0.5 leading-snug">
-                          Ground output with real-time web search trends and live software competitor market data.
+                        <p className="text-[10px] text-ms-text-muted mt-1 leading-snug">
+                          {useSearchGrounding
+                            ? `Actively wired to ${selectedEngine} to ground output with real-time web search trends and live competitor gaps.`
+                            : `Turn on to route real-time web search grounding through ${selectedEngine.includes("pro") ? "Gemini 3.8 Flash" : selectedEngine}.`}
                         </p>
                       </div>
                     </label>
 
-                    {/* High Thinking Mode Toggle */}
-                    <label className="flex items-start gap-2.5 cursor-pointer p-2 rounded border border-ms-border/50 bg-ms-card/50 hover:border-ms-green/50 transition-all">
+                    {/* High Thinking Mode Toggle (Wired to Dropdown) */}
+                    <label className={`flex items-start gap-2.5 cursor-pointer p-2.5 rounded border transition-all ${
+                      useHighThinking
+                        ? "border-purple-500/60 bg-purple-950/20 text-white shadow-sm"
+                        : "border-ms-border/50 bg-ms-card/50 hover:border-purple-500/40 text-ms-text-muted"
+                    }`}>
                       <input
                         type="checkbox"
                         checked={useHighThinking}
-                        onChange={(e) => setUseHighThinking(e.target.checked)}
-                        className="mt-0.5 accent-ms-green"
+                        onChange={(e) => handleToggleHighThinking(e.target.checked)}
+                        className="mt-0.5 accent-purple-400"
                       />
                       <div className="flex-1 text-left">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-white font-ms">
-                          <Brain className="w-3 h-3 text-purple-400" />
-                          High Thinking Level
-                          <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-800 px-1 py-0.2 rounded font-mono">
-                            gemini-3.1-pro-preview
-                          </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-white font-ms">
+                            <Brain className="w-3 h-3 text-purple-400" />
+                            High Thinking Level
+                          </div>
+                          {useHighThinking ? (
+                            <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-800 px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></span>
+                              Wired: {selectedEngine}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-ms-bg text-ms-text-muted border border-ms-border px-1.5 py-0.5 rounded font-mono">
+                              Switches to Pro
+                            </span>
+                          )}
                         </div>
-                        <p className="text-[10px] text-ms-text-muted mt-0.5 leading-snug">
-                          Enable High Thinking reasoning for complex market friction, unit economics, and unit risks.
+                        <p className="text-[10px] text-ms-text-muted mt-1 leading-snug">
+                          {useHighThinking
+                            ? `Actively wired to ${selectedEngine} with High Thinking Level for deep multi-step market reasoning & unit risk analysis.`
+                            : `Turn on to auto-switch Gemini engine to Gemini 3.1 Pro Preview with deep multi-step thinking.`}
                         </p>
                       </div>
                     </label>
