@@ -342,13 +342,41 @@ export function IdeaCard({
                                 Buy
                               </a>
                             </div>
+                          ) : status.error ? (
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className="text-[10px] font-ms font-bold text-amber-400 uppercase"
+                                title={status.error}
+                              >
+                                Check
+                              </span>
+                              <a
+                                href={`https://www.godaddy.com/domainsearch/find?checkAvail=1&domainToCheck=${encodeURIComponent(dom.domain)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] font-ms font-bold text-ms-bg bg-amber-400 hover:bg-amber-300 uppercase px-1.5 py-0.5 rounded transition-colors whitespace-nowrap"
+                              >
+                                View
+                              </a>
+                            </div>
                           ) : (
-                            <span
-                              className="text-[10px] font-ms font-bold text-ms-yellow uppercase"
-                              title={status.error || "Taken"}
-                            >
-                              Taken
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className="text-[10px] font-ms font-bold text-ms-yellow uppercase"
+                                title="Domain registered / active"
+                              >
+                                Taken
+                              </span>
+                              <a
+                                href={`https://www.godaddy.com/domainsearch/find?checkAvail=1&domainToCheck=${encodeURIComponent(dom.domain)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] font-ms font-bold text-ms-text-muted hover:text-white uppercase px-1.5 py-0.5 rounded hover:bg-ms-border transition-colors whitespace-nowrap"
+                                title="Search variations on GoDaddy"
+                              >
+                                Search
+                              </a>
+                            </div>
                           )}
                         </div>
                       ) : (

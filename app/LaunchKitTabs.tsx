@@ -117,7 +117,7 @@ export function LaunchKitTabs({
 
   const renderRoadmap = () => (
     <div className="space-y-4">
-      <h4 className="text-xs font-bold font-ms text-ms-yellow tracking-wider uppercase mb-2">4-Week Execution Plan</h4>
+      <h4 className="text-xs font-bold font-ms text-ms-yellow tracking-wider uppercase mb-2">4-Day Execution Plan</h4>
       <div className="space-y-4">
         {kit.buildRoadmap?.map((week: any, idx: number) => (
           <div key={idx} className="flex flex-col sm:flex-row gap-4 bg-ms-bg border border-ms-border p-4 rounded-lg">

@@ -166,8 +166,8 @@ Tech Stack & Theme:
 - State: Local persistence with real-time UI updates, optimistic UI states, and toast notifications.`,
     buildRoadmap: [
       {
-        week: "Week 1",
-        title: "Foundation & Core UI Layout",
+        week: "Day 1",
+        title: "Foundation, Core UI & Vibe-Code Setup",
         tasks: [
           "Setup Next.js 15 App Router repository with Tailwind CSS and Lucide icons.",
           "Design responsive navigation sidebar, header stats bar, and dark luxury theme variables.",
@@ -175,7 +175,7 @@ Tech Stack & Theme:
         ],
       },
       {
-        week: "Week 2",
+        week: "Day 2",
         title: "Workflows & Mobile Field Interface",
         tasks: [
           "Build interactive job creation modal with photo attachment upload dropzone.",
@@ -184,7 +184,7 @@ Tech Stack & Theme:
         ],
       },
       {
-        week: "Week 3",
+        week: "Day 3",
         title: "Database Integration & Stripe Checkout",
         tasks: [
           "Provision Supabase PostgreSQL database tables and RLS security policies.",
@@ -193,8 +193,8 @@ Tech Stack & Theme:
         ],
       },
       {
-        week: "Week 4",
-        title: "Beta Launch & Cold Outreach",
+        week: "Day 4",
+        title: "Production Launch & Customer Outreach",
         tasks: [
           "Deploy application to Vercel/Cloud Run with custom domain SSL.",
           "Launch cold email outreach sequence to 100 targeted industry contacts.",

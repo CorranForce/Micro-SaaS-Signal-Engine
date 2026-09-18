@@ -613,121 +613,172 @@ export default function MicroSaaSSignalEngine() {
       const html2pdf = (html2pdfModule as any).default || html2pdfModule;
 
       const container = document.createElement("div");
-      container.style.padding = "40px";
-      container.style.fontFamily = "'Inter', sans-serif";
-      container.style.color = "#000";
-      container.style.backgroundColor = "#fff";
-      container.style.lineHeight = "1.6";
-      container.style.width = "800px";
+      container.style.padding = "0";
+      container.style.margin = "0";
+      container.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
+      container.style.color = "#0f172a";
+      container.style.backgroundColor = "#ffffff";
+      container.style.lineHeight = "1.5";
+      container.style.width = "100%";
+      container.style.maxWidth = "100%";
+      container.style.boxSizing = "border-box";
+      container.style.wordBreak = "break-word";
+      container.style.overflowWrap = "break-word";
 
       // Escape everything — kit content is model-generated and must not
       // reach innerHTML raw (same rule as the email builder in actions.ts).
       const esc = escapeHtmlC;
 
+      let sqlContent = kit.databaseRequirements.sqlSchema || "";
+      if (!sqlContent && kit.databaseRequirements.tables) {
+        sqlContent = generateSqlFallback(kit.databaseRequirements.tables);
+      }
+
       let html = `
-        <div style="margin-bottom: 30px; border-bottom: 2px solid #00f076; padding-bottom: 20px;">
-          <h1 style="font-size: 28px; margin: 0 0 10px 0; color: #111;">${esc(idea.name)}</h1>
-          <p style="font-size: 16px; margin: 0; color: #555; font-style: italic;">"${esc(idea.tagline)}"</p>
+        <style>
+          * {
+            box-sizing: border-box !important;
+          }
+          p, div, h1, h2, h3, h4, li, td, th, span {
+            word-break: break-word !important;
+            overflow-wrap: break-word !important;
+          }
+          pre, code {
+            white-space: pre-wrap !important;
+            word-break: break-word !important;
+            overflow-wrap: break-word !important;
+          }
+          table {
+            table-layout: fixed !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            border-collapse: collapse !important;
+          }
+        </style>
+
+        <!-- PAGE 1: Opportunity Spec -->
+        <div style="box-sizing: border-box; width: 100%; word-break: break-word; overflow-wrap: break-word;">
+          <div style="margin-bottom: 22px; border-bottom: 2px solid #00f076; padding-bottom: 14px;">
+            <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #008744; margin-bottom: 4px;">Signal Engine — Validated B2B Micro-SaaS Blueprint</div>
+            <h1 style="font-size: 26px; font-weight: 800; margin: 0 0 6px 0; color: #0f172a; line-height: 1.2;">${esc(idea.name)}</h1>
+            <p style="font-size: 14px; margin: 0; color: #475569; font-style: italic; line-height: 1.45;">"${esc(idea.tagline)}"</p>
+          </div>
+
+          <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 14px 0; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0;">Opportunity Spec</h2>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.55; color: #1e293b;">
+            <p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Problem:</strong> ${esc(idea.problem)}</p>
+            <p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Solution:</strong> ${esc(idea.solution)}</p>
+            <p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Target Customer:</strong> ${esc(idea.targetAudience)}</p>
+            ${idea.painSolved ? `<p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Pain Solved:</strong> ${esc(idea.painSolved)}</p>` : ""}
+            <p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Build Complexity:</strong> ${esc(idea.buildComplexity)}</p>
+            ${idea.hotnessScore ? `<p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Hotness Score:</strong> ${esc(idea.hotnessScore.toString())}/5 Flames</p>` : ""}
+            ${idea.marketDemandScore ? `<p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Market Demand Score:</strong> ${esc(idea.marketDemandScore.toString())}/10</p>` : ""}
+            ${idea.roi?.realisticMRRMonth1USD ? `<p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">MRR Target:</strong> ${esc(idea.roi.realisticMRRMonth1USD)}</p>` : ""}
+            ${idea.roi?.buildCostUSD ? `<p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Estimated Build Cost:</strong> ${esc(idea.roi.buildCostUSD)}</p>` : ""}
+            ${idea.roi?.roiMonth1Pct ? `<p style="margin: 0 0 7px 0;"><strong style="color: #0f172a;">Projected 1-Month ROI:</strong> ${esc(idea.roi.roiMonth1Pct)}</p>` : ""}
+          </div>
         </div>
 
-        <h2 style="font-size: 20px; color: #222; margin-top: 20px;">Opportunity Spec</h2>
-        <p><strong>Problem:</strong> ${esc(idea.problem)}</p>
-        <p><strong>Solution:</strong> ${esc(idea.solution)}</p>
-        <p><strong>Target Customer:</strong> ${esc(idea.targetAudience)}</p>
-        <p><strong>Pain Solved:</strong> ${esc(idea.painSolved || "")}</p>
-        <p><strong>Build Complexity:</strong> ${esc(idea.buildComplexity)}</p>
-        ${idea.hotnessScore ? `<p><strong>Hotness Score:</strong> ${esc(idea.hotnessScore.toString())}/5 Flames</p>` : ''}
-        ${idea.marketDemandScore ? `<p><strong>Market Demand Score:</strong> ${esc(idea.marketDemandScore.toString())}/10</p>` : ''}
-        <p><strong>MRR Target:</strong> ${esc(idea.roi?.realisticMRRMonth1USD || "")}</p>
-        <p><strong>Estimated Build Cost:</strong> ${esc(idea.roi?.buildCostUSD || "")}</p>
-        <p><strong>Projected 1-Month ROI:</strong> ${esc(idea.roi?.roiMonth1Pct || "")}</p>
+        <!-- PAGE BREAK -->
+        <div class="html2pdf__page-break" style="page-break-before: always; break-before: page; height: 0; margin: 0; padding: 0;"></div>
 
-        <div style="page-break-before: always;"></div>
-
-        <h2 style="font-size: 20px; color: #222; margin-bottom: 10px;">1. Vibe-Coding Prompt</h2>
-        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 12px; white-space: pre-wrap;">${esc(kit.lovablePrompt)}</div>
-
-        <div style="page-break-before: always;"></div>
-
-        <h2 style="font-size: 20px; color: #222; margin-bottom: 10px;">2. Build Roadmap</h2>
-      `;
-
-      kit.buildRoadmap.forEach((week) => {
-        html += `
-          <div style="margin-bottom: 15px;">
-            <h3 style="font-size: 16px; margin: 0 0 5px 0;">${esc(week.week)}</h3>
-            <p style="margin: 0; font-size: 14px; font-weight: bold;">${esc(week.title)}</p>
-            <ul style="margin: 5px 0 0 20px; font-size: 13px;">
-              ${week.tasks.map((f: string) => `<li>${esc(f)}</li>`).join("")}
-            </ul>
+        <!-- PAGE 2: Vibe-Coding Prompt (Starter Prompt) -->
+        <div style="box-sizing: border-box; width: 100%; word-break: break-word; overflow-wrap: break-word;">
+          <div style="margin-bottom: 14px; display: flex; align-items: baseline; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">
+            <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0;">1. Vibe-Coding Starter Prompt</h2>
+            <span style="font-size: 11px; font-family: monospace; color: #64748b;">Ready to paste into Lovable, Bolt, Cursor or v0</span>
           </div>
-        `;
-      });
+          <p style="font-size: 12.5px; color: #475569; margin: 0 0 12px 0; line-height: 1.5;">
+            Copy and paste this production starter prompt directly into your AI coding tool of choice to generate the complete application:
+          </p>
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #00f076; padding: 14px 16px; border-radius: 4px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 11px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; box-sizing: border-box; width: 100%; color: #0f172a;">${esc(kit.lovablePrompt)}</div>
+        </div>
 
-      html += `
-        <div style="page-break-before: always;"></div>
+        <!-- PAGE BREAK -->
+        <div class="html2pdf__page-break" style="page-break-before: always; break-before: page; height: 0; margin: 0; padding: 0;"></div>
 
-        <h2 style="font-size: 20px; color: #222; margin-bottom: 10px;">3. No-Code Tech Stack</h2>
-        <table style="width: 100%; border-collapse: collapse; font-size: 14px; text-align: left;">
-          <thead>
-            <tr style="border-bottom: 2px solid #ddd;">
-              <th style="padding: 8px;">Role</th>
-              <th style="padding: 8px;">Tool</th>
-              <th style="padding: 8px;">Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${kit.noCodeStack
-              .map(
-                (stack) => `
-              <tr style="border-bottom: 1px solid #eee;">
-                <td style="padding: 8px; font-weight: bold;">${esc(stack.role)}</td>
-                <td style="padding: 8px;">${esc(stack.tool)}</td>
-                <td style="padding: 8px; color: #555;">${esc(stack.cost)}</td>
+        <!-- PAGE 3: 4-Day Build Roadmap -->
+        <div style="box-sizing: border-box; width: 100%; word-break: break-word; overflow-wrap: break-word;">
+          <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 14px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">2. 4-Day Build Roadmap</h2>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            ${kit.buildRoadmap.map((week) => `
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 14px; box-sizing: border-box; width: 100%;">
+                <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 3px;">${esc(week.week)}: ${esc(week.title)}</div>
+                <ul style="margin: 4px 0 0 18px; padding: 0; font-size: 12px; line-height: 1.5; color: #334155; word-break: break-word; overflow-wrap: break-word;">
+                  ${week.tasks.map((f: string) => `<li style="margin-bottom: 3px;">${esc(f)}</li>`).join("")}
+                </ul>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+
+        <!-- PAGE BREAK -->
+        <div class="html2pdf__page-break" style="page-break-before: always; break-before: page; height: 0; margin: 0; padding: 0;"></div>
+
+        <!-- PAGE 4: Tech Stack & Marketing -->
+        <div style="box-sizing: border-box; width: 100%; word-break: break-word; overflow-wrap: break-word;">
+          <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">3. Recommended Tech Stack</h2>
+          <table style="width: 100%; max-width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; table-layout: fixed; box-sizing: border-box; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; margin-bottom: 22px;">
+            <thead>
+              <tr style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+                <th style="padding: 8px 12px; font-weight: 700; color: #0f172a; width: 32%;">Role</th>
+                <th style="padding: 8px 12px; font-weight: 700; color: #0f172a; width: 38%;">Tool</th>
+                <th style="padding: 8px 12px; font-weight: 700; color: #0f172a; width: 30%;">Cost</th>
               </tr>
-            `,
-              )
-              .join("")}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              ${kit.noCodeStack.map((stack) => `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 7px 12px; font-weight: 600; color: #1e293b; word-break: break-word;">${esc(stack.role)}</td>
+                  <td style="padding: 7px 12px; color: #334155; word-break: break-word;">${esc(stack.tool)}</td>
+                  <td style="padding: 7px 12px; color: #64748b; word-break: break-word;">${esc(stack.cost)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
 
-        <h2 style="font-size: 20px; color: #222; margin-top: 30px; margin-bottom: 10px;">4. Marketing & Outreach</h2>
-        <h3 style="font-size: 16px; margin: 0 0 5px 0;">Landing Page Headline</h3>
-        <p style="font-size: 18px; font-weight: bold; background: #f0fdf4; padding: 10px; border-left: 4px solid #00f076;">${esc(kit.marketingAssets.landingHeadline)}</p>
+          <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">4. Marketing & Outreach</h2>
+          
+          <h3 style="font-size: 13px; font-weight: 700; margin: 0 0 6px 0; color: #1e293b;">High-Converting Landing Page Headline</h3>
+          <div style="font-size: 13.5px; font-weight: 700; background: #f0fdf4; padding: 10px 14px; border-left: 4px solid #00f076; border-radius: 0 4px 4px 0; margin-bottom: 16px; word-break: break-word; overflow-wrap: break-word; color: #064e3b; box-sizing: border-box; width: 100%; border-top: 1px solid #dcfce7; border-right: 1px solid #dcfce7; border-bottom: 1px solid #dcfce7;">
+            ${esc(kit.marketingAssets.landingHeadline)}
+          </div>
 
-        <h3 style="font-size: 16px; margin: 15px 0 5px 0;">Cold Email Template</h3>
-        <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; font-size: 14px; white-space: pre-wrap;"><strong>Subject:</strong> ${esc(kit.marketingAssets.coldEmail.subject)}
+          <h3 style="font-size: 13px; font-weight: 700; margin: 0 0 6px 0; color: #1e293b;">High-Response Cold Email Template</h3>
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 12px 14px; border-radius: 6px; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; box-sizing: border-box; width: 100%; color: #1e293b;"><strong style="color: #0f172a;">Subject:</strong> ${esc(kit.marketingAssets.coldEmail.subject)}
 
 ${esc(kit.marketingAssets.coldEmail.body)}</div>
+        </div>
 
-        <div style="page-break-before: always;"></div>
+        <!-- PAGE BREAK -->
+        <div class="html2pdf__page-break" style="page-break-before: always; break-before: page; height: 0; margin: 0; padding: 0;"></div>
 
-        <h2 style="font-size: 20px; color: #222; margin-bottom: 10px;">5. Database Schema</h2>
-        <p style="font-size: 14px;">${esc(kit.databaseRequirements.schemaDescription)}</p>
+        <!-- PAGE 5: Database Schema -->
+        <div style="box-sizing: border-box; width: 100%; word-break: break-word; overflow-wrap: break-word;">
+          <h2 style="font-size: 18px; font-weight: 700; color: #0f172a; margin: 0 0 10px 0; padding-bottom: 8px; border-bottom: 1px solid #e2e8f0;">5. Database Schema & Architecture</h2>
+          <p style="font-size: 12px; color: #475569; line-height: 1.5; margin: 0 0 12px 0; word-break: break-word; overflow-wrap: break-word;">
+            ${esc(kit.databaseRequirements.schemaDescription)}
+          </p>
+          <div style="background: #1e293b; color: #f1f5f9; padding: 12px 14px; border-radius: 6px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 10px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word; box-sizing: border-box; width: 100%; border: 1px solid #334155;">${esc(sqlContent)}</div>
+        </div>
       `;
-
-      if (kit.databaseRequirements.sqlSchema) {
-        html += `
-          <div style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap;">${esc(kit.databaseRequirements.sqlSchema)}</div>
-        `;
-      } else if (kit.databaseRequirements.tables) {
-        // Fallback for older kits
-        const fallbackSql = generateSqlFallback(
-          kit.databaseRequirements.tables,
-        );
-        html += `
-          <div style="background: #282c34; color: #abb2bf; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap;">${esc(fallbackSql)}</div>
-        `;
-      }
 
       container.innerHTML = html;
 
       const opt = {
-        margin: 15,
-        filename: `${idea.name.toLowerCase().replace(/\s+/g, "-")}-launch-kit.pdf`,
+        margin: [14, 14, 14, 14],
+        filename: `${idea.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-launch-kit.pdf`,
         image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          letterRendering: true,
+          logging: false,
+          scrollX: 0,
+          scrollY: 0,
+        },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "legacy"] },
       };
 
       await html2pdf().set(opt).from(container).save();

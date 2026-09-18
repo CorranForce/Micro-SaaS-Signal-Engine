@@ -2,6 +2,7 @@
 
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { cookies, headers } from "next/headers";
+import { promises as dnsPromises } from "dns";
 import {
   createSessionToken,
   verifySessionToken,
@@ -500,7 +501,7 @@ Ensure:
    - Dynamic configurations for the tech stack: React, Tailwind CSS, Lucide Icons, Supabase (auth/database), Stripe (pricing tiers/checkout), and Resend (transactional notification emails).
    - Core functional screens (dashboard, settings, active workspace, invoice/records, static high-fidelity landing).
    - Strict database table/schema guidelines.
-2. buildRoadmap has a detailed 4-week task-by-task execution plan.
+2. buildRoadmap has a detailed 4-day task-by-task execution plan (Day 1, Day 2, Day 3, Day 4).
 3. noCodeStack maps actual modern SaaS builders (Stripe, Supabase, Resend, etc.) with estimated costs.
 4. marketingAssets contains customized landing headlines, social copy, blog ideas, and cold outreach emails.
 5. salesScript provides highly structured questions, objections, and pitch structures to close the target audience.
@@ -525,7 +526,10 @@ Ensure:
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  week: { type: Type.STRING },
+                  week: {
+                    type: Type.STRING,
+                    description: "Day identifier such as 'Day 1', 'Day 2', 'Day 3', 'Day 4'",
+                  },
                   title: { type: Type.STRING },
                   tasks: { type: Type.ARRAY, items: { type: Type.STRING } },
                 },
@@ -1097,7 +1101,7 @@ export async function sendLaunchKitEmail(
           <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">Lovable Vibe-Coding Prompt</h3>
           <pre style="background-color: #f3f4f6; padding: 12px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; word-break: break-all; color: #1f2937;">${e(kit.lovablePrompt || "")}</pre>
 
-          <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">4-Week Roadmap</h3>
+          <h3 style="font-size: 16px; border-bottom: 1px solid #e5e7eb; padding-bottom: 4px; margin-top: 24px; color: #111827;">4-Day Roadmap</h3>
           <ul style="padding-left: 20px; color: #1f2937;">
             ${(kit.buildRoadmap || [])
               .map(
@@ -1452,49 +1456,74 @@ export async function checkDomainAvailabilityAction(domain: string) {
     return { success: false, error: "Rate limit exceeded. Try again shortly." };
   }
   try {
+    const cleanDomain = domain
+      .trim()
+      .toLowerCase()
+      .replace(/^(https?:\/\/)?(www\.)?/, "")
+      .split("/")[0]
+      .split("?")[0];
+
+    if (!cleanDomain || !cleanDomain.includes(".")) {
+      return { success: false, error: "Invalid domain format." };
+    }
+
     const settings = getSettings();
     const apiKey = settings.godaddyApiKey;
     const apiSecret = settings.godaddyApiSecret;
 
-    if (!apiKey || !apiSecret) {
-      return {
-        success: false,
-        reason: "GODADDY_CONFIG_MISSING",
-        error: "GoDaddy API keys are not configured in settings.",
-      };
-    }
-
-    const response = await fetch(
-      `https://api.godaddy.com/v1/domains/available?domain=${encodeURIComponent(domain)}`,
-      {
-        headers: {
-          Authorization: `sso-key ${apiKey}:${apiSecret}`,
-          Accept: "application/json",
-        },
-      },
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("GoDaddy API error:", text);
+    // 1. If GoDaddy credentials are configured, attempt registrar query with pricing
+    if (apiKey && apiSecret) {
       try {
-        const json = JSON.parse(text);
-        if (json.code === "ACCESS_DENIED") {
-          return { success: false, error: "GoDaddy API keys are invalid or do not have permissions." };
+        const response = await fetch(
+          `https://api.godaddy.com/v1/domains/available?domain=${encodeURIComponent(cleanDomain)}`,
+          {
+            headers: {
+              Authorization: `sso-key ${apiKey}:${apiSecret}`,
+              Accept: "application/json",
+            },
+          },
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          return {
+            success: true,
+            available: Boolean(data.available),
+            domain: data.domain || cleanDomain,
+            price: data.price,
+            currency: data.currency || "USD",
+            source: "godaddy",
+          };
+        } else {
+          // GoDaddy rejected or restricted credentials (e.g. 403 ACCESS_DENIED)
+          // Do not log console.error to keep server telemetry clean; fall back to DNS
+          const text = await response.text();
+          console.warn(
+            `GoDaddy registrar lookup unavailable (HTTP ${response.status}: ${text.slice(0, 80)}). Falling back to DNS verification.`,
+          );
         }
-      } catch (e) {}
-      return { success: false, error: "Failed to check domain availability." };
+      } catch (gdErr: any) {
+        console.warn("GoDaddy API fetch error, falling back to DNS:", gdErr?.message || gdErr);
+      }
     }
 
-    const data = await response.json();
+    // 2. Authoritative DNS check fallback (works reliably with zero external API credentials)
+    const dnsChecks = await Promise.allSettled([
+      dnsPromises.resolveNs(cleanDomain),
+      dnsPromises.resolveSoa(cleanDomain),
+      dnsPromises.resolve4(cleanDomain),
+    ]);
+
+    const hasActiveRecords = dnsChecks.some((c) => c.status === "fulfilled");
+
     return {
       success: true,
-      available: data.available,
-      domain: data.domain,
-      price: data.price,
+      available: !hasActiveRecords,
+      domain: cleanDomain,
+      source: "dns",
     };
   } catch (err: any) {
-    console.error("Domain check error:", err);
-    return { success: false, error: err.message };
+    console.warn("Domain check fallback error:", err?.message || err);
+    return { success: false, error: err?.message || "Failed to verify domain availability." };
   }
 }

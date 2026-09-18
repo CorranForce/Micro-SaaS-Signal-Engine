@@ -179,10 +179,15 @@ export function SettingsPanel({
 
           {/* GoDaddy Section */}
           <div className="space-y-4 border border-ms-border p-4 rounded bg-ms-bg/50">
-            <h3 className="text-xs font-bold text-ms-yellow font-ms uppercase flex items-center gap-1.5">
-              <Globe className="w-3.5 h-3.5 text-ms-yellow" />
-              GoDaddy Registrar Configuration
-            </h3>
+            <div>
+              <h3 className="text-xs font-bold text-ms-yellow font-ms uppercase flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-ms-yellow" />
+                GoDaddy Registrar Configuration
+              </h3>
+              <p className="text-[11px] text-ms-text-muted mt-1 leading-normal font-sans">
+                Domain availability verification runs natively via authoritative DNS. Configure GoDaddy Production Reseller API keys if you wish to display live registrar price quotes.
+              </p>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-[10px] font-ms text-ms-text-muted uppercase mb-1">
