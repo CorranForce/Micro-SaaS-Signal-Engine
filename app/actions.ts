@@ -3,6 +3,7 @@
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { cookies, headers } from "next/headers";
 import { promises as dnsPromises } from "dns";
+import { createClient } from "@supabase/supabase-js";
 import {
   createSessionToken,
   verifySessionToken,
@@ -37,13 +38,19 @@ const OPERATOR_EMAIL = (
 ).toLowerCase();
 const SESSION_COOKIE = "session_token";
 
-// Gemini model IDs:
-// - Fast tasks: gemini-3.8-flash
-// - General tasks: gemini-3.8-flash
-// - Complex tasks: gemini-3.8-flash
+// Gemini model IDs. Pinned IDs are fragile: availability varies per API key and
+// pinned versions get retired, which silently breaks every generation path on
+// some accounts. Override with GEMINI_MODEL / GEMINI_MODEL_PRO /
+// GEMINI_MODEL_FAST, and list what a key can actually reach with:
+//   curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"
 const GEMINI_MODEL_FAST = process.env.GEMINI_MODEL_FAST || "gemini-3.8-flash";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const GEMINI_MODEL_PRO = process.env.GEMINI_MODEL_PRO || "gemini-3.8-flash";
+
+// Last-resort models tried after every pinned ID fails. The "-latest" aliases
+// always resolve to a model the account can use, so a retired pinned ID
+// degrades to a slower path instead of dropping the user into canned content.
+const GEMINI_MODEL_ALIASES = ["gemini-flash-latest", "gemini-pro-latest"];
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -63,6 +70,7 @@ async function generateContentWithFallback(
     "gemini-3.5-flash",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
+    ...GEMINI_MODEL_ALIASES,
   ].filter((m, i, self) => Boolean(m) && self.indexOf(m) === i);
 
   let lastError: any = null;
@@ -92,8 +100,13 @@ async function generateContentWithFallback(
           continue;
         }
 
-        // If tools/thinkingConfig were used, try stripping them on second attempt or next model
-        if (params.config?.tools || params.config?.thinkingConfig) {
+        // A 429/503 is a capacity problem, not a config problem — retrying it
+        // with a stripped config just spends another call against the same
+        // quota. Only strip when the model actually rejected tools/thinking.
+        if (
+          !isTransient &&
+          (params.config?.tools || params.config?.thinkingConfig)
+        ) {
           try {
             const strippedConfig = { ...params.config };
             delete strippedConfig.tools;
@@ -192,6 +205,34 @@ export interface GenerationResult<T> {
   success: boolean;
   data?: T;
   error?: string;
+  // True when the Gemini call failed and synthesized placeholder content was
+  // returned instead. The call still "succeeds" so the UI stays usable, but the
+  // caller must label the output — presenting canned text as live AI analysis is
+  // the same class of problem as the unlabelled Compare-tab data (finding B5).
+  usedFallback?: boolean;
+  fallbackReason?: string;
+}
+
+// A short, non-sensitive reason the live call failed, for the fallback banner.
+// The raw provider error can carry endpoint and key details, so it is logged
+// server-side and never returned verbatim.
+function describeGenerationFailure(error: unknown): string {
+  const message = String(
+    (error as { message?: string })?.message || error || "",
+  );
+  if (message.includes("GEMINI_API_KEY")) {
+    return "GEMINI_API_KEY is not configured on the server.";
+  }
+  if (message.includes("429") || message.includes("RESOURCE_EXHAUSTED")) {
+    return "Gemini API quota exceeded.";
+  }
+  if (message.includes("503") || message.includes("UNAVAILABLE")) {
+    return "Gemini API is temporarily unavailable.";
+  }
+  if (message.includes("404") || message.includes("NOT_FOUND")) {
+    return "The configured Gemini model is not available to this API key.";
+  }
+  return "The Gemini API call did not complete.";
 }
 
 export async function searchSaaSIdeas(
@@ -213,7 +254,7 @@ export async function searchSaaSIdeas(
   try {
     const ai = getAIClient();
 
-    let model = options?.engine || GEMINI_MODEL;
+    let model = GEMINI_MODEL;
     const config: any = {
       responseMimeType: "application/json",
       responseSchema: {
@@ -379,6 +420,8 @@ Additionally, assign a marketDemandScore (1-10) evaluating the strength of marke
     const fallbackIdeas = getFallbackSaaSIdeas(niche, context);
     return {
       success: true,
+      usedFallback: true,
+      fallbackReason: describeGenerationFailure(error),
       data: {
         saasIdeas: fallbackIdeas,
         groundingSources: [],
@@ -411,7 +454,7 @@ Perform an exhaustive, high-thinking level strategic audit for this B2B SaaS ide
 
 Use high thinking mode to deeply evaluate:
 1. Reasoning Summary: Synthesis of market dynamics, why incumbent software fails this target, and core wedge.
-2. Threat Matrix: 3 concrete competitive threats (e.g. incumbent feature expansion, low entry barriers, regulatory shifts).
+2. Threat Matrix: one paragraph each for competitorRisk (incumbent feature expansion, low entry barriers), regulatoryRisk (compliance and regulatory shifts), and executionFriction (adoption and delivery obstacles).
 3. Distribution Moats: 3 defensible distribution moats to achieve low customer acquisition cost.
 4. Pricing Elasticity: Analysis of willingness-to-pay and expansion revenue opportunities.
 5. Technical Architecture: Recommended minimal tech stack and API integrations required for high retention.
@@ -429,9 +472,22 @@ Return ONLY a valid JSON object matching the requested schema.`;
           type: Type.OBJECT,
           properties: {
             reasoningSummary: { type: Type.STRING },
+            // Must stay an object: app/types.ts, the fallback generator and
+            // IdeaCard all read .competitorRisk / .regulatoryRisk /
+            // .executionFriction. Asking for an array here rendered three
+            // blank cells on every successful live call.
             threatMatrix: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
+              type: Type.OBJECT,
+              properties: {
+                competitorRisk: { type: Type.STRING },
+                regulatoryRisk: { type: Type.STRING },
+                executionFriction: { type: Type.STRING },
+              },
+              required: [
+                "competitorRisk",
+                "regulatoryRisk",
+                "executionFriction",
+              ],
             },
             distributionMoats: {
               type: Type.ARRAY,
@@ -462,6 +518,8 @@ Return ONLY a valid JSON object matching the requested schema.`;
     const fallbackAnalysis = getFallbackDeepThinkingAnalysis(idea);
     return {
       success: true,
+      usedFallback: true,
+      fallbackReason: describeGenerationFailure(error),
       data: fallbackAnalysis,
     };
   }
@@ -690,6 +748,8 @@ Ensure:
     const fallbackKit = getFallbackLaunchKit(idea as SaasIdea);
     return {
       success: true,
+      usedFallback: true,
+      fallbackReason: describeGenerationFailure(error),
       data: fallbackKit,
     };
   }
@@ -740,7 +800,6 @@ export async function loginUser(
   // 2. If not authenticated locally, attempt Supabase Auth if configured
   if (!authenticated && supabaseUrl && supabaseAnonKey) {
     try {
-      const { createClient } = require('@supabase/supabase-js');
       const supabase = createClient(supabaseUrl, supabaseAnonKey);
       const { data, error } = await supabase.auth.signInWithPassword({
         email: normalized,
@@ -800,7 +859,6 @@ export async function registerUser(
   const { supabaseUrl, supabaseAnonKey } = settings;
 
   if (supabaseUrl && supabaseAnonKey) {
-    const { createClient } = require('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
     const { data, error } = await supabase.auth.signUp({
       email: normalized,
@@ -854,6 +912,24 @@ export async function logoutUser() {
 
 export async function getSessionUser(): Promise<string | null> {
   return getSessionEmail();
+}
+
+export interface SessionInfo {
+  email: string | null;
+  isOperator: boolean;
+}
+
+// The client used to gate the Settings tab on a hard-coded email literal, which
+// drifts the moment OPERATOR_EMAIL is set: the real operator loses the tab and
+// the hard-coded address sees it (the server still refuses it, so this was a
+// correctness bug, not an escalation). Operator status is decided here, next to
+// the check that actually enforces it.
+export async function getSessionInfo(): Promise<SessionInfo> {
+  const email = await getSessionEmail();
+  return {
+    email,
+    isOperator: Boolean(email && email.toLowerCase() === OPERATOR_EMAIL),
+  };
 }
 
 export async function loadApiSettings() {
@@ -952,6 +1028,8 @@ export async function chatWithAgent(
     console.warn("Gemini API error in chatWithAgent:", error?.message);
     return {
       success: true,
+      usedFallback: true,
+      fallbackReason: describeGenerationFailure(error),
       data: `I'm currently operating in offline advisory mode.\n\nRegarding your request: When building B2B micro-SaaS, prioritize solving a single high-frequency workflow bottleneck (such as job scheduling, compliance reporting, or change-order sign-offs). Target audiences in legacy industries value speed, reliability, and instant ROI above all else!`,
     };
   }
@@ -1507,20 +1585,66 @@ export async function checkDomainAvailabilityAction(domain: string) {
       }
     }
 
-    // 2. Authoritative DNS check fallback (works reliably with zero external API credentials)
+    // 2. Authoritative DNS check fallback (works with zero external credentials).
+    //
+    // "No answer" is not the same as "not registered": a resolver timeout,
+    // SERVFAIL or refusal also produces no records. Treating those as
+    // available told users a registered domain was free to buy, so the error
+    // codes are classified explicitly and anything ambiguous is reported as
+    // inconclusive rather than guessed.
     const dnsChecks = await Promise.allSettled([
       dnsPromises.resolveNs(cleanDomain),
       dnsPromises.resolveSoa(cleanDomain),
       dnsPromises.resolve4(cleanDomain),
     ]);
 
-    const hasActiveRecords = dnsChecks.some((c) => c.status === "fulfilled");
+    if (dnsChecks.some((c) => c.status === "fulfilled")) {
+      return {
+        success: true,
+        available: false,
+        domain: cleanDomain,
+        source: "dns",
+      };
+    }
 
+    const codes = dnsChecks.map((c) =>
+      c.status === "rejected"
+        ? String((c.reason as NodeJS.ErrnoException)?.code || "UNKNOWN")
+        : "UNKNOWN",
+    );
+
+    // ENODATA / NOTIMP: the name resolves, it just has no record of that type —
+    // the domain exists, so it is registered.
+    if (codes.some((code) => code === "ENODATA" || code === "NOTIMP")) {
+      return {
+        success: true,
+        available: false,
+        domain: cleanDomain,
+        source: "dns",
+      };
+    }
+
+    // ENOTFOUND / NXDOMAIN from every lookup: the name does not exist in DNS.
+    const NOT_FOUND = new Set(["ENOTFOUND", "NXDOMAIN", "ENODOMAIN"]);
+    if (codes.every((code) => NOT_FOUND.has(code))) {
+      return {
+        success: true,
+        available: true,
+        domain: cleanDomain,
+        source: "dns",
+      };
+    }
+
+    // SERVFAIL, timeouts, refusals, no network — genuinely unknown.
+    console.warn(
+      `DNS availability inconclusive for ${cleanDomain}: ${codes.join(", ")}`,
+    );
     return {
-      success: true,
-      available: !hasActiveRecords,
+      success: false,
       domain: cleanDomain,
-      source: "dns",
+      reason: "DNS_INCONCLUSIVE",
+      error:
+        "DNS lookup was inconclusive — could not confirm availability. Check with a registrar directly.",
     };
   } catch (err: any) {
     console.warn("Domain check fallback error:", err?.message || err);

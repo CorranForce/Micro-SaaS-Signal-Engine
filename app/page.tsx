@@ -29,6 +29,7 @@ import {
   registerUser,
   logoutUser,
   getSessionUser,
+  getSessionInfo,
   loadApiSettings,
   updateApiSettings,
   getRealtimeSuggestions,
@@ -72,6 +73,9 @@ export default function MicroSaaSSignalEngine() {
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [generatedIdeas, setGeneratedIdeas] = useState<SaasIdea[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Set when a generation call fell back to synthesized placeholder content, so
+  // the results grid can say so instead of passing canned text off as analysis.
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
 
   // Active Launch Kit state
   const [activeIdeaIndex, setActiveIdeaIndex] = useState<number | null>(null);
@@ -290,6 +294,9 @@ export default function MicroSaaSSignalEngine() {
 
   // Authentication states
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+  // Operator status is resolved server-side (OPERATOR_EMAIL) rather than
+  // compared against a hard-coded address in the browser.
+  const [isOperator, setIsOperator] = useState<boolean>(false);
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [showClearConfirmModal, setShowClearConfirmModal] =
     useState<boolean>(false);
@@ -362,8 +369,9 @@ export default function MicroSaaSSignalEngine() {
     if (savedSessionUser) {
       setCurrentUser(savedSessionUser);
     }
-    getSessionUser().then((email) => {
+    getSessionInfo().then(({ email, isOperator: operator }) => {
       setCurrentUser(email);
+      setIsOperator(operator);
       if (email) {
         localStorage.setItem("session_user", email);
       } else {
@@ -402,7 +410,7 @@ export default function MicroSaaSSignalEngine() {
 
   // Sync API Settings fetch with Operator Login
   useEffect(() => {
-    if (currentUser?.toLowerCase() === "corranforce@gmail.com") {
+    if (isOperator) {
       setIsLoadingSettings(true);
       loadApiSettings()
         .then((settings: any) => {
@@ -428,7 +436,7 @@ export default function MicroSaaSSignalEngine() {
           setIsLoadingSettings(false);
         });
     }
-  }, [currentUser]);
+  }, [isOperator]);
 
   // Auth form submit
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -445,6 +453,10 @@ export default function MicroSaaSSignalEngine() {
       if (res.success && res.email) {
         setCurrentUser(res.email);
         localStorage.setItem("session_user", res.email);
+        // The new session cookie decides operator status, not the typed email.
+        getSessionInfo()
+          .then(({ isOperator: operator }) => setIsOperator(operator))
+          .catch(() => setIsOperator(false));
         setAuthSuccess(
           isAuthRegister
             ? "Account successfully generated! Connecting..."
@@ -476,6 +488,7 @@ export default function MicroSaaSSignalEngine() {
     try {
       await logoutUser();
       setCurrentUser(null);
+      setIsOperator(false);
       localStorage.removeItem("session_user");
       if (activeTab === "settings") {
         setActiveTab("find");
@@ -488,7 +501,7 @@ export default function MicroSaaSSignalEngine() {
   // Save Settings handler
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || currentUser.toLowerCase() !== "corranforce@gmail.com") {
+    if (!currentUser || !isOperator) {
       setSettingsMessage({
         type: "error",
         text: "Operator authorization mismatch.",
@@ -843,6 +856,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     setScanProgress(0);
     setGeneratedIdeas([]);
     setErrorMessage(null);
+    setFallbackNotice(null);
     setActiveIdeaIndex(null);
     setLaunchKits({});
     setTerminalLogs([]);
@@ -908,10 +922,20 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
 
       if (res.success && res.data?.saasIdeas) {
         setGeneratedIdeas(res.data.saasIdeas);
-        setTerminalLogs((prev) => [
-          `[SUCCESS] 3 Premium B2B blueprints successfully loaded and validated via ${selectedEngine}! 🎉`,
-          ...prev,
-        ]);
+        if (res.usedFallback) {
+          const reason = res.fallbackReason || "The Gemini API call did not complete.";
+          setFallbackNotice(reason);
+          setTerminalLogs((prev) => [
+            `[OFFLINE MODE] ${reason} Showing synthesized example blueprints — these are templates, not live AI analysis.`,
+            ...prev,
+          ]);
+        } else {
+          setFallbackNotice(null);
+          setTerminalLogs((prev) => [
+            `[SUCCESS] 3 Premium B2B blueprints successfully loaded and validated via ${selectedEngine}! 🎉`,
+            ...prev,
+          ]);
+        }
       } else {
         throw new Error(
           res.error || "Invalid output received. Please try again.",
@@ -946,6 +970,12 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       if (res.success && res.data) {
         const analysis = res.data;
         setDeepAnalysisData((prev) => ({ ...prev, [index]: analysis }));
+        if (res.usedFallback) {
+          setTerminalLogs((prev) => [
+            `[OFFLINE MODE] ${res.fallbackReason || "Deep analysis call did not complete."} The strategic audit shown is a synthesized template.`,
+            ...prev,
+          ]);
+        }
       } else {
         alert(res.error || "Failed to execute deep strategic analysis.");
       }
@@ -961,9 +991,11 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
     // Check server-side session cookies first instead of relying solely on client state
     let activeUser = currentUser;
     if (!activeUser) {
-      activeUser = await getSessionUser();
+      const session = await getSessionInfo();
+      activeUser = session.email;
       if (activeUser) {
         setCurrentUser(activeUser);
+        setIsOperator(session.isOperator);
         localStorage.setItem("session_user", activeUser);
       }
     }
@@ -991,6 +1023,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       } else {
         if (res.reason === "AUTH_REQUIRED") {
           setCurrentUser(null);
+          setIsOperator(false);
           localStorage.removeItem("session_user");
           setShowAuthModal(true);
           setEmailCardStatus((prev) => ({
@@ -1149,6 +1182,12 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
         ...prev,
         [index]: { loading: false, data: data, error: null },
       }));
+      if (res.usedFallback) {
+        setTerminalLogs((prev) => [
+          `[OFFLINE MODE] ${res.fallbackReason || "Launch Kit call did not complete."} The kit below is a synthesized template, not live AI output.`,
+          ...prev,
+        ]);
+      }
 
       // Trigger automatic email dispatch if user is logged in.
       // Status is surfaced through emailCardStatus, which the card renders.
@@ -1338,7 +1377,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                 <Bookmark className="w-3.5 h-3.5" />
                 SAVED KITS ({savedIdeas.length})
               </button>
-              {currentUser?.toLowerCase() === "corranforce@gmail.com" && (
+              {isOperator && (
                 <button
                   onClick={() => setActiveTab("settings")}
                   className={`px-3 py-1.5 rounded text-xs font-ms flex items-center gap-1.5 transition-all shrink-0 ${
@@ -1372,9 +1411,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                       {currentUser}
                     </span>
                     <span className="text-[8px] text-ms-green font-ms leading-tight uppercase">
-                      {currentUser.toLowerCase() === "corranforce@gmail.com"
-                        ? "Operator"
-                        : "Crew"}
+                      {isOperator ? "Operator" : "Crew"}
                     </span>
                   </div>
                   <button
@@ -1870,6 +1907,23 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                 </div>
               )}
 
+              {/* Synthesized-content notice (generation fell back) */}
+              {fallbackNotice && (
+                <div className="bg-amber-950/40 border border-amber-500/50 rounded-lg p-4 text-sm text-amber-100 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold">
+                      Offline Mode — Synthesized Example Data
+                    </div>
+                    <p className="text-xs text-amber-200/90 mt-1">
+                      {fallbackNotice} The blueprints below are generic templates
+                      generated locally, not live market analysis. Fix the API
+                      configuration and scan again for real results.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Welcome Screen (If no ideas generated yet) */}
               {generatedIdeas.length === 0 && !isScanning && !errorMessage && (
                 <div className="bg-ms-card border border-ms-border rounded-lg p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
@@ -2037,7 +2091,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
         {/* API SETTINGS TAB (operator-only form; access-denied view for others) */}
         {activeTab === "settings" && (
           <SettingsPanel
-            isOperator={currentUser?.toLowerCase() === "corranforce@gmail.com"}
+            isOperator={isOperator}
             currentUser={currentUser}
             apiSettings={apiSettings}
             setApiSettings={setApiSettings}
@@ -2056,7 +2110,10 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
           <span>SYSTEM ONLINE • MEM: 98.4% • CLOUD SANDBOX: ACTIVE</span>
           <span className="flex items-center gap-1.5">
             Powered by{" "}
-            <span className="text-ms-green font-bold">Gemini 3.5 Flash</span>{" "}
+            <span className="text-ms-green font-bold">
+              {GEMINI_ENGINES.find((e) => e.id === selectedEngine)?.name ||
+                selectedEngine}
+            </span>{" "}
             Server API proxy
           </span>
         </div>

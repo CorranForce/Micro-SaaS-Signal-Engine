@@ -25,46 +25,21 @@ export interface StoredUser {
   createdAt: string;
 }
 
-const DEFAULT_OPERATOR_EMAIL = (process.env.OPERATOR_EMAIL || "corranforce@gmail.com").toLowerCase();
-const DEFAULT_OPERATOR_HASH = "scrypt$16384$f10cf34300d3915d69123ef907617a5c$8db55901873f31fd1875a4c0764d5be7ba4e0d027334cdbaa1bfb47e496e1a16149e3f8cc9ddc0363e60f9106aa169852fc0f9189ba485ba98bd63e62b702021";
-
+// The operator account is provisioned out of band with
+// `npm run create-operator` (scripts/create-operator.mjs). Never seed a default
+// credential here: a password hash committed to the repo is an offline-crackable
+// public credential, and re-asserting it on every read silently reverts any
+// password the operator sets (see README, finding S4 and its 2026-09-18 regression).
 export function getUsers(): StoredUser[] {
   const filePath = path.join(DATA_DIR, "users.json");
-  let users: StoredUser[] = [];
-  if (fs.existsSync(filePath)) {
-    try {
-      const data = fs.readFileSync(filePath, "utf-8");
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) {
-        users = parsed;
-      }
-    } catch {
-      users = [];
-    }
-  }
+  if (!fs.existsSync(filePath)) return [];
 
-  const existing = users.find((u) => (u.email || "").toLowerCase() === DEFAULT_OPERATOR_EMAIL);
-  if (!existing) {
-    users.push({
-      email: DEFAULT_OPERATOR_EMAIL,
-      passwordHash: DEFAULT_OPERATOR_HASH,
-      createdAt: new Date().toISOString(),
-    });
-    try {
-      saveUsers(users);
-    } catch {
-      // ignore
-    }
-  } else if (existing.passwordHash !== DEFAULT_OPERATOR_HASH) {
-    existing.passwordHash = DEFAULT_OPERATOR_HASH;
-    try {
-      saveUsers(users);
-    } catch {
-      // ignore
-    }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
-
-  return users;
 }
 
 export function saveUsers(users: StoredUser[]) {

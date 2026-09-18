@@ -1,65 +1,96 @@
-import { NextResponse } from 'next/server';
-import { supabase, isSupabaseConfigured } from '@/app/lib/supabase';
-import { GoogleGenAI } from '@google/genai';
+import { NextResponse } from "next/server";
+import { GoogleGenAI } from "@google/genai";
+import { getSupabaseAdmin, isSupabaseConfigured } from "@/app/lib/supabase";
+import { ENC_PREFIX } from "@/app/security";
 
-export async function GET() {
+// Scheduled by vercel.json. Vercel Cron sends `Authorization: Bearer $CRON_SECRET`.
+// Without this gate the route is a public endpoint that reads the secret_keys
+// table and spends paid Gemini tokens on every request.
+export const dynamic = "force-dynamic";
+
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
+
+interface KeyRow {
+  id?: string | number;
+  name?: string;
+  encrypted_value?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+function isAuthorized(request: Request): boolean {
+  const expected = process.env.CRON_SECRET;
+  // Fail closed: an unset CRON_SECRET disables the route rather than opening it.
+  if (!expected) return false;
+  const header = request.headers.get("authorization") || "";
+  return header === `Bearer ${expected}`;
+}
+
+export async function GET(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
-    if (!isSupabaseConfigured()) {
+    const supabase = getSupabaseAdmin();
+    if (!isSupabaseConfigured() || !supabase) {
       return NextResponse.json({
         success: true,
         report: "Supabase not configured. Skipping automated security audit.",
       });
     }
 
-    // 1. Fetch the secret keys
-    const { data: keys, error } = await supabase.from('secret_keys').select('*');
+    // Never select * here — the row's ciphertext has no business leaving the
+    // database for an LLM prompt. Only the integrity metadata is needed.
+    const { data: keys, error } = await supabase
+      .from("secret_keys")
+      .select("id, name, encrypted_value, created_at, updated_at");
 
     if (error) {
+      console.error("Failed to fetch keys for analysis:", error.message);
       return NextResponse.json(
-        { error: 'Failed to fetch keys for analysis', details: error.message },
-        { status: 200 }
+        { success: false, error: "Failed to fetch keys for analysis" },
+        { status: 200 },
       );
     }
 
-    // 2. Format the data to check if they are encrypted
-    const analysisData = (keys || []).map((key: any) => {
-      // Basic check: encrypted format should be iv:encrypted_text (e.g. hex:hex)
-      const isEncryptedFormat = /^[0-9a-f]{32}:[0-9a-f]+$/i.test(key.encrypted_value);
-      return {
-        id: key.id,
-        name: key.name,
-        isEncryptedFormat,
-        valueLength: key.encrypted_value?.length || 0,
-        created_at: key.created_at,
-        updated_at: key.updated_at,
-      };
-    });
+    // Values written by the seed route are AES-256-GCM blobs tagged
+    // "enc:v1:<iv>:<tag>:<ciphertext>". Anything else is plaintext at rest.
+    const analysisData = (keys || []).map((key: KeyRow) => ({
+      id: key.id,
+      name: key.name,
+      isEncryptedFormat: Boolean(key.encrypted_value?.startsWith(ENC_PREFIX)),
+      valueLength: key.encrypted_value?.length || 0,
+      created_at: key.created_at,
+      updated_at: key.updated_at,
+    }));
+
+    const allEncrypted = analysisData.every((k) => k.isEncryptedFormat);
 
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json({
         success: true,
-        report: `Security Audit Summary: ${analysisData.length} key(s) monitored. All valid formats: ${analysisData.every(k => k.isEncryptedFormat)}.`,
+        report: `Security Audit Summary: ${analysisData.length} key(s) monitored. All valid formats: ${allEncrypted}.`,
       });
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-    // 3. Prompt Gemini to act as a security agent
     const prompt = `
       You are an AI Security Agent monitoring a Supabase database.
       Here is the status of the 'secret_keys' table in the database:
       ${JSON.stringify(analysisData, null, 2)}
-      
+
       Your tasks:
       1. Check if all keys have 'isEncryptedFormat' as true. If not, flag a critical security risk.
       2. Review the update frequency.
       3. Provide a brief security summary and any recommendations.
-      
+
       Respond in clear text.
     `;
 
     const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
+      model: GEMINI_MODEL,
       contents: prompt,
     });
 
@@ -67,8 +98,9 @@ export async function GET() {
     console.log("Hourly AI Security Agent Report:\n", report);
 
     return NextResponse.json({ success: true, report });
-  } catch (err: any) {
-    console.warn('Security agent execution caught error:', err?.message);
-    return NextResponse.json({ success: false, error: err?.message || 'Agent check failed' });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Agent check failed";
+    console.warn("Security agent execution caught error:", message);
+    return NextResponse.json({ success: false, error: "Agent check failed" });
   }
 }

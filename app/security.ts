@@ -209,7 +209,7 @@ export function escapeH(value: unknown): string {
 // plaintext legacy values are read as-is and re-encrypted on next save.
 // ---------------------------------------------------------------------------
 
-const ENC_PREFIX = "enc:v1:";
+export const ENC_PREFIX = "enc:v1:";
 
 export function encryptSecret(plaintext: string): string {
   if (!plaintext) return "";

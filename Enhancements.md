@@ -62,9 +62,12 @@ This is the forward-looking backlog: work that is **not yet done**. Completed re
 - **Remaining (needs a provider choice):** back the rate limiter with a shared store — **Upstash Redis** or **Vercel KV**. Both are callable over HTTP with no heavy dependency. Blocked on which provider you want + its credentials; the current in-memory limiter still works correctly on single-instance/local.
 - **Effort:** M.
 
-### 7. Retire the `secret_keys` / cron "AI security agent" feature ✅ *(removed 2026-07-23)*
+### 7. Retire the `secret_keys` / cron "AI security agent" feature ⚠️ *(removed 2026-07-23 — re-added 2026-08-09, now hardened)*
 - **Why:** This subsystem was half-built: the seed route (already deleted) wrote secrets nothing ever read, the cron route only pattern-matched an encryption format and asked an LLM to comment on it, and `secret_keys` was populated by nothing. It added attack surface (service-role access, paid LLM calls) for no delivered value.
-- **Done:** Removed `app/api/cron/agent/route.ts`, `app/lib/supabase.ts` (its only consumer), `instrumentation.ts`, and `vercel.json` (contained only the cron). Rewrote `supabase_schema.sql` to the canonical `saved_ideas` table the app actually uses (with anon-insert-only RLS), and dropped the now-unused `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` env vars. Build verified after removal.
+- **Done (2026-07-23):** Removed `app/api/cron/agent/route.ts`, `app/lib/supabase.ts` (its only consumer), `instrumentation.ts`, and `vercel.json` (contained only the cron). Rewrote `supabase_schema.sql` to the canonical `saved_ideas` table the app actually uses (with anon-insert-only RLS), and dropped the now-unused `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` env vars. Build verified after removal.
+- **⚠️ Reverted (2026-08-09, commit `8a5d0ea`).** All four files were re-added as a new feature — including the unauthenticated seed route and the weak AES-256-CBC helper with a repo-committed fallback key. See findings C1–C3 and M1 in the [2026-09-18 review](./README.md#code-review--2026-09-18).
+- **Status (2026-09-18):** The feature is **kept and hardened**, not re-deleted, since it was deliberately re-added: the seed route requires an operator session, the cron route requires `CRON_SECRET` and fails closed, encryption is AES-256-GCM via `app/security.ts`, `secret_keys` is documented in `supabase_schema.sql` with RLS and no policies, and the in-process cron is opt-in. `CRON_SECRET` / `SUPABASE_SERVICE_ROLE_KEY` are back in `.env.example`.
+- **Recommendation stands:** the original reasoning has not changed — nothing reads what the seed route writes, and the audit adds recurring LLM spend for a prefix check. If it is not going to grow a consumer, delete it again rather than maintain it.
 
 ### 13. Sessions are never revoked when a user is deleted or disabled
 > Numbered 13 (out of positional order) so existing cross-references to #1–#12 in README.md and BugReport.md stay valid.

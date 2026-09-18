@@ -63,16 +63,29 @@ Ensure you have Node.js and npm installed.
    # Required in production — signs session cookies & encrypts stored credentials:
    SESSION_SECRET=<output of: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))">
    # Optional: operator account for the API Settings panel (defaults to project owner).
-   # NOTE: this account cannot be self-registered from the login modal — provision
-   # it out-of-band (create it in Supabase Auth, or add it to data/users.json).
+   # NOTE: this account cannot be self-registered from the login modal, and NO
+   # default operator is seeded. Provision it with:
+   #   npm run create-operator -- you@yourdomain.com
+   # (or create it in Supabase Auth if you use that instead).
    OPERATOR_EMAIL=you@yourdomain.com
    # Optional: verified Resend sender for real email delivery
    RESEND_FROM="SaaS Radar <radar@yourdomain.com>"
-   # Optional: override the Gemini model IDs (defaults: gemini-flash-latest / gemini-pro-latest).
-   # Set these to the exact IDs your API key can access.
+   # Optional: override the Gemini model IDs. The in-code defaults are PINNED IDs
+   # (gemini-3.8-flash). If your key cannot reach them, every generation call
+   # degrades to synthesized placeholder content (the UI labels this). Set these to
+   # IDs your key can access, or to the stable gemini-flash-latest /
+   # gemini-pro-latest aliases. List a key's models with:
+   #   curl "https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY"
    GEMINI_MODEL=
    GEMINI_MODEL_PRO=
+   GEMINI_MODEL_FAST=
+   # Required if you deploy the hourly security-agent cron (/api/cron/agent).
+   # The route fails closed: unset means every request is rejected with 401.
+   CRON_SECRET=
    ```
+
+   See [.env.example](./.env.example) for the full list, including
+   `SUPABASE_SERVICE_ROLE_KEY` and the optional local-cron switches.
 
 4. Start the development server:
    ```bash
@@ -97,6 +110,7 @@ A few gotchas that are easy to trip over (all learned the hard way):
 - **Run commands from the repo root.** The local JSON store resolves as `path.join(process.cwd(), "data")` (`app/db.ts`), and the app secret / rate limiter are process-relative too. If a launcher starts the dev server from a *different* directory (e.g. `npm --prefix ...` run from a parent folder), the server reads a **different** `data/users.json` than your CLI writes to — so a freshly provisioned operator will appear "invalid" at login. Symptom: `create-operator` succeeds but login fails. Fix: ensure the server's working directory is this repo (use an absolute path in any launch config).
 - **One checkout only.** Keep a single working copy. Duplicate checkouts (a second clone, or an extracted ZIP) combined with the point above are the classic cause of "my changes/logins aren't taking" — the server may be serving the other copy.
 - **Clear `.next` when switching between `build` and `dev`.** `next build` writes production artifacts into `.next`; starting `next dev` on top of them can throw `Invariant: Expected clientReferenceManifest to be defined` or similar. `rm -rf .next` (delete the `.next` folder) and restart.
+- **No operator account exists until you create one.** Nothing is seeded — a committed password hash would be a public, offline-crackable credential (see finding C4). Run `npm run create-operator -- <email>` once, matching `OPERATOR_EMAIL`. Symptom if you skip it: login fails with "Invalid email or password" and the API Settings tab never appears.
 - **Local login needs the dev cookie relaxation.** The session cookie is `Secure; SameSite=None` in production (for the AI Studio iframe) but relaxes to `SameSite=Lax; Secure=false` when `NODE_ENV !== "production"`, so it works over `http://localhost`. Changing a password does **not** invalidate existing sessions (see Enhancements.md #13) — click **Terminate Session** to clear one.
 
 ## Usage
@@ -245,6 +259,70 @@ Worked through the [Enhancements.md](./Enhancements.md) backlog in priority orde
 **Decomposition verification.** Because prop-threading a large stateful component carries real regression risk, every extracted component was verified twice: once at runtime in-browser (login, settings save, saved-kit search/expand/delete, idea-card render/expand/save/domain-check — all exercised live) immediately after extraction, and again via a line-by-line adversarial diff against the pre-extraction code (`git show <baseline>:app/page.tsx`) for every component, specifically hunting for dropped props, inverted conditions, or changed defaults. No behavioral drift was found in any of the 11 extracted pieces.
 
 **Follow-up quick review (2026-07-25).** A post-decomposition sweep (ESLint, a manual unused-import check, and a runtime smoke test) found 10 dead imports left in `app/page.tsx` after their JSX moved into the new components: the `LaunchKitTabs` import and the `ArrowRight`, `Mail`, `Users`, `Globe`, `Calendar`, `CheckCircle2`, `ChevronDown`, `ChevronUp` icons, and the `chatWithAgent` action — all now imported directly by the components that use them (`IdeaCard`, `SavedKitsTab`, `SettingsPanel`, `AuthModal`, `FloatingChatbot`). Removed; build and lint clean, zero console errors at runtime.
+
+## Code Review — 2026-09-18
+
+A full review of the latest commit (`8e0865a`) and the changes that landed since the
+2026-07-25 sweep. All findings below are **fixed** on branch
+`claude/focused-pasteur-x6ya7g` and verified with a clean `npm run build`
+(4/4 pages), a clean `next lint`, a clean `tsc --noEmit`, live HTTP probes of both
+API routes, and a scripted browser session (login → operator gate → settings form →
+logout, plus a full scan against a server with no `GEMINI_API_KEY`).
+
+### ⚠️ Headline: three previously-fixed security findings had been reverted
+
+Commits `8a5d0ea` ("feat: implement secrets encryption and security agent") and
+`fea894f` ("refactor: update model versions…") re-introduced files and behaviour
+that the [2026-07-22 review](#second-code-review--remediation--2026-07-22) and
+[Enhancements.md #7](./Enhancements.md) had deliberately deleted. Git's history makes
+this easy to miss: the files came back as a *new feature*, not as a revert.
+**When re-adding a subsystem that a prior review removed, re-read why it was
+removed first** — R3, R6 and R7 below all came back verbatim.
+
+### 🔴 Critical — Security
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| C1 | **Unauthenticated secret-seeding endpoint (regression of R3).** `POST /api/secrets/seed` had no auth at all. Any anonymous caller could trigger it: it reads five server-side credentials out of the environment, writes them to Supabase through the **service-role** client, and returns a per-secret status list that discloses exactly which credentials the deployment holds. | `app/api/secrets/seed/route.ts` | Gated on an operator session (same check as `loadApiSettings`); non-operators get an opaque `404`. Added `force-dynamic`, and error details are logged server-side instead of returned. |
+| C2 | **Encryption key published in the repo (regression of R6).** `app/lib/encryption.ts` used AES-256-**CBC** with no authentication tag and fell back to the literal key `"a-default-secret-key-that-is-at-least-32-chars-long"` when `SESSION_SECRET` was unset — so on any deployment missing that variable, every credential in `secret_keys` was encrypted with a key committed to a public repository. It duplicated the correct AES-256-GCM implementation already in `app/security.ts`. | `app/lib/encryption.ts` | Module deleted. The seed route now uses `encryptSecret()` from `app/security.ts` (AES-256-GCM, `enc:v1:` envelope), whose key derivation **fails closed** in production when `SESSION_SECRET` is absent. |
+| C3 | **Unauthenticated paid-API endpoint (regression of R3).** `GET /api/cron/agent` had no auth. Every request read the whole `secret_keys` table (`select('*')`, ciphertext included) and spent Gemini tokens. It was also reachable by anyone who could guess the path — and `vercel.json` publishes that path. | `app/api/cron/agent/route.ts` | Requires `Authorization: Bearer $CRON_SECRET` (the header Vercel Cron sends) and **fails closed** when `CRON_SECRET` is unset. The query no longer selects ciphertext, and the encrypted-format probe now checks the real `enc:v1:` envelope instead of the deleted CBC hex pattern. Verified: correct secret → `200`, wrong/absent → `401`. |
+| C4 | **Live operator password hash committed to the repo, and unchangeable (regression of S4).** `app/db.ts` carried a hard-coded scrypt hash for `corranforce@gmail.com` and `getUsers()` re-asserted it **on every read** — seeding the account if absent and *overwriting the stored hash if it differed*. Two consequences: a real credential hash is public and offline-crackable, and any password the operator sets (via `create-operator` or otherwise) is silently reverted on the next request. | `app/db.ts` | Seeding removed; `getUsers()` is a pure read again. **Action required:** provision the account with `npm run create-operator -- <email>` and treat the old password as compromised — rotate it. |
+
+### 🟠 High
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| H1 | **Deep Strategic Audit rendered three empty boxes on every successful call.** `runDeepThinkingAnalysis` asked Gemini for `threatMatrix` as an **array of strings**, but `app/types.ts`, the fallback generator and `IdeaCard` all read it as an **object** (`competitorRisk` / `regulatoryRisk` / `executionFriction`). TypeScript could not catch it: the response goes through `JSON.parse()`, which is `any`. The feature only ever *looked* correct when the API call failed and the fallback supplied the right shape. | `app/actions.ts` | `responseSchema` and the prompt now specify the object shape the UI actually renders. |
+| H2 | **Domain checker reported registered domains as available.** The DNS fallback treated "no records returned" as "not registered". A resolver `SERVFAIL`, a timeout, a refusal or no network at all produces exactly that — so an outage turned every domain green with a Buy button. A registered-but-parked domain (`ENODATA`) hit the same path. | `app/actions.ts` | Error codes are now classified: `ENOTFOUND`/`NXDOMAIN` from every lookup → available; any `ENODATA` → registered; anything else → reported as inconclusive, which the card already renders as an amber "Check". Verified against 7 cases including 4 that the old logic called available. |
+| H3 | **Silent, unlabelled fallback content.** Every generation action caught *all* errors — including a missing `GEMINI_API_KEY` — and returned canned template text with `success: true`. The user saw three polished "AI-discovered opportunities" with no indication they were generic boilerplate. This defeats the B6 fix (which existed precisely so actionable errors reach the UI) and repeats finding B5 (simulated data presented as analysis). | `app/actions.ts`, `app/page.tsx` | `GenerationResult` carries `usedFallback` + a sanitized `fallbackReason`. The results grid shows an amber "Offline Mode — Synthesized Example Data" banner naming the cause, and the scan feed logs it. Cards still render, so graceful degradation is preserved. |
+| H4 | **Operator gate hard-coded in the browser.** `page.tsx` compared the session email against the literal `"corranforce@gmail.com"` in five places while the server authorizes against `OPERATOR_EMAIL`. Setting that variable hid the Settings tab from the actual operator (and showed it to an address the server would then refuse). Not an escalation — the server check held — but the feature was unusable for anyone else. | `app/page.tsx`, `app/actions.ts` | New `getSessionInfo()` action returns `{ email, isOperator }` decided server-side, next to the check that enforces it; the client holds no operator address. Verified end-to-end with `OPERATOR_EMAIL` set to a different address. |
+| H5 | **Supabase admin client built at import time.** `app/lib/supabase.ts` called `createClient()` at module scope with `'https://placeholder.supabase.co'` / `'placeholder-key'` fallbacks, so a misconfigured deployment got a client silently pointed at a fake host instead of a detectable failure. (This is the shape of the build-time crash noted under *Latent build bug uncovered* in the 2026-07-22 review.) | `app/lib/supabase.ts` | Lazy `getSupabaseAdmin()` that returns `null` when unconfigured; no placeholder credentials. Marked `server-only`. |
+
+### 🟡 Medium
+
+| # | Finding | Location | Fix |
+|---|---------|----------|-----|
+| M1 | **Broken in-process cron (regression of R7).** `instrumentation.ts` ran `node-cron` against a hard-coded `http://localhost:3000`, duplicating the `vercel.json` schedule. On Vercel the timer dies with the lambda; locally on any other port it silently no-ops; and against the now-authenticated route it would 401 hourly. | `instrumentation.ts` | Off unless `ENABLE_LOCAL_CRON=true`, requires `CRON_SECRET`, sends the bearer header, and honours `PORT`/`CRON_AGENT_URL`. Vercel Cron remains the production path. |
+| M2 | **Pinned Gemini model IDs with no safety net (regression of R5).** All three model constants default to a single pinned ID. R5 moved these to the stable `-latest` aliases precisely because pinned IDs vary by API account and get retired; when they fail, H3 meant the user silently got boilerplate. `.env.example` still documented the old alias defaults, so the docs and the code disagreed. | `app/actions.ts`, `.env.example` | The pinned defaults are unchanged (deliberate), but the retry chain now ends with `gemini-flash-latest` / `gemini-pro-latest`, so a retired ID degrades to a working model instead of to canned text. `.env.example` and the README now describe what the code actually does. |
+| M3 | **Wasted quota on rate-limited calls.** `generateContentWithFallback` retried with a stripped config after *any* failure, including `429`/`503` — spending another call against the same exhausted quota to "fix" a problem that was never about the config. | `app/actions.ts` | Config-stripping now happens only for non-transient errors. |
+| M4 | **`secret_keys` table was undocumented.** Both API routes read and write it, but `supabase_schema.sql` only defined `saved_ideas` — the feature could not work on a fresh project, and nothing specified its RLS posture. | `supabase_schema.sql` | Added the table with RLS enabled and **no policies**, so the public anon key can never touch it (both routes use the service-role key, which bypasses RLS). |
+| M5 | **`npm ci` failed — the committed lockfile was out of sync with `package.json`.** Commit `8a5d0ea` added `motion`, `node-cron` and `@types/node-cron` to `package.json` and regenerated only `bun.lock`; `package-lock.json` was never updated. `npm ci` (the correct command for CI and clean deploys) aborts with *"Missing: motion@13.4.0 from lock file"* plus five more — and `motion` is imported by `app/components/IdeaCard.tsx`, `node-cron` by `instrumentation.ts`, so this is not a phantom dependency. Reproduced before the fix, verified passing after. | `package-lock.json` | Lockfile regenerated; `npm ci` now installs 492 packages cleanly. **Note:** this repo carries both `package-lock.json` and `bun.lock` — whichever you edit, regenerate the other, or CI and local will disagree. |
+| M6 | Minor correctness and hygiene: the footer hard-coded "Gemini 3.5 Flash" while the app defaults to another engine; `searchSaaSIdeas` assigned `model` then immediately overwrote it; `loginUser`/`registerUser` used `require()` inside an ESM `"use server"` module; `update_readme.py` and `update_readme_2.py` were one-off scratch scripts left at the repo root containing two contradictory, stale tech-stack blurbs. | `app/page.tsx`, `app/actions.ts`, repo root | Footer shows the selected engine; dead assignment removed; `require()` → static import; scratch scripts deleted. |
+
+### Verified, not changed
+
+- `tsc --noEmit`, `next lint` and `next build` were already clean before this review — every finding above is a behavioural or security issue that compiles perfectly.
+- HTML escaping on both the email (`escapeH`) and PDF (`escapeHtmlC`) paths is correct and applied to every interpolation, including the new PDF layout from `8e0865a`.
+- Session tokens, scrypt hashing, constant-time comparison and the rate limiter in `app/security.ts` are sound.
+- `sendLaunchKitEmail` still ignores any client-supplied recipient and mails only the session user.
+- The `saved_ideas` RLS posture (anon INSERT only, no SELECT) is correct in both `supabase_schema.sql` and the in-app recovery script.
+
+### Still open (owner actions)
+
+1. **Rotate the operator password and purge secrets from git history.** The hash removed in C4 is still in the history of this repository, as is the `data/users.json` noted in the 2026-07-04 *Remaining Work*. `git filter-repo` plus a force-push, coordinated with any clones.
+2. **Reconsider the `secret_keys` / cron "AI security agent" subsystem.** It is hardened now, but [Enhancements.md #7](./Enhancements.md) retired it for a reason that still holds: nothing reads the secrets it writes, and the audit only pattern-matches a prefix and asks an LLM to comment. It is attack surface and recurring spend for no delivered capability.
+3. **Confirm the pinned Gemini model IDs against a real key** (`curl "https://generativelanguage.googleapis.com/v1beta/models?key=…"`). The alias fallback added in M2 prevents a hard failure, but a wrong pinned ID means every request pays two or more failed round-trips first.
+4. **Serverless-safe persistence and rate limiting** remain outstanding from earlier reviews: the JSON store under `data/` and the in-memory rate limiter are both per-instance and do not survive an ephemeral filesystem.
 
 ## License
 
