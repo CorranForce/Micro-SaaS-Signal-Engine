@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
+import { supabase, isSupabaseConfigured } from '@/app/lib/supabase';
 import { encrypt } from '@/app/lib/encryption';
 
 export async function POST() {
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json({
+      message: 'Supabase not configured, skipping secret seeding',
+      results: [],
+    });
+  }
+
   const secrets = [
     { name: 'GEMINI_API_KEY', value: process.env.GEMINI_API_KEY },
     { name: 'RESEND_API_KEY', value: process.env.RESEND_API_KEY },

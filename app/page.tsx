@@ -20,6 +20,8 @@ import {
   Brain,
   Cpu,
   ChevronDown,
+  ChevronUp,
+  Plus,
 } from "lucide-react";
 import {
   searchSaaSIdeas,
@@ -72,6 +74,7 @@ export default function MicroSaaSSignalEngine() {
   const [terminalLogs, setTerminalLogs] = useState<string[]>([]);
   const [generatedIdeas, setGeneratedIdeas] = useState<SaasIdea[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isScanFeedCollapsed, setIsScanFeedCollapsed] = useState<boolean>(false);
 
   // Active Launch Kit state
   const [activeIdeaIndex, setActiveIdeaIndex] = useState<number | null>(null);
@@ -840,6 +843,7 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       clearInterval(scanIntervalRef.current);
     }
     setIsScanning(true);
+    setIsScanFeedCollapsed(false);
     setScanProgress(0);
     setGeneratedIdeas([]);
     setErrorMessage(null);
@@ -909,9 +913,13 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       if (res.success && res.data?.saasIdeas) {
         setGeneratedIdeas(res.data.saasIdeas);
         setTerminalLogs((prev) => [
-          `[SUCCESS] 3 Premium B2B blueprints successfully loaded and validated via ${selectedEngine}! 🎉`,
+          `[SUCCESS] ${res.data?.saasIdeas.length || 3} Premium B2B blueprints successfully loaded and validated via ${selectedEngine}! 🎉`,
           ...prev,
         ]);
+        // Auto-collapse feed after short delay so user can focus on blueprints
+        setTimeout(() => {
+          setIsScanFeedCollapsed(true);
+        }, 1200);
       } else {
         throw new Error(
           res.error || "Invalid output received. Please try again.",
@@ -936,6 +944,111 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
       } else {
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
+    }
+  };
+
+  // Scan for more ideas and append to current blueprints
+  const handleScanMore = async () => {
+    if (isScanning) return;
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+    }
+    setIsScanning(true);
+    setIsScanFeedCollapsed(false); // Expand feed to show scanning progress
+    setScanProgress(0);
+    setErrorMessage(null);
+
+    const selectedNicheName = selectedNicheNameForUI;
+    const existingTitles = generatedIdeas.map((i) => i.name).filter(Boolean);
+
+    const mockLogs = [
+      `[EXPAND] Deepening market scan for: "${selectedNicheName}"...`,
+      `[EXCLUDE] Filtering out ${existingTitles.length} existing blueprints to prevent duplication...`,
+      `[PROBING] Scraping unserved sub-vertical workflows and operational bottlenecks...`,
+      `[ANALYZE] Identifying unmet legacy SaaS complaints and high-friction manual spreadsheets...`,
+      `[VALUATION] Calculating unit economics for $${mrrTarget}/mo target...`,
+      `[GENERATE] Formulating additional high-retention micro-SaaS blueprints via ${selectedEngine}...`,
+      `[VERIFY] Checking viable domain patterns and tech complexity...`,
+    ];
+
+    let currentLogIndex = 0;
+    const interval = setInterval(() => {
+      if (currentLogIndex < mockLogs.length) {
+        setTerminalLogs((prev) => [mockLogs[currentLogIndex], ...prev]);
+        setScanProgress(
+          Math.floor(((currentLogIndex + 1) / mockLogs.length) * 100),
+        );
+        currentLogIndex++;
+      } else {
+        if (scanIntervalRef.current) {
+          clearInterval(scanIntervalRef.current);
+          scanIntervalRef.current = null;
+        }
+        triggerScanMoreGeminiCall(existingTitles);
+      }
+    }, 600);
+    scanIntervalRef.current = interval;
+  };
+
+  const triggerScanMoreGeminiCall = async (existingTitles: string[]) => {
+    const finalNiche =
+      customNiche ||
+      LEGACY_NICHES.find((n) => n.id === selectedNiche)?.name ||
+      selectedNiche;
+    try {
+      const exclusionNote = existingTitles.length > 0
+        ? `IMPORTANT REQUIREMENT: Do NOT duplicate these already discovered ideas: [${existingTitles.join(", ")}]. You must generate 3 completely NEW, distinct, and creative B2B opportunities in ${finalNiche}.`
+        : "";
+
+      const scanMoreContext = [additionalContext, exclusionNote]
+        .filter(Boolean)
+        .join("\n\n");
+
+      if (useHighThinking) {
+        setTerminalLogs((prev) => [
+          `[HIGH THINKING MODE] Expanding search with High Thinking Level...`,
+          ...prev,
+        ]);
+      }
+      if (useSearchGrounding) {
+        setTerminalLogs((prev) => [
+          `[SEARCH GROUNDING] Live Google Search Grounding querying fresh market gaps...`,
+          ...prev,
+        ]);
+      }
+
+      const res = await searchSaaSIdeas(finalNiche, scanMoreContext, {
+        useSearchGrounding,
+        useHighThinking,
+        engine: selectedEngine,
+      });
+
+      if (res.success && res.data?.saasIdeas && res.data.saasIdeas.length > 0) {
+        const newIdeas = res.data.saasIdeas;
+        setGeneratedIdeas((prev) => [...prev, ...newIdeas]);
+        setTerminalLogs((prev) => [
+          `[SUCCESS] Appended ${newIdeas.length} new blueprints! Total: ${generatedIdeas.length + newIdeas.length} ideas available. 🎉`,
+          ...prev,
+        ]);
+        setTimeout(() => {
+          setIsScanFeedCollapsed(true);
+        }, 1200);
+      } else {
+        throw new Error(
+          res.error || "No additional ideas found. Please try again with adjusted constraints.",
+        );
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage(
+        err.message || "An error occurred while scanning for more ideas.",
+      );
+      setTerminalLogs((prev) => [
+        `[ERROR] Scan for more ideas failed: ${err.message || "Unknown error"}`,
+        ...prev,
+      ]);
+    } finally {
+      setIsScanning(false);
     }
   };
 
@@ -1404,11 +1517,11 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
 
       <main className="w-full px-4 py-8">
         {activeTab === "find" && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* LEFT COLUMN: Input form & Scanner terminal */}
-            <div className="lg:col-span-4 flex flex-col gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start w-full max-w-7xl mx-auto">
+            {/* LEFT COLUMN: Configure Radar */}
+            <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-6 lg:sticky lg:top-6 self-start">
               {/* Research Controls */}
-              <div className="bg-ms-card border border-ms-border p-6 rounded-lg relative overflow-hidden">
+                <div className="bg-ms-card border border-ms-border p-6 rounded-lg relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-24 h-24 bg-ms-green/5 blur-xl pointer-events-none rounded-full"></div>
 
                 <div className="flex items-center gap-2 mb-4">
@@ -1777,208 +1890,327 @@ ${esc(kit.marketingAssets.coldEmail.body)}</div>
                     </label>
                   </div>
 
-                  <button
-                    onClick={handleDiscover}
-                    disabled={isScanning}
-                    className="w-full py-3.5 bg-ms-green text-ms-bg font-bold font-ms text-sm uppercase tracking-wide hover:bg-[#00d066] transition-all flex items-center justify-center gap-2 rounded shadow-lg disabled:opacity-50"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {isScanning ? "Scraping Markets..." : "Scan Legacy Markets"}
-                  </button>
+                    {/* Scan Action Controls */}
+                    <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+                      <button
+                        onClick={handleDiscover}
+                        disabled={isScanning}
+                        className="flex-1 py-3.5 bg-ms-green text-ms-bg font-bold font-ms text-sm uppercase tracking-wide hover:bg-[#00d066] transition-all flex items-center justify-center gap-2 rounded shadow-lg disabled:opacity-50"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        {isScanning
+                          ? "Scraping Markets..."
+                          : generatedIdeas.length > 0
+                            ? "New Fresh Scan"
+                            : "Scan Legacy Markets"}
+                      </button>
+
+                      {generatedIdeas.length > 0 && (
+                        <button
+                          onClick={handleScanMore}
+                          disabled={isScanning}
+                          className="py-3.5 px-4 bg-ms-green-dark border border-ms-green text-ms-green hover:bg-ms-green/20 font-bold font-ms text-xs uppercase tracking-wide transition-all flex items-center justify-center gap-1.5 rounded disabled:opacity-50 shrink-0"
+                          title="Scan 3 more ideas without clearing existing blueprints"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Scan More (+3)
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Terminal Logs Viewport */}
-              <div className="bg-ms-bg border border-ms-border rounded-lg p-4 font-ms text-xs h-64 flex flex-col justify-between overflow-hidden">
-                <div className="flex items-center justify-between border-b border-ms-border pb-2 mb-2 text-[10px] text-ms-text-muted uppercase">
-                  <span>
-                    🛰️ Scan Activity Feed{" "}
-                    <span className="text-gray-600 normal-case">
-                      (simulated visualization)
-                    </span>
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${isScanning ? "bg-ms-green animate-pulse" : "bg-red-500"}`}
-                    ></span>
-                    {isScanning ? "ACTIVE SCAN" : "IDLE"}
-                  </span>
-                </div>
+              {/* RIGHT COLUMN: Next to Config Radar, containing Scan Activity Feed on top and Selected Blueprints underneath */}
+              <div className="lg:col-span-7 xl:col-span-8 flex flex-col gap-6">
+                {isScanFeedCollapsed && generatedIdeas.length > 0 && !isScanning ? (
+                  /* Collapsed View when Blueprints finish */
+                  <div className="bg-ms-bg border border-ms-border rounded-lg p-3.5 font-ms text-xs shadow-md transition-all hover:border-ms-border-active">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-sm">🛰️</span>
+                        <span className="font-bold text-white text-xs truncate">
+                          Scan Activity Feed
+                        </span>
+                        <span className="text-[9px] bg-ms-green-dark border border-ms-green/40 text-ms-green px-1.5 py-0.5 rounded font-mono shrink-0">
+                          COMPLETE ({generatedIdeas.length} BLUEPRINTS)
+                        </span>
+                      </div>
 
-                <div className="flex-1 overflow-y-auto space-y-2 text-[11px] pr-2 scrollbar-thin">
-                  {terminalLogs.length === 0 ? (
-                    <div className="text-gray-600 italic">
-                      No scanner actions initiated. Await inputs.
+                      <button
+                        type="button"
+                        onClick={() => setIsScanFeedCollapsed(false)}
+                        className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-ms font-bold text-ms-green bg-ms-green-dark/40 border border-ms-green/30 hover:bg-ms-green-dark hover:border-ms-green rounded transition-all shrink-0 cursor-pointer"
+                        title="Expand activity feed"
+                      >
+                        <span>Expand Feed</span>
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-                  ) : (
-                    terminalLogs.map((log, i) => {
-                      if (!log || typeof log !== "string") return null;
-                      let color = "text-ms-text-muted";
-                      if (log.startsWith("[INIT]")) color = "text-gray-500";
-                      if (
-                        log.startsWith("[SCANNING]") ||
-                        log.startsWith("[CRAWL]")
-                      )
-                        color = "text-blue-400";
-                      if (log.startsWith("[FOUND]"))
-                        color = "text-ms-yellow font-bold";
-                      if (log.startsWith("[SUCCESS]"))
-                        color = "text-ms-green font-bold";
-                      if (log.startsWith("[ERROR]"))
-                        color = "text-red-400 font-bold";
-                      // Logs are prepended, so an entry's distance from the
-                      // END of the array is its stable identity — index keys
-                      // would make every row re-run its typing animation.
-                      return (
-                        <TypewriterLog
-                          key={terminalLogs.length - 1 - i}
-                          text={log}
-                          color={color}
-                        />
-                      );
-                    })
-                  )}
-                </div>
 
-                {isScanning && (
-                  <div className="mt-3 border-t border-ms-border pt-2">
-                    <div className="flex justify-between text-[10px] text-ms-text-muted mb-1">
-                      <span>CRAWLING HIGH-FIDELITY B2B FORUMS</span>
-                      <span>{scanProgress}%</span>
-                    </div>
-                    <div className="w-full bg-ms-border h-1.5 rounded-full overflow-hidden">
+                    {terminalLogs.length > 0 && (
                       <div
-                        className="bg-ms-green h-full transition-all duration-300"
-                        style={{ width: `${scanProgress}%` }}
-                      ></div>
+                        onClick={() => setIsScanFeedCollapsed(false)}
+                        className="mt-2 text-[11px] text-ms-green font-mono truncate cursor-pointer bg-black/40 px-2.5 py-1.5 rounded border border-white/5 hover:border-ms-green/30 transition-colors"
+                        title="Click to expand full activity logs"
+                      >
+                        {terminalLogs[0]}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Expanded Terminal View */
+                  <div className="bg-ms-bg border border-ms-border rounded-lg p-4 font-ms text-xs flex flex-col justify-between overflow-hidden h-72 lg:h-80 shadow-md">
+                    <div className="flex items-center justify-between border-b border-ms-border pb-2.5 mb-2.5 text-[10px] text-ms-text-muted uppercase">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm leading-none">🛰️</span>
+                        <span className="font-bold text-white">Scan Activity Feed</span>
+                        <span className="text-gray-600 normal-case hidden sm:inline">
+                          (live telemetry)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="flex items-center gap-1 text-[9px] font-mono">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isScanning
+                                ? "bg-ms-green animate-pulse"
+                                : generatedIdeas.length > 0
+                                  ? "bg-ms-green"
+                                  : "bg-red-500"
+                            }`}
+                          />
+                          {isScanning
+                            ? "ACTIVE SCAN"
+                            : generatedIdeas.length > 0
+                              ? "COMPLETE"
+                              : "IDLE"}
+                        </span>
+
+                        {generatedIdeas.length > 0 && !isScanning && (
+                          <button
+                            type="button"
+                            onClick={() => setIsScanFeedCollapsed(true)}
+                            className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-ms font-bold text-ms-text-muted hover:text-white bg-ms-card border border-ms-border hover:border-ms-border-active rounded transition-all cursor-pointer ml-1"
+                            title="Collapse activity feed"
+                          >
+                            <span>Collapse</span>
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-2 text-[11px] pr-2 scrollbar-thin">
+                      {terminalLogs.length === 0 ? (
+                        <div className="text-gray-600 italic">
+                          No scanner actions initiated. Await inputs.
+                        </div>
+                      ) : (
+                        terminalLogs.map((log, i) => {
+                          if (!log || typeof log !== "string") return null;
+                          let color = "text-ms-text-muted";
+                          if (log.startsWith("[INIT]") || log.startsWith("[EXPAND]"))
+                            color = "text-gray-500";
+                          if (
+                            log.startsWith("[SCANNING]") ||
+                            log.startsWith("[CRAWL]") ||
+                            log.startsWith("[PROBING]")
+                          )
+                            color = "text-blue-400";
+                          if (
+                            log.startsWith("[FOUND]") ||
+                            log.startsWith("[FILTER]") ||
+                            log.startsWith("[EXCLUDE]")
+                          )
+                            color = "text-ms-yellow font-bold";
+                          if (log.startsWith("[SUCCESS]"))
+                            color = "text-ms-green font-bold";
+                          if (log.startsWith("[ERROR]"))
+                            color = "text-red-400 font-bold";
+                          return (
+                            <TypewriterLog
+                              key={terminalLogs.length - 1 - i}
+                              text={log}
+                              color={color}
+                            />
+                          );
+                        })
+                      )}
+                      <div ref={terminalEndRef} />
+                    </div>
+
+                    {isScanning && (
+                      <div className="mt-3 border-t border-ms-border pt-2.5">
+                        <div className="flex justify-between text-[10px] text-ms-text-muted mb-1 font-mono">
+                          <span>CRAWLING HIGH-FIDELITY B2B FORUMS</span>
+                          <span className="text-ms-green font-bold">{scanProgress}%</span>
+                        </div>
+                        <div className="w-full bg-ms-border h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className="bg-ms-green h-full transition-all duration-300"
+                            style={{ width: `${scanProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* Error Handler (Under the Scan feed) */}
+            {errorMessage && (
+              <div className="bg-red-950/40 border border-red-500/50 rounded-lg p-4 text-sm text-red-200 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">Generative AI Error</div>
+                  <p className="text-xs text-red-300 mt-1">{errorMessage}</p>
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* RIGHT COLUMN: Ideas Grid & Active Launch Kit details */}
-            <div className="lg:col-span-8 flex flex-col gap-8">
-              {/* Error Handler */}
-              {errorMessage && (
-                <div className="bg-red-950/40 border border-red-500/50 rounded-lg p-4 text-sm text-red-200 flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-bold">Generative AI Error</div>
-                    <p className="text-xs text-red-300 mt-1">{errorMessage}</p>
-                  </div>
+            {/* Welcome Screen (If no ideas generated yet) */}
+            {generatedIdeas.length === 0 && !isScanning && !errorMessage && (
+              <div className="bg-ms-card border border-ms-border rounded-lg p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
+                <div className="w-16 h-16 bg-ms-green-dark/30 border border-ms-green/40 rounded-full flex items-center justify-center text-3xl mb-6 green-glow">
+                  🔬
                 </div>
-              )}
-
-              {/* Welcome Screen (If no ideas generated yet) */}
-              {generatedIdeas.length === 0 && !isScanning && !errorMessage && (
-                <div className="bg-ms-card border border-ms-border rounded-lg p-12 text-center flex flex-col items-center justify-center min-h-[400px]">
-                  <div className="w-16 h-16 bg-ms-green-dark/30 border border-ms-green/40 rounded-full flex items-center justify-center text-3xl mb-6 green-glow">
-                    🔬
-                  </div>
-                  <h3 className="text-xl font-bold text-white mb-2">
-                    Acreage of Boring B2B Markets Await
-                  </h3>
-                  <p className="text-sm text-ms-text-muted max-w-lg mb-6 leading-relaxed">
-                    Most SaaS builders compete for flashy consumer apps or
-                    general tools. True, highly profitable niches lie in offline
-                    B2B sectors. Select an industry above to begin.
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
-                    {LEGACY_NICHES.map((n) => (
-                      <button
-                        key={n.id}
-                        onClick={() => {
-                          setSelectedNiche(n.id);
-                          setCustomNiche("");
-                          setAdditionalContext("");
-                        }}
-                        className="p-3 bg-ms-bg border border-ms-border hover:border-ms-green rounded text-left transition-all group hover:bg-ms-green-dark/15"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg">{n.icon}</span>
-                          <span className="text-xs font-bold text-white block truncate group-hover:text-ms-green transition-colors">
-                            {n.name}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    onClick={exportNichesToCSV}
-                    className="mt-8 flex items-center justify-center gap-2 px-5 py-2 border border-ms-border rounded text-xs font-bold font-ms text-ms-text-muted hover:text-white hover:border-ms-border-active transition-colors"
-                  >
-                    <Download size={14} /> EXPORT NICHES CSV
-                  </button>
+                <h3 className="text-xl font-bold text-white mb-2">
+                  Acreage of Boring B2B Markets Await
+                </h3>
+                <p className="text-sm text-ms-text-muted max-w-lg mb-6 leading-relaxed">
+                  Most SaaS builders compete for flashy consumer apps or
+                  general tools. True, highly profitable niches lie in offline
+                  B2B sectors. Select an industry above to begin.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-w-2xl">
+                  {LEGACY_NICHES.map((n) => (
+                    <button
+                      key={n.id}
+                      onClick={() => {
+                        setSelectedNiche(n.id);
+                        setCustomNiche("");
+                        setAdditionalContext("");
+                      }}
+                      className="p-3 bg-ms-bg border border-ms-border hover:border-ms-green rounded text-left transition-all group hover:bg-ms-green-dark/15"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{n.icon}</span>
+                        <span className="text-xs font-bold text-white block truncate group-hover:text-ms-green transition-colors">
+                          {n.name}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              )}
+                <button
+                  onClick={exportNichesToCSV}
+                  className="mt-8 flex items-center justify-center gap-2 px-5 py-2 border border-ms-border rounded text-xs font-bold font-ms text-ms-text-muted hover:text-white hover:border-ms-border-active transition-colors"
+                >
+                  <Download size={14} /> EXPORT NICHES CSV
+                </button>
+              </div>
+            )}
 
-              {/* Ideas Display Grid */}
-              {generatedIdeas.length > 0 && (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-ms-border pb-3">
+            {/* Ideas Display Grid */}
+            {generatedIdeas.length > 0 && (
+              <div className="space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-ms-border pb-3">
+                  <div className="flex items-center gap-3">
                     <h2 className="font-ms text-sm tracking-wider uppercase text-ms-yellow font-bold">
                       02. Selected Blueprints
                     </h2>
-                    <span className="text-xs text-ms-text-muted font-ms">
-                      3 underserved ideas found
+                    <span className="text-xs text-ms-text-muted font-ms bg-ms-bg px-2.5 py-0.5 rounded border border-ms-border">
+                      {generatedIdeas.length} {generatedIdeas.length === 1 ? "idea" : "ideas"} found
                     </span>
                   </div>
 
-                  <div className="flex flex-col gap-4 w-full">
-                    {generatedIdeas.map((idea, index) => (
-                      <IdeaCard
-                        key={index}
-                        idea={idea}
-                        index={index}
-                        kitEntry={launchKits[index]}
-                        compactMode={apiSettings.compactMode}
-                        expanded={!!expandedIdeas[index]}
-                        onToggleExpanded={() =>
-                          setExpandedIdeas((prev) => ({
-                            ...prev,
-                            [index]: !prev[index],
-                          }))
-                        }
-                        isEmailing={!!isEmailingCard[index]}
-                        emailStatus={emailCardStatus[index] || null}
-                        onDismissEmailStatus={() =>
-                          setEmailCardStatus((prev) => ({ ...prev, [index]: null }))
-                        }
-                        onEmail={() => handleEmailCard(idea, index)}
-                        isSavingToSupabase={!!isSavingToSupabase[index]}
-                        supabaseStatus={supabaseCardStatus[index] || null}
-                        onDismissSupabaseStatus={() =>
-                          setSupabaseCardStatus((prev) => ({
-                            ...prev,
-                            [index]: null,
-                          }))
-                        }
-                        onSupabase={() => handleSupabaseCard(idea, index)}
-                        isSaved={isSaved(idea.name)}
-                        onToggleSave={() =>
-                          toggleSaveIdea(idea, launchKits[index]?.data || null)
-                        }
-                        domainCheckStatus={domainCheckStatus}
-                        onCheckDomain={handleCheckDomain}
-                        onGenerateKit={() => handleGenerateKit(idea, index)}
-                        onExportPdf={() => handleExportPdf(index)}
-                        isExporting={isExporting}
-                        onCopy={handleCopy}
-                        copiedText={copiedText}
-                        generateSqlFallback={generateSqlFallback}
-                        VisualSchemaDiagram={VisualSchemaDiagram}
-                        onRunDeepAnalysis={() => handleRunDeepAnalysis(idea, index)}
-                        isDeepAnalyzing={!!deepAnalysisLoading[index]}
-                        deepAnalysis={deepAnalysisData[index]}
-                      />
-                    ))}
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={handleScanMore}
+                      disabled={isScanning}
+                      className="px-4 py-2 bg-ms-green hover:bg-[#00d066] text-ms-bg font-ms font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-1.5 shadow-md disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      {isScanning ? "Scanning Markets..." : "Scan for More Ideas (+3)"}
+                    </button>
                   </div>
                 </div>
-              )}
 
-                            </div>
+                <div className="flex flex-col gap-4 w-full">
+                  {generatedIdeas.map((idea, index) => (
+                    <IdeaCard
+                      key={index}
+                      idea={idea}
+                      index={index}
+                      kitEntry={launchKits[index]}
+                      compactMode={apiSettings.compactMode}
+                      expanded={!!expandedIdeas[index]}
+                      onToggleExpanded={() =>
+                        setExpandedIdeas((prev) => ({
+                          ...prev,
+                          [index]: !prev[index],
+                        }))
+                      }
+                      isEmailing={!!isEmailingCard[index]}
+                      emailStatus={emailCardStatus[index] || null}
+                      onDismissEmailStatus={() =>
+                        setEmailCardStatus((prev) => ({ ...prev, [index]: null }))
+                      }
+                      onEmail={() => handleEmailCard(idea, index)}
+                      isSavingToSupabase={!!isSavingToSupabase[index]}
+                      supabaseStatus={supabaseCardStatus[index] || null}
+                      onDismissSupabaseStatus={() =>
+                        setSupabaseCardStatus((prev) => ({
+                          ...prev,
+                          [index]: null,
+                        }))
+                      }
+                      onSupabase={() => handleSupabaseCard(idea, index)}
+                      isSaved={isSaved(idea.name)}
+                      onToggleSave={() =>
+                        toggleSaveIdea(idea, launchKits[index]?.data || null)
+                      }
+                      domainCheckStatus={domainCheckStatus}
+                      onCheckDomain={handleCheckDomain}
+                      onGenerateKit={() => handleGenerateKit(idea, index)}
+                      onExportPdf={() => handleExportPdf(index)}
+                      isExporting={isExporting}
+                      onCopy={handleCopy}
+                      copiedText={copiedText}
+                      generateSqlFallback={generateSqlFallback}
+                      VisualSchemaDiagram={VisualSchemaDiagram}
+                      onRunDeepAnalysis={() => handleRunDeepAnalysis(idea, index)}
+                      isDeepAnalyzing={!!deepAnalysisLoading[index]}
+                      deepAnalysis={deepAnalysisData[index]}
+                    />
+                  ))}
+                </div>
+
+                {/* Bottom CTA Card to Scan for More Ideas */}
+                <div className="mt-2 p-6 bg-ms-card/90 border border-dashed border-ms-border rounded-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="text-left">
+                    <h4 className="text-sm font-bold text-white font-ms flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-ms-green" />
+                      Want more market angles for {selectedNicheNameForUI}?
+                    </h4>
+                    <p className="text-xs text-ms-text-muted font-sans mt-0.5">
+                      Run another targeted crawl with {selectedEngine} to discover 3 additional distinct B2B opportunities without losing your existing blueprints.
+                    </p>
+                  </div>
+                  <button
+                    onClick={handleScanMore}
+                    disabled={isScanning}
+                    className="px-5 py-2.5 bg-ms-green hover:bg-[#00d066] text-ms-bg font-ms font-bold text-xs uppercase tracking-wider rounded transition-all flex items-center gap-2 shrink-0 shadow-lg disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {isScanning ? "Scanning Markets..." : "Scan for More Ideas (+3)"}
+                  </button>
+                </div>
+              </div>
+            )}
             </div>
+          </div>
         )}
 
         {/* COMPARE NICHES TAB */}

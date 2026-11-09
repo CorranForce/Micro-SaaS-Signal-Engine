@@ -17,6 +17,9 @@ import {
   Cpu,
   ExternalLink,
   Sparkles,
+  Flame,
+  TrendingUp,
+  BarChart2,
 } from "lucide-react";
 import { LaunchKitTabs } from "../LaunchKitTabs";
 import type { SaasIdea, LaunchKit, DeepThinkingAnalysis } from "../types";
@@ -93,6 +96,22 @@ export function IdeaCard({
   const isKitLoaded = !!kitEntry?.data;
   const isKitLoading = !!kitEntry?.loading;
 
+  const demand = idea.marketDemandScore ?? 0;
+  const hotness = idea.hotnessScore ?? 0;
+
+  const demandPct =
+    demand > 10
+      ? Math.min(Math.max(demand, 0), 100)
+      : Math.min(Math.max(demand * 10, 0), 100);
+  const demandDisplay = demand > 10 ? `${demand}/100` : `${demand}/10`;
+  const demandTier =
+    demandPct >= 80 ? "High Demand" : demandPct >= 60 ? "Solid Demand" : "Emerging";
+
+  const hotnessPct = Math.min(Math.max((hotness / 5) * 100, 0), 100);
+  const hotnessDisplay = `${hotness}/5`;
+  const hotnessTier =
+    hotness >= 4 ? "Hyper-Viable" : hotness >= 3 ? "High Yield" : "Standard";
+
   return (
     <motion.div
       whileHover={{
@@ -115,17 +134,18 @@ export function IdeaCard({
       >
         <div className="flex-1">
           <div className="flex justify-between items-center gap-2 mb-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span
                 className={`${compactMode ? "text-[10px]" : "text-xs"} text-ms-green bg-ms-green-dark border border-ms-green/30 px-2 py-0.5 rounded font-ms font-bold uppercase`}
               >
                 {idea.buildComplexity} BUILD
               </span>
-              {idea.hotnessScore && (
+              {idea.hotnessScore ? (
                 <span
                   className={`${compactMode ? "text-[10px]" : "text-xs"} text-orange-400 bg-orange-900/30 border border-orange-500/30 px-2 py-0.5 rounded font-ms font-bold uppercase flex items-center gap-1`}
-                  title={`Market Demand: ${idea.marketDemandScore}/10`}
+                  title={`Hotness: ${hotnessDisplay} (${hotnessTier})`}
                 >
+                  <Flame className="w-3 h-3 text-orange-400 shrink-0" />
                   HOTNESS{" "}
                   {Array.from({ length: idea.hotnessScore }).map((_, i) => (
                     <span
@@ -136,7 +156,16 @@ export function IdeaCard({
                     </span>
                   ))}
                 </span>
-              )}
+              ) : null}
+              {idea.marketDemandScore ? (
+                <span
+                  className={`${compactMode ? "text-[10px]" : "text-xs"} text-cyan-400 bg-cyan-950/40 border border-cyan-500/30 px-2 py-0.5 rounded font-ms font-bold uppercase flex items-center gap-1`}
+                  title={`Market Demand: ${demandDisplay} (${demandTier})`}
+                >
+                  <TrendingUp className="w-3 h-3 text-cyan-400 shrink-0" />
+                  DEMAND {demandDisplay}
+                </span>
+              ) : null}
             </div>
             <div className="flex items-center gap-2.5 md:hidden">
               <button
@@ -190,6 +219,92 @@ export function IdeaCard({
           >
             {idea.solution}
           </p>
+
+          {/* Visual Indicator & Bar Chart: Hotness & Market Demand */}
+          {(idea.marketDemandScore !== undefined || idea.hotnessScore !== undefined) && (
+            <div
+              className={`rounded-lg bg-ms-bg/80 border border-ms-border/70 ${
+                compactMode ? "p-2.5 my-2 space-y-2" : "p-3 my-3 space-y-2.5"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-[10px] font-ms font-bold tracking-wider text-ms-text-muted uppercase">
+                  <BarChart2 className="w-3.5 h-3.5 text-ms-green" />
+                  <span>Market Viability Signals</span>
+                </div>
+                <div className="flex items-center gap-3 text-[9px] font-mono">
+                  <span className="flex items-center gap-1 text-cyan-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                    Demand: {demandDisplay}
+                  </span>
+                  <span className="flex items-center gap-1 text-orange-400">
+                    <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                    Hotness: {hotnessDisplay}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Market Demand Score Bar */}
+                <div className="bg-ms-card/90 border border-ms-border/60 rounded p-2 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] font-ms">
+                    <span className="text-cyan-400 font-semibold flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3 text-cyan-400" />
+                      Market Demand
+                    </span>
+                    <span className="font-mono text-white text-[11px] font-bold">
+                      {demandDisplay}
+                      <span className="text-[9px] text-ms-text-muted ml-1 font-normal font-sans">
+                        ({demandTier})
+                      </span>
+                    </span>
+                  </div>
+                  <div className="relative h-2 w-full bg-black/60 rounded-full overflow-hidden border border-white/5 p-[1px]">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${demandPct}%` }}
+                      transition={{ duration: 0.7, ease: "easeOut" }}
+                      className="h-full rounded-full bg-gradient-to-r from-cyan-500 via-teal-400 to-ms-green shadow-[0_0_8px_rgba(6,182,212,0.4)]"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[8px] text-ms-text-muted font-mono">
+                    <span>LOW</span>
+                    <span className="text-cyan-300 font-semibold">{Math.round(demandPct)}%</span>
+                    <span>HIGH</span>
+                  </div>
+                </div>
+
+                {/* Hotness Score Bar */}
+                <div className="bg-ms-card/90 border border-ms-border/60 rounded p-2 space-y-1.5">
+                  <div className="flex items-center justify-between text-[10px] font-ms">
+                    <span className="text-orange-400 font-semibold flex items-center gap-1">
+                      <Flame className="w-3 h-3 text-orange-400" />
+                      Opportunity Hotness
+                    </span>
+                    <span className="font-mono text-white text-[11px] font-bold flex items-center gap-1">
+                      {hotnessDisplay}
+                      <span className="text-[9px] text-ms-text-muted font-normal font-sans">
+                        ({hotnessTier})
+                      </span>
+                    </span>
+                  </div>
+                  <div className="relative h-2 w-full bg-black/60 rounded-full overflow-hidden border border-white/5 p-[1px]">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${hotnessPct}%` }}
+                      transition={{ duration: 0.7, ease: "easeOut", delay: 0.1 }}
+                      className="h-full rounded-full bg-gradient-to-r from-amber-400 via-orange-500 to-red-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[8px] text-ms-text-muted font-mono">
+                    <span>1🔥 (COLD)</span>
+                    <span className="text-orange-300 font-semibold">{Math.round(hotnessPct)}%</span>
+                    <span>5🔥 (HOT)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Google Search Grounding Sources */}
           {idea.groundingSources && idea.groundingSources.length > 0 && (

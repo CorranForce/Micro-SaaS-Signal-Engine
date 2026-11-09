@@ -1,11 +1,29 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL || 'https://placeholder.supabase.co';
+const rawUrl = process.env.SUPABASE_URL || '';
+const isDeadOrPlaceholder =
+  !rawUrl ||
+  rawUrl.includes('placeholder') ||
+  rawUrl.includes('rccvbrnxiiymgmvjnupa') ||
+  !rawUrl.startsWith('http');
+
+const supabaseUrl = isDeadOrPlaceholder
+  ? 'https://placeholder.supabase.co'
+  : rawUrl;
+
 // Use SERVICE_ROLE_KEY if available for server-side operations, fallback to ANON_KEY
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder-key';
+const supabaseKey = isDeadOrPlaceholder
+  ? 'placeholder-key'
+  : process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    'placeholder-key';
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
 export function isSupabaseConfigured(): boolean {
-  return Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY));
+  if (isDeadOrPlaceholder) return false;
+  return Boolean(
+    process.env.SUPABASE_URL &&
+      (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)
+  );
 }

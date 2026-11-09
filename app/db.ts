@@ -90,6 +90,25 @@ export const SECRET_FIELDS = [
   "godaddyApiSecret",
 ] as const;
 
+export function isSupabaseValidUrl(url?: string): boolean {
+  if (!url) return false;
+  const clean = url.trim();
+  if (
+    !clean ||
+    clean.includes("placeholder") ||
+    clean.includes("rccvbrnxiiymgmvjnupa") ||
+    !clean.startsWith("http")
+  ) {
+    return false;
+  }
+  try {
+    const parsed = new URL(clean);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 export function getSettings(): ApiSettings {
   const filePath = path.join(DATA_DIR, "settings.json");
   let fileSettings: Partial<ApiSettings> = {};
@@ -108,17 +127,21 @@ export function getSettings(): ApiSettings {
     }
   }
 
+  const rawUrl =
+    fileSettings.supabaseUrl ||
+    process.env.SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    "";
+  const validUrl = isSupabaseValidUrl(rawUrl) ? rawUrl : "";
+
   return {
-    supabaseUrl:
-      fileSettings.supabaseUrl ||
-      process.env.SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      "",
-    supabaseAnonKey:
-      fileSettings.supabaseAnonKey ||
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      "",
+    supabaseUrl: validUrl,
+    supabaseAnonKey: validUrl
+      ? fileSettings.supabaseAnonKey ||
+        process.env.SUPABASE_ANON_KEY ||
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+        ""
+      : "",
     resendApiKey: fileSettings.resendApiKey || process.env.RESEND_API_KEY || "",
     godaddyApiKey:
       fileSettings.godaddyApiKey || process.env.GODADDY_API_KEY || "",
